@@ -33,7 +33,7 @@ static void draw_hud_multi(void) {
   }
   p[0] = C_HUD_T;
   print_num5(p + 1, time_left);
-  p[5] = C_SPACE;
+  p[6] = C_SPACE;                     /* drop the fixed trailing 0 */
   p[7] = C_ENEMY_ICON; p[8] = enemies_left;
   p[10] = C_HUD_S; print_num2(p + 11, stage);
 }
