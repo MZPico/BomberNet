@@ -161,45 +161,93 @@ static void title_init(void) {
     enemies[i].type = i;
   }
   clear_bombs();
-  bombs[0].state = BOMB_TICK1;
-  bombs[0].x = 0x20;
-  bombs[0].y = 0x0b;
 }
 
-/* menu line on the title: player count (LEFT/RIGHT) and the P2 keys */
-static uint8_t menu_prev_keys, menu_prev_keys_b;
+/* ---- title menu: UP/DOWN pick a row, LEFT/RIGHT change its value ----
+ * rows: MODE, PLAYERS, JOYSTICK, then one input row per player */
+static uint8_t menu_item, menu_prev_keys;
+static const char *const mode_names[2] = {"COOP      ", "DEATHMATCH"};
+static const char *const joy_names[3] = {"NONE   ", "MZ-800 ", "MZ-1X03"};
+static const char *const input_names[6] = {
+  "", "CURSOR AND SPACE", "WASD AND E      ", "JOYSTICK 1      ", "JOYSTICK 2      ", "",
+};
+
+static uint8_t input_allowed(uint8_t in) {
+  return in == INPUT_KBD_A || in == INPUT_KBD_B ||
+         (joy_type != JOY_NONE && (in == INPUT_JOY1 || in == INPUT_JOY2));
+}
+
+static uint8_t input_used(uint8_t in, uint8_t except) {
+  uint8_t i;
+  for (i = 0; i < menu_players; i++)
+    if (i != except && menu_inputs[i] == in) return 1;
+  return 0;
+}
+
+/* next allowed and unused input for player i in direction dir */
+static void input_cycle(uint8_t i, int8_t dir) {
+  uint8_t in = menu_inputs[i], n;
+  for (n = 0; n < 4; n++) {
+    in = (uint8_t)((in - 1 + 4 + dir) % 4 + 1);      /* 1..4 */
+    if (input_allowed(in) && !input_used(in, i)) { menu_inputs[i] = in; return; }
+  }
+}
+
+/* keep the assignment valid after MODE/PLAYERS/JOYSTICK changes */
+static void menu_validate(void) {
+  uint8_t i, maxp = joy_type == JOY_NONE ? 2 : 4;
+  if (menu_mode == GAME_DM && menu_players < 2) menu_players = 2;
+  if (menu_players > maxp) menu_players = maxp;
+  for (i = 0; i < menu_players; i++)
+    if (!input_allowed(menu_inputs[i]) || input_used(menu_inputs[i], i)) input_cycle(i, 1);
+}
+
+static void menu_change(int8_t dir) {
+  switch (menu_item) {
+  case 0: menu_mode ^= 1; break;
+  case 1:
+    if (dir > 0 && menu_players < 4) menu_players++;
+    if (dir < 0 && menu_players > 1) menu_players--;
+    break;
+  case 2: joy_type = (uint8_t)((joy_type + 3 + dir) % 3); break;
+  default: input_cycle(menu_item - 3, dir); break;
+  }
+  menu_validate();
+}
 
 static void title_menu(void) {
-  uint8_t k = mz_keys(), *p;
+  uint8_t k = mz_keys(), i, rows, *p;
   uint8_t edge = k & ~menu_prev_keys;
   menu_prev_keys = k;
-  uint8_t kb = mz_keys_b(), maxp;
-  uint8_t edge_b = kb & ~menu_prev_keys_b;
-  menu_prev_keys_b = kb;
-  if (edge_b & KEY_UP) joy_type = (joy_type + 1) % 3;
-  if (edge_b & KEY_DOWN) joy_type = (joy_type + 2) % 3;
-  maxp = joy_type == JOY_NONE ? 2 : 4;
-  if ((edge & KEY_RIGHT) && menu_players < maxp) menu_players++;
-  if ((edge & KEY_LEFT) && menu_players > 1) menu_players--;
-  if (menu_players > maxp) menu_players = maxp;
-  if (edge & (KEY_UP | KEY_DOWN)) menu_mode ^= 1;
-  if (menu_mode == GAME_DM && menu_players < 2) menu_players = 2;
-  /* title mode: letters and 00h..09h digits are text, ':' '<' '>' and ASCII
-   * digits would be logo block graphics; 23h/24h are the right/left arrows */
-  p = draw_at(2, 21);
-  print_string(p, "PLAYERS ");
-  p[8] = 0x24; p[10] = menu_players; p[12] = 0x23;
-  print_string(p + 15, menu_mode == GAME_DM ? "MODE  DEATHMATCH" : "MODE  COOP      ");
-  p[15 + 4] = 0x22; p[15 + 5] = 0x21;         /* up/down arrows */
-  p = draw_at(2, 23);
-  print_string(p, "P  CURSOR AND SPACE  P  WASD AND E");
-  p[1] = 1; p[22] = 2;                      /* digit codes, not ASCII */
-  p = draw_at(2, 20);
-  print_string(p, joy_type == JOY_800 ? "JOYSTICK MZ 800  " :
-                  joy_type == JOY_1X03 ? "JOYSTICK MZ 1X03 " : "JOYSTICK NONE    ");
-  p[17] = 0x22; p[18] = 0x21;              /* W/S arrows */
-  print_string(p + 20, "P  P  JOY");
-  p[21] = 3; p[24] = 4;
+  rows = 3 + menu_players;
+  if ((edge & KEY_UP) && menu_item > 0) menu_item--;
+  if ((edge & KEY_DOWN) && menu_item < rows - 1) menu_item++;
+  if (edge & KEY_LEFT) menu_change(-1);
+  if (edge & KEY_RIGHT) menu_change(1);
+  if (menu_item >= rows) menu_item = rows - 1;
+
+  for (i = 0; i < rows; i++)
+    *draw_at(7, 10 + i) = (i == menu_item) ? 0x23 : C_SPACE;   /* right-arrow cursor */
+  title_text(draw_at(9, 10), "MODE      ");
+  title_text(draw_at(19, 10), mode_names[menu_mode]);
+  title_text(draw_at(9, 11), "PLAYERS   ");
+  *draw_at(19, 11) = menu_players;
+  title_text(draw_at(9, 12), "JOYSTICK  ");
+  title_text(draw_at(19, 12), joy_names[joy_type]);
+  for (i = 0; i < menu_players; i++) {
+    p = draw_at(9, 13 + i);
+    title_text(p, "PLAYER ");
+    p[7] = i + 1;
+    title_text(p + 10, input_names[menu_inputs[i]]);
+  }
+  title_text(draw_at(4, 18), "HI-SCORE");
+  print_num5(draw_at(13, 18), hi_score);
+  title_text(draw_at(23, 18), "SCORE");
+  print_num5(draw_at(29, 18), players[0].score);
+  title_text(draw_at(8, 20), "PUSH SPACE TO START GAME");
+  p = draw_at(6, 22);
+  p[0] = 0x22; p[1] = 0x21; title_text(p + 3, "SELECT");
+  p[13] = 0x24; p[14] = 0x23; title_text(p + 16, "CHANGE");
 }
 
 static void title_frame(void) {
@@ -207,27 +255,10 @@ static void title_frame(void) {
   tick_timers();
   title_menu();
   for (i = 0; i < 240; i++) draw_buf[i] = title_logo[i];
-  put_tile(draw_at(17, 11), C_BONUS_TILE);
-  put_tile(draw_at(25, 11), C_EXIT_TILE);
-  print_string(draw_at(6, 10), str_legend1);
-  print_string(draw_at(6, 11), str_box_tl);
-  print_string(draw_at(6, 12), str_box_ml);
-  print_string(draw_at(2, 13), str_legend2);
-  print_string(draw_at(3, 14), str_box2_t);
-  print_string(draw_at(3, 15), str_box2_m);
-  print_string(draw_at(3, 16), str_box2_b);
-  print_string(draw_at(6, 17), str_box3_t);
-  print_string(draw_at(6, 18), str_box3_m);
-  print_string(draw_at(6, 19), str_box3_b);
-  print_string(draw_at(6, 20), "    ");  /* row 20 now holds the joystick line */
-  print_string(draw_at(8, 22), str_push_space);
   print_string(draw_at(2, 24), str_copyright);
   print_string(draw_at(4, 7), str_legend_row7);
   print_string(draw_at(5, 8), str_legend_row8);
-  print_num5(draw_at(32, 16), hi_score);
-  print_num5(draw_at(32, 18), players[0].score);
   put_tile(draw_at(2, 7), C_PLAYER_B);
-  draw_bombs();
   draw_enemies();
   if (tmr_player_anim.counter == 0) {
     bomb_anim ^= 2;

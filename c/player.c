@@ -12,9 +12,6 @@ static const int8_t move_deltas[4][2] = {
 static const uint8_t player_tiles[MAX_PLAYERS][2] = {
   {C_PLAYER_A, C_PLAYER_B}, {0xa0, 0xa2}, {0xa4, 0xa6}, {0xa8, 0xaa},
 };
-static const uint8_t default_inputs[MAX_PLAYERS] = {
-  INPUT_KBD_A, INPUT_KBD_B, INPUT_JOY1, INPUT_JOY2,
-};
 
 void players_setup(uint8_t count) {
   uint8_t i;
@@ -22,7 +19,7 @@ void players_setup(uint8_t count) {
   for (i = 0; i < MAX_PLAYERS; i++) {
     player_t *p = &players[i];
     p->active = i < count;
-    p->input = default_inputs[i];
+    p->input = menu_inputs[i];
     p->tile_a = player_tiles[i][0];
     p->tile_b = player_tiles[i][1];
     p->score = 0;

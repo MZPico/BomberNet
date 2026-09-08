@@ -114,8 +114,8 @@ MZ-800/MZ-1500 digital sticks are read on ports F0h/F1h with 8255 port A bit
 edge: 64 samples ~105 T apart, low count < 22 = left/up, > 46 = right/down,
 switches sampled during display; with that type the frame limiter targets 880
 ticks and then waits for the vblank edge, so frames are exactly 3 vblanks.
-Players 3/4 default to JOY1/JOY2 (max players 4 only with a joystick type
-selected); bomb slots 8; compact HUD for 3-4 players ("n dddd0<man>c", time
+Every player row on the title picks its own input (keyboard A/B, joystick 1/2, no
+duplicates; joysticks only with a type selected, max players 4 with joysticks, else 2); bomb slots 8; compact HUD for 3-4 players ("n dddd0<man>c", time
 shown only with 3). Verified in mz800emu with `[JOY] joyN_type = NUM_KEYPAD`
 in the private config: player 3 moves on the emulated stick and drops a bomb
 (owner 2). Frame cost in 4-player deathmatch: 174k cycles average (49 ms) with

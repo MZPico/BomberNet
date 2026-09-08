@@ -485,7 +485,7 @@ fs_put:                     ; A = logical code, HL = shadow cell (still old)
     or   a
     jr   z,fs_game
     ld   a,b
-    cp   0x5a
+    cp   0x5b               ; title table covers 00h..5Ah (Z)
     jr   nc,fs_game
     ld   hl,_title_table
     jr   fs_lookup

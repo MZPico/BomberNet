@@ -3,7 +3,7 @@
 #define DATA_H
 #include <stdint.h>
 extern const uint8_t game_table[512];
-extern const uint8_t title_table[180];
+extern const uint8_t title_table[182];
 extern const uint8_t title_logo[240];
 extern const uint8_t blast_pattern[64];
 extern const char str_legend1[];

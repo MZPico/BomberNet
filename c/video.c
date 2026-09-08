@@ -102,6 +102,18 @@ void print_num4(uint8_t *p, uint16_t v) {
   *p = 0;
 }
 
+/* title mode: letters and space are direct, digits are codes 0..9, '-' is
+ * 40h; anything else would hit the logo graphics, so it becomes a space */
+void title_text(uint8_t *p, const char *s) {
+  while (*s) {
+    uint8_t c = (uint8_t)*s++;
+    if (c >= '0' && c <= '9') c -= '0';
+    else if (c == '-') c = 0x40;
+    else if (!((c >= 'A' && c <= 'Z') || c == ' ')) c = C_SPACE;
+    *p++ = c;
+  }
+}
+
 void clear_map(void) {
   uint16_t i;
   for (i = 0; i < SCREEN_CELLS; i++) map_layer[i] = C_SPACE;

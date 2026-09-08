@@ -121,6 +121,7 @@ typedef struct {
 extern player_t players[MAX_PLAYERS];
 extern uint8_t player_count;
 extern uint8_t menu_players;              /* chosen on the title screen */
+extern uint8_t menu_inputs[MAX_PLAYERS];  /* INPUT_* per player, chosen on the title screen */
 extern uint8_t menu_mode, game_mode;      /* GAME_COOP / GAME_DM */
 /* joystick types */
 #define JOY_NONE 0
@@ -144,7 +145,7 @@ extern ftimer_t tmr_player_anim, tmr_enemy_die, tmr_enemy_move, tmr_time;
 extern uint8_t draw_buf[SCREEN_CELLS];
 extern uint8_t map_layer[SCREEN_CELLS];
 extern uint8_t shadow_vram[SCREEN_CELLS];
-extern uint8_t title_mode;   /* 1: codes < 0x5a use title_table */
+extern uint8_t title_mode;   /* 1: codes < 0x5b use title_table */
 
 extern const uint16_t row_off[SCREEN_H];   /* y * 40 */
 #ifdef HOST
@@ -162,6 +163,7 @@ void print_num2(uint8_t *p, uint8_t v);
 void print_num5(uint8_t *p, uint16_t v);       /* 5 digits + fixed trailing 0 */
 void print_num4(uint8_t *p, uint16_t v);       /* 4 digits + fixed trailing 0 (compact HUD) */
 void hud_text(uint8_t *p, const char *s);      /* ASCII A-Z/0-9/space -> game-mode glyphs */
+void title_text(uint8_t *p, const char *s);    /* ASCII -> title-mode codes (digits, '-', letters) */
 void clear_map(void);
 void clear_buffers(void);
 
