@@ -17,10 +17,12 @@ def original_dots(body, tt):
         for c in range(40):
             code = logo[r * 40 + c]
             n = 15 if code == 0x2e else (0 if code == 0x20 else tt[2 * code] - 0xF0)
-            dots[2 * r][2 * c] = (n >> 1) & 1
-            dots[2 * r][2 * c + 1] = n & 1
-            dots[2 * r + 1][2 * c] = (n >> 3) & 1
-            dots[2 * r + 1][2 * c + 1] = (n >> 2) & 1
+            # CG-ROM bit 0 is the LEFTMOST pixel: F1h = top-left, F2h = top-right,
+            # F4h = bottom-left, F8h = bottom-right
+            dots[2 * r][2 * c] = n & 1
+            dots[2 * r][2 * c + 1] = (n >> 1) & 1
+            dots[2 * r + 1][2 * c] = (n >> 2) & 1
+            dots[2 * r + 1][2 * c + 1] = (n >> 3) & 1
     return dots
 
 
@@ -63,7 +65,7 @@ def compose(body, tt, word='BOMBERNeT'):
             if r in (0, 5) or c in (0, 39):
                 codes[r * 40 + c] = 0x2e
                 continue
-            n = dots[2 * r][2 * c] * 2 + dots[2 * r][2 * c + 1] + dots[2 * r + 1][2 * c] * 8 + dots[2 * r + 1][2 * c + 1] * 4
+            n = dots[2 * r][2 * c] + dots[2 * r][2 * c + 1] * 2 + dots[2 * r + 1][2 * c] * 4 + dots[2 * r + 1][2 * c + 1] * 8
             codes[r * 40 + c] = 0x20 if n == 0 else (0x2f if n == 1 else 0x30 + n)
     return bytes(codes), dots
 
