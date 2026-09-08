@@ -39,10 +39,16 @@ T_GLYPH = [
 ]
 
 
-def compose(body, tt, word='BOMBERNET'):
+def compose(body, tt, word='BOMBERNeT'):
     od = original_dots(body, tt)
     glyphs = {'B': glyph(od, 2), 'O': glyph(od, 10), 'M': glyph(od, 18),
               'E': glyph(od, 34), 'R': glyph(od, 42), 'N': glyph(od, 70), 'T': T_GLYPH}
+    # 'e': E without the right-end dot of its bars (it only reads well when
+    # the next letter's stroke touches it, as the R does in BOMBER)
+    e2 = [row[:] for row in glyphs['E']]
+    e2[0][7] = 0
+    e2[6][7] = 0
+    glyphs['e'] = e2
     dots = [[0] * 80 for _ in range(12)]
     x = 4
     for ch in word:

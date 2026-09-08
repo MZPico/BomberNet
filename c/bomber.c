@@ -299,13 +299,39 @@ static uint8_t round_winner(void) {
   return tie ? 0xff : best;
 }
 
-/* message in the middle of the arena until fire is pressed (min 40 frames) */
+/* framed message box centred on the arena: columns 8..31, rows 9..14 */
+#define BOX_X 8
+#define BOX_W 24
+#define BOX_Y 9
+#define BOX_H 6
+
+static void draw_box(void) {
+  uint8_t r, c;
+  for (r = 0; r < BOX_H; r++) {
+    uint8_t *p = draw_at(BOX_X, BOX_Y + r);
+    uint8_t edge = (r == 0 || r == BOX_H - 1);
+    for (c = 0; c < BOX_W; c++) p[c] = edge ? C_BOX_H : C_SPACE;
+    if (!edge) { p[0] = C_BOX_V; p[BOX_W - 1] = C_BOX_V; }
+  }
+  *draw_at(BOX_X, BOX_Y) = C_BOX_TL;
+  *draw_at(BOX_X + BOX_W - 1, BOX_Y) = C_BOX_TR;
+  *draw_at(BOX_X, BOX_Y + BOX_H - 1) = C_BOX_BL;
+  *draw_at(BOX_X + BOX_W - 1, BOX_Y + BOX_H - 1) = C_BOX_BR;
+}
+
+static void box_line(uint8_t row, const char *s) {
+  uint8_t len = (uint8_t)strlen(s);
+  hud_text(draw_at(BOX_X + (BOX_W - len) / 2, row), s);
+}
+
+/* framed message in the middle of the arena until fire is pressed (min 40 frames) */
 static void show_message(const char *l1, const char *l2) {
   uint8_t n = 40, i, any;
   for (;;) {
     frame_minimal();
-    hud_text(draw_at(8, 11), l1);
-    hud_text(draw_at(8, 12), l2);
+    draw_box();
+    box_line(BOX_Y + 2, l1);
+    box_line(BOX_Y + 3, l2);
     input_poll();
     any = 0;
     for (i = 0; i < MAX_PLAYERS; i++)
@@ -326,16 +352,16 @@ static void run_deathmatch(void) {
     idle_frames(10);
     w = round_winner();
     if (w == 0xff) {
-      show_message("      DRAW      ", "PRESS FIRE      ");
+      show_message("DRAW", "PRESS FIRE");
     } else {
       players[w].wins++;
-      strcpy(line, "PLAYER   WINS   ");
+      strcpy(line, "PLAYER 1 WINS");
       line[7] = '1' + w;
       if (players[w].wins >= DM_ROUNDS_TO_WIN) {
-        show_message(line, "THE MATCH       ");
+        show_message(line, "THE MATCH");
         return;
       }
-      show_message(line, "THE ROUND       ");
+      show_message(line, "THE ROUND");
     }
     for (i = 0; i < MAX_PLAYERS; i++) players[i].keys = 0;
     stage++;

@@ -53,6 +53,11 @@ for i, (ca, cb) in enumerate(colours):
 for i, ch in enumerate('PLMAYDHI'):
     gt[2 * (0x92 + i)] = ord(ch) - ord('A') + 1
     gt[2 * (0x92 + i) + 1] = 0x70
+# Box drawing for game-mode message frames (same glyphs the title table uses),
+# yellow: 0Ch horizontal, 0Dh vertical, 1Ch/1Dh top corners, 2Dh/2Eh bottom corners.
+for code, disp in ((0x0C, 0x78), (0x0D, 0x79), (0x1C, 0x5C), (0x1D, 0x5D), (0x2D, 0x1C), (0x2E, 0x1D)):
+    gt[2 * code] = disp
+    gt[2 * code + 1] = 0x60
 for code, ch in ((0x8E, 'W'), (0x8F, 'K'), (0x9E, 'V'), (0x9F, 'X')):
     gt[2 * code] = ord(ch) - ord('A') + 1
     gt[2 * code + 1] = 0x70

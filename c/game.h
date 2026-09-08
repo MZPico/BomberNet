@@ -35,6 +35,12 @@
 #define C_HUD_L      0x93
 #define C_HUD_S      0x10   /* original HUD glyphs: S C O R E B O N U S, T=30h G=31h */
 #define C_HUD_T      0x30
+#define C_BOX_H      0x0c   /* message frame: horizontal, vertical, corners */
+#define C_BOX_V      0x0d
+#define C_BOX_TL     0x1c
+#define C_BOX_TR     0x1d
+#define C_BOX_BL     0x2d
+#define C_BOX_BR     0x2e
 #define C_ENEMY_BASE 0xc0   /* + type*4 + anim */
 #define C_FIRE       0xe0   /* >= 0xe0 is fire */
 

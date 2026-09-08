@@ -17,9 +17,13 @@ CPU_HZ = 3546900  # MZ-800 PAL Z80 clock
 
 class Emu:
     def __init__(self, exe=EMU):
-        self.p = subprocess.Popen([exe, '--mcp-pipe', '--headless', '--no-first-run-windows'],
+        self.errlog = open(os.environ.get('MZ800EMU_LOG', '/tmp/mz800emu_%d.log' % os.getpid()), 'w')
+        cfg = os.environ.get('MZ800EMU_CFG', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'build', 'emucfg'))
+        os.makedirs(cfg, exist_ok=True)
+        self.p = subprocess.Popen([exe, '--mcp-pipe', '--headless', '--no-first-run-windows',
+                                   '--cfg-dir', os.path.abspath(cfg), '--no-save-ini'],
                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                  stderr=subprocess.DEVNULL, text=True, bufsize=1,
+                                  stderr=self.errlog, text=True, bufsize=1,
                                   cwd=os.path.dirname(exe))
         self.req_id = 0
         self.hello = json.loads(self.p.stdout.readline())
@@ -41,7 +45,9 @@ class Emu:
         while True:
             line = self.p.stdout.readline()
             if not line:
-                raise RuntimeError('emulator exited')
+                self.errlog.flush()
+                tail = open(self.errlog.name).read()[-800:]
+                raise RuntimeError('emulator exited (exit code %s); stderr tail:\n%s' % (self.p.poll(), tail))
             r = json.loads(line)
             if r.get('type') == 'response' and r.get('req_id') == self.req_id:
                 break
