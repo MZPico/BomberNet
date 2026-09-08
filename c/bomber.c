@@ -19,9 +19,29 @@ static void load_stage_params(void) {
 }
 
 /* ---- HUD (row 24) ---- */
+/* multiplayer HUD: "P1 000000 <man>3  P2 000000 <man>3  T0970 <enemy>1 S01" */
+static void draw_hud_multi(void) {
+  uint8_t *p = draw_at(0, HUD_ROW);
+  uint8_t i;
+  for (i = 0; i < player_count; i++) {
+    player_t *pl = &players[i];
+    if (pl->score > hi_score) hi_score = pl->score;
+    p[0] = C_HUD_P; p[1] = i + 1;
+    print_num5(p + 3, pl->score);
+    p[10] = C_LIVES_ICON; p[11] = pl->lives;
+    p += 13;
+  }
+  p[0] = C_HUD_T;
+  print_num5(p + 1, time_left);
+  p[5] = C_SPACE;
+  p[7] = C_ENEMY_ICON; p[8] = enemies_left;
+  p[10] = C_HUD_S; print_num2(p + 11, stage);
+}
+
 static void draw_hud(void) {
   uint8_t *p = draw_at(0, HUD_ROW);
-  uint16_t score = players[0].score;      /* phase 0: single-player HUD */
+  uint16_t score = players[0].score;
+  if (player_count > 1) { draw_hud_multi(); return; }
   print_string(p, str_hud_score);
   print_string(p + 13, str_hud_bonus);
   print_string(p + 33, str_hud_stage);
@@ -34,6 +54,7 @@ static void draw_hud(void) {
 
 static void draw_hud_icons(void) {
   uint8_t *p = draw_at(25, HUD_ROW);
+  if (player_count > 1) return;
   p[0] = C_LIVES_ICON; p[1] = C_COLON; p[2] = players[0].lives;
   p[5] = C_ENEMY_ICON; p[6] = C_COLON; p[7] = enemies_left;
 }
@@ -122,9 +143,30 @@ static void title_init(void) {
   bombs[0].y = 0x0b;
 }
 
+/* menu line on the title: player count (LEFT/RIGHT) and the P2 keys */
+static uint8_t menu_prev_keys;
+
+static void title_menu(void) {
+  uint8_t k = mz_keys(), *p;
+  uint8_t edge = k & ~menu_prev_keys;
+  menu_prev_keys = k;
+  if ((edge & KEY_RIGHT) && menu_players < 2) menu_players++;
+  if ((edge & KEY_LEFT) && menu_players > 1) menu_players--;
+  /* title mode: letters and 00h..09h digits are text, ':' '<' '>' and ASCII
+   * digits would be logo block graphics; 23h/24h are the right/left arrows */
+  p = draw_at(2, 21);
+  print_string(p, "PLAYERS ");
+  p[8] = 0x24; p[10] = menu_players; p[12] = 0x23;
+  print_string(p + 15, "MODE  COOP");
+  p = draw_at(2, 23);
+  print_string(p, "P  CURSOR AND SPACE  P  WASD AND E");
+  p[1] = 1; p[22] = 2;                      /* digit codes, not ASCII */
+}
+
 static void title_frame(void) {
   uint8_t i;
   tick_timers();
+  title_menu();
   for (i = 0; i < 240; i++) draw_buf[i] = title_logo[i];
   put_tile(draw_at(17, 11), C_BONUS_TILE);
   put_tile(draw_at(25, 11), C_EXIT_TILE);
@@ -221,7 +263,7 @@ static uint8_t lose_lives(void) {
 }
 
 static void run_game(void) {
-  players_setup(1);                   /* phase 0: one player on keyboard set A */
+  players_setup(menu_players);
   stage = 1;
   for (;;) {
     stage_start();

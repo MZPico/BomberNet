@@ -4,6 +4,7 @@
 
 player_t players[MAX_PLAYERS];
 uint8_t player_count;
+uint8_t menu_players = 1;
 uint16_t hi_score, time_left;
 uint8_t stage;
 uint8_t enemies_left, enemy_period;

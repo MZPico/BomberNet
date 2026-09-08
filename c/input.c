@@ -7,6 +7,7 @@
 static uint8_t input_read(uint8_t source) {
   switch (source) {
   case INPUT_KBD_A: return mz_keys();
+  case INPUT_KBD_B: return mz_keys_b();
   case INPUT_JOY1:  return mz_joy(0);
   case INPUT_JOY2:  return mz_joy(1);
   default:          return 0;        /* KBD_B and NET arrive in later phases */

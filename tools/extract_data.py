@@ -48,12 +48,21 @@ for i, (ca, cb) in enumerate(colours):
         for dx, dy in ((0, 0), (1, 0), (0, 16), (1, 16)):
             gt[2 * (dst + dx + dy)] = gt[2 * (src + dx + dy)]
             gt[2 * (dst + dx + dy) + 1] = attr
+# Extra HUD letters for the multiplayer HUD in the free codes 92h..99h
+# (display codes: A=01h .. Z=1Ah), white on black.
+for i, ch in enumerate('PLMAYDHI'):
+    gt[2 * (0x92 + i)] = ord(ch) - ord('A') + 1
+    gt[2 * (0x92 + i) + 1] = 0x70
 parts.append(carray('game_table', bytes(gt), 16,
                     'logical code -> (display code, attribute), game mode; original 2F4Fh, '
                     'A0h-BBh patched with player 2..4 sprites'))
 parts.append(carray('title_table', at(0x314F, 180), 16,
                     'logical codes 00h-59h in title mode; original 314Fh'))
-parts.append(carray('title_logo', at(0x1551, 240), 40, '6 rows x 40 logical codes; original 1551h'))
+sys.path.insert(0, here)
+from make_logo import compose
+logo_codes, _ = compose(body, at(0x314F, 180))
+parts.append(carray('title_logo', logo_codes, 40,
+                    '6 rows x 40 logical codes: BOMBERNET, composed by make_logo.py from the original glyphs (1551h)'))
 parts.append(carray('blast_pattern', at(0x1D02, 64), 16,
                     '4 arms (left,right,up,down) x 8 (dY,dX); original 1D02h'))
 names = ['str_legend1', 'str_box_tl', 'str_box_ml', 'str_legend2', 'str_box2_t', 'str_box2_m',

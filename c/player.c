@@ -72,7 +72,7 @@ static void draw_player(player_t *p) {
 void draw_players(void) {
   uint8_t i;
   for (i = 0; i < MAX_PLAYERS; i++)
-    if (players[i].active) draw_player(&players[i]);
+    if (players[i].active && !players[i].life_lost) draw_player(&players[i]);
 }
 
 /* Cursor keys move by one char when none of the four chars ahead is a wall,

@@ -70,6 +70,58 @@ mk_5:
   __endasm;
 }
 
+/* Keyboard set B: strobe F2h row: Q R S T U V W X (bit 7..0) -> W bit1 = up,
+ * S bit5 = down; strobe F4h row: A B C D E F G H -> A bit7 = left, D bit4 =
+ * right, E bit3 = fire. */
+uint8_t mz_keys_b(void) __naked {
+  __asm
+    ld   a,0xf2
+    ld   (0xe000),a
+    nop
+    nop
+    ld   a,(0xe001)
+    ld   b,a
+    nop
+    ld   a,(0xe001)
+    or   b
+    cpl
+    ld   c,0
+    bit  1,a
+    jr   z,kb_1
+    set  0,c                ; KEY_UP
+kb_1:
+    bit  5,a
+    jr   z,kb_2
+    set  1,c                ; KEY_DOWN
+kb_2:
+    ld   a,0xf4
+    ld   (0xe000),a
+    nop
+    nop
+    ld   a,(0xe001)
+    ld   b,a
+    nop
+    ld   a,(0xe001)
+    or   b
+    cpl
+    bit  4,a
+    jr   z,kb_3
+    set  2,c                ; KEY_RIGHT
+kb_3:
+    bit  7,a
+    jr   z,kb_4
+    set  3,c                ; KEY_LEFT
+kb_4:
+    bit  3,a
+    jr   z,kb_5
+    set  4,c                ; KEY_SPACE (fire)
+kb_5:
+    ld   l,c
+    ld   h,0
+    ret
+  __endasm;
+}
+
 /* Joysticks arrive in phase 3 (MZ-800 ports F0h/F1h). */
 uint8_t mz_joy(uint8_t n) { (void)n; return 0; }
 

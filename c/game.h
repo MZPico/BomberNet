@@ -31,6 +31,10 @@
 #define C_PLAYER_B   0x8c
 #define C_LIVES_ICON 0x90
 #define C_ENEMY_ICON 0x91
+#define C_HUD_P      0x92   /* HUD letters P L M A Y D H I at 92h..99h (game_table) */
+#define C_HUD_L      0x93
+#define C_HUD_S      0x10   /* original HUD glyphs: S C O R E B O N U S, T=30h G=31h */
+#define C_HUD_T      0x30
 #define C_ENEMY_BASE 0xc0   /* + type*4 + anim */
 #define C_FIRE       0xe0   /* >= 0xe0 is fire */
 
@@ -103,6 +107,7 @@ typedef struct {
 /* ---- globals (game.c) ---- */
 extern player_t players[MAX_PLAYERS];
 extern uint8_t player_count;
+extern uint8_t menu_players;              /* chosen on the title screen */
 extern uint16_t hi_score, time_left;
 extern uint8_t stage;
 extern uint8_t enemies_left, enemy_period;
@@ -145,6 +150,7 @@ void clear_buffers(void);
 #define KEY_LEFT  0x08
 #define KEY_SPACE 0x10
 uint8_t mz_keys(void);                        /* keyboard set A: cursor keys + SPACE */
+uint8_t mz_keys_b(void);                      /* keyboard set B: W A S D + E */
 uint8_t mz_joy(uint8_t n);                    /* joystick 0/1 as a key mask (phase 3, returns 0 now) */
 
 /* ---- input.c ---- */

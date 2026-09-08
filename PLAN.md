@@ -50,7 +50,7 @@ Verified: 212k cycles/frame (unchanged), identical screenshot, controlled kill
 scenario in the emulator (bomb, walk away, enemy dies, score +12 to the owner,
 `enemies_left` 0, stage cleared).
 
-## Phase 1 - local 2 players on the keyboard, cooperative
+## Phase 1 - local 2 players on the keyboard, cooperative - DONE 2026-09-08
 
 1. Second key set on the matrix, e.g. W/S/A/D + a fire key; `mz_keys` scans
    the needed rows once per frame and returns both masks. Check matrix
@@ -64,6 +64,15 @@ scenario in the emulator (bomb, walk away, enemy dies, score +12 to the owner,
 4. HUD: row 24 shows scores/lives compactly for 2 players (4 later).
 5. Test: two-player session in the emulator via `tools/emu.py` (press keys of
    both sets, verify positions and kill credit from memory).
+
+Result: key set B = W/A/S/D + E (`mz_keys_b`, rows F2h/F4h of the matrix);
+title menu line "PLAYERS < n >" (cursor LEFT/RIGHT, 1..2) and a key legend;
+2-player HUD "P1 score lives  P2 score lives  Tnnnn enemies Sstage" with new HUD
+letters at 92h..99h; finished players are hidden; new BOMBERNET logo composed
+from the original glyphs by `tools/make_logo.py`. Verified in the emulator:
+menu selects 2 players, P1 moves on cursor keys, P2 moves W/A/S/D and drops a
+bomb with E (owner 1), VRAM rows checked as text (the emulator's PNG capture of
+text-heavy screens is unreliable, so rows are dumped from D000h instead).
 
 ## Phase 2 - deathmatch mode
 
