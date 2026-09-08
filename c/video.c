@@ -1,6 +1,7 @@
 /* Screen layers and cell helpers (portable C). */
 #include <stdint.h>
 #include "game.h"
+#include "data.h"
 
 uint8_t draw_buf[SCREEN_CELLS];
 uint8_t map_layer[SCREEN_CELLS];
@@ -110,6 +111,17 @@ void title_text(uint8_t *p, const char *s) {
     if (c >= '0' && c <= '9') c -= '0';
     else if (c == '-') c = 0x40;
     else if (!((c >= 'A' && c <= 'Z') || c == ' ')) c = C_SPACE;
+    *p++ = c;
+  }
+}
+
+void title_text_hl(uint8_t *p, const char *s) {
+  while (*s) {
+    uint8_t c = (uint8_t)*s++;
+    if (c >= 'A' && c <= 'Z') c = hl_letters[c - 'A'];
+    else if (c >= '0' && c <= '9') c -= '0';
+    else if (c == '-') c = 0x40;
+    else c = C_SPACE;
     *p++ = c;
   }
 }

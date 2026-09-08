@@ -215,39 +215,64 @@ static void menu_change(int8_t dir) {
   menu_validate();
 }
 
+#define MENU_X 3
+#define MENU_W 34
+#define MENU_Y 9
+#define MENU_H 9            /* frame rows 9..17: 3 fixed rows + 4 player rows */
+
+static void draw_title_box(void) {
+  uint8_t r, c;
+  for (r = 0; r < MENU_H; r++) {
+    uint8_t *p = draw_at(MENU_X, MENU_Y + r);
+    uint8_t edge = (r == 0 || r == MENU_H - 1);
+    for (c = 0; c < MENU_W; c++) p[c] = edge ? T_BOX_H : C_SPACE;
+    if (!edge) { p[0] = T_BOX_V; p[MENU_W - 1] = T_BOX_V; }
+  }
+  *draw_at(MENU_X, MENU_Y) = T_BOX_TL;
+  *draw_at(MENU_X + MENU_W - 1, MENU_Y) = T_BOX_TR;
+  *draw_at(MENU_X, MENU_Y + MENU_H - 1) = T_BOX_BL;
+  *draw_at(MENU_X + MENU_W - 1, MENU_Y + MENU_H - 1) = T_BOX_BR;
+}
+
+static uint8_t title_ticks;
+
+static void menu_row(uint8_t row, const char *label, uint8_t digit, const char *value, uint8_t selected) {
+  uint8_t *p = draw_at(MENU_X + 2, MENU_Y + 1 + row);
+  p[0] = selected ? T_ARR_RIGHT : C_SPACE;
+  title_text(p + 2, label);
+  if (digit) p[2 + 7] = digit;
+  if (selected) title_text_hl(p + 13, value); else title_text(p + 13, value);
+}
+
 static void title_menu(void) {
   uint8_t k = mz_keys(), i, rows, *p;
   uint8_t edge = k & ~menu_prev_keys;
+  char num[2];
   menu_prev_keys = k;
   rows = 3 + menu_players;
-  if ((edge & KEY_UP) && menu_item > 0) menu_item--;
-  if ((edge & KEY_DOWN) && menu_item < rows - 1) menu_item++;
-  if (edge & KEY_LEFT) menu_change(-1);
-  if (edge & KEY_RIGHT) menu_change(1);
+  if ((edge & KEY_UP) && menu_item > 0) { menu_item--; mz_tone(0x020a, 14); }
+  if ((edge & KEY_DOWN) && menu_item < rows - 1) { menu_item++; mz_tone(0x020a, 14); }
+  if (edge & KEY_LEFT) { menu_change(-1); mz_tone(0x030a, 14); }
+  if (edge & KEY_RIGHT) { menu_change(1); mz_tone(0x030a, 14); }
   if (menu_item >= rows) menu_item = rows - 1;
 
-  for (i = 0; i < rows; i++)
-    *draw_at(7, 10 + i) = (i == menu_item) ? 0x23 : C_SPACE;   /* right-arrow cursor */
-  title_text(draw_at(9, 10), "MODE      ");
-  title_text(draw_at(19, 10), mode_names[menu_mode]);
-  title_text(draw_at(9, 11), "PLAYERS   ");
-  *draw_at(19, 11) = menu_players;
-  title_text(draw_at(9, 12), "JOYSTICK  ");
-  title_text(draw_at(19, 12), joy_names[joy_type]);
-  for (i = 0; i < menu_players; i++) {
-    p = draw_at(9, 13 + i);
-    title_text(p, "PLAYER ");
-    p[7] = i + 1;
-    title_text(p + 10, input_names[menu_inputs[i]]);
-  }
-  title_text(draw_at(4, 18), "HI-SCORE");
-  print_num5(draw_at(13, 18), hi_score);
-  title_text(draw_at(23, 18), "SCORE");
-  print_num5(draw_at(29, 18), players[0].score);
-  title_text(draw_at(8, 20), "PUSH SPACE TO START GAME");
-  p = draw_at(6, 22);
-  p[0] = 0x22; p[1] = 0x21; title_text(p + 3, "SELECT");
-  p[13] = 0x24; p[14] = 0x23; title_text(p + 16, "CHANGE");
+  draw_title_box();
+  menu_row(0, "MODE", 0, mode_names[menu_mode], menu_item == 0);
+  num[0] = '0' + menu_players; num[1] = 0;
+  menu_row(1, "PLAYERS", 0, num, menu_item == 1);
+  menu_row(2, "JOYSTICK", 0, joy_names[joy_type], menu_item == 2);
+  for (i = 0; i < menu_players; i++)
+    menu_row(3 + i, "PLAYER", i + 1, input_names[menu_inputs[i]], menu_item == 3 + i);
+
+  title_text(draw_at(5, 19), "HI-SCORE");
+  print_num5(draw_at(14, 19), hi_score);
+  title_text(draw_at(22, 19), "SCORE");
+  print_num5(draw_at(28, 19), players[0].score);
+  title_ticks++;
+  if (title_ticks & 0x10) title_text_hl(draw_at(8, 21), "PUSH SPACE TO START GAME");
+  p = draw_at(9, 22);
+  p[0] = T_ARR_UP; p[1] = T_ARR_DOWN; title_text(p + 3, "SELECT");
+  p[12] = T_ARR_LEFT; p[13] = T_ARR_RIGHT; title_text(p + 15, "CHANGE");
 }
 
 static void title_frame(void) {
