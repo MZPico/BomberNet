@@ -171,6 +171,17 @@ static const char *const joy_names[3] = {"NONE   ", "MZ-800 ", "MZ-1X03"};
 static const char *const input_names[6] = {
   "", "CURSOR AND SPACE", "WASD AND E      ", "JOYSTICK 1      ", "JOYSTICK 2      ", "",
 };
+static const char *const kbd_a_cr_name = "CURSOR AND CR   ";
+
+/* with two keyboard players, player A fires with CR (SPACE is next to WASD);
+ * applied when the game starts, the title itself always listens to SPACE */
+static uint8_t menu_fire_cr;
+static void update_fire_key(void) {
+  uint8_t i;
+  menu_fire_cr = 0;
+  for (i = 0; i < menu_players; i++)
+    if (menu_inputs[i] == INPUT_KBD_B) menu_fire_cr = 1;
+}
 
 static uint8_t input_allowed(uint8_t in) {
   return in == INPUT_KBD_A || in == INPUT_KBD_B ||
@@ -200,6 +211,7 @@ static void menu_validate(void) {
   if (menu_players > maxp) menu_players = maxp;
   for (i = 0; i < menu_players; i++)
     if (!input_allowed(menu_inputs[i]) || input_used(menu_inputs[i], i)) input_cycle(i, 1);
+  update_fire_key();
 }
 
 static void menu_change(int8_t dir) {
@@ -217,7 +229,7 @@ static void menu_change(int8_t dir) {
 
 #define MENU_X 3
 #define MENU_W 34
-#define MENU_Y 9
+#define MENU_Y 10
 #define MENU_H 9            /* frame rows 9..17: 3 fixed rows + 4 player rows */
 
 static void draw_title_box(void) {
@@ -262,17 +274,19 @@ static void title_menu(void) {
   menu_row(1, "PLAYERS", 0, num, menu_item == 1);
   menu_row(2, "JOYSTICK", 0, joy_names[joy_type], menu_item == 2);
   for (i = 0; i < menu_players; i++)
-    menu_row(3 + i, "PLAYER", i + 1, input_names[menu_inputs[i]], menu_item == 3 + i);
+    menu_row(3 + i, "PLAYER", i + 1,
+             (menu_inputs[i] == INPUT_KBD_A && menu_fire_cr) ? kbd_a_cr_name : input_names[menu_inputs[i]],
+             menu_item == 3 + i);
 
-  p = draw_at(9, 18);
+  p = draw_at(9, 19);
   p[0] = T_ARR_UP; p[1] = T_ARR_DOWN; title_text(p + 3, "SELECT");
   p[12] = T_ARR_LEFT; p[13] = T_ARR_RIGHT; title_text(p + 15, "CHANGE");
-  title_text(draw_at(5, 20), "HI-SCORE");
-  print_num5(draw_at(14, 20), hi_score);
-  title_text(draw_at(22, 20), "SCORE");
-  print_num5(draw_at(28, 20), players[0].score);
+  title_text(draw_at(5, 21), "HI-SCORE");
+  print_num5(draw_at(14, 21), hi_score);
+  title_text(draw_at(22, 21), "SCORE");
+  print_num5(draw_at(28, 21), players[0].score);
   title_ticks++;
-  if (title_ticks & 0x10) title_text_hl(draw_at(8, 22), "PUSH SPACE TO START GAME");
+  if (title_ticks & 0x10) title_text_hl(draw_at(8, 23), "PUSH SPACE TO START GAME");
 }
 
 static void title_frame(void) {
@@ -294,6 +308,8 @@ static void title_frame(void) {
 /* returns when SPACE is pressed */
 static void title_screen(void) {
   title_init();
+  kbd_fire_cr = 0;                    /* the title starts on SPACE */
+  update_fire_key();
   while (mz_keys() & KEY_SPACE) title_frame();   /* release a held SPACE first */
   do { title_frame(); } while (!(mz_keys() & KEY_SPACE));
 }
@@ -460,6 +476,7 @@ static void run_deathmatch(void) {
 
 static void run_game(void) {
   game_mode = menu_mode;
+  kbd_fire_cr = menu_fire_cr;
   if (game_mode == GAME_DM) { run_deathmatch(); return; }
   players_setup(menu_players);
   stage = 1;

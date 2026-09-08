@@ -50,7 +50,10 @@ mk_3:
     or   0x08               ; KEY_LEFT
 mk_4:
     ld   c,a
-    ld   a,0xf6
+    ld   a,(_kbd_fire_cr)
+    or   a
+    jr   nz,mk_cr
+    ld   a,0xf6             ; strobe row 6: SPACE = bit 4
     ld   (0xe000),a
     nop
     nop
@@ -60,9 +63,22 @@ mk_4:
     ld   a,(0xe001)
     or   b
     bit  4,a
+    jr   mk_fire
+mk_cr:
+    ld   a,0xf0             ; strobe row 0: CR = bit 0
+    ld   (0xe000),a
+    nop
+    nop
+    ld   a,(0xe001)
+    ld   b,a
+    nop
+    ld   a,(0xe001)
+    or   b
+    bit  0,a
+mk_fire:
     ld   a,c
     jr   nz,mk_5
-    or   0x10               ; KEY_SPACE
+    or   0x10               ; KEY_SPACE (fire)
 mk_5:
     ld   l,a
     ld   h,0

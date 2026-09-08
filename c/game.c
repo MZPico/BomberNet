@@ -8,6 +8,7 @@ uint8_t menu_players = 1;
 uint8_t menu_inputs[MAX_PLAYERS] = {INPUT_KBD_A, INPUT_KBD_B, INPUT_JOY1, INPUT_JOY2};
 uint8_t menu_mode = GAME_COOP, game_mode = GAME_COOP;
 uint8_t joy_type = JOY_NONE;
+uint8_t kbd_fire_cr;
 uint8_t joy_state[2];
 uint16_t hi_score, time_left;
 uint8_t stage;

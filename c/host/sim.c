@@ -54,6 +54,7 @@ uint8_t mz_keys(void) {
   return bot_keys;
 }
 
+
 uint8_t mz_keys_b(void) { return scenario ? 0 : (uint8_t)(rand() & 0x1f); }
 void mz_tone(uint16_t ratio, uint8_t len) { (void)ratio; (void)len; tones++; }
 void mz_delay(void) {}

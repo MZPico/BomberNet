@@ -185,7 +185,8 @@ void clear_buffers(void);
 #define KEY_RIGHT 0x04
 #define KEY_LEFT  0x08
 #define KEY_SPACE 0x10
-uint8_t mz_keys(void);                        /* keyboard set A: cursor keys + SPACE */
+extern uint8_t kbd_fire_cr;                   /* 1: keyboard set A fires with CR instead of SPACE */
+uint8_t mz_keys(void);                        /* keyboard set A: cursor keys + SPACE (or CR) */
 uint8_t mz_keys_b(void);                      /* keyboard set B: W A S D + E */
 uint8_t mz_joy(uint8_t n);                    /* joystick 0/1 as a key mask (type from joy_type) */
 uint8_t mz_joy800(uint8_t n);                 /* raw read of port F0h/F1h as a key mask */
