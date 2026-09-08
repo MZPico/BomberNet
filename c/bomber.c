@@ -274,7 +274,7 @@ static void title_menu(void) {
   menu_row(1, "PLAYERS", 0, num, menu_item == 1);
   menu_row(2, "JOYSTICK", 0, joy_names[joy_type], menu_item == 2);
   for (i = 0; i < menu_players; i++)
-    menu_row(3 + i, "PLAYER", i + 1,
+    menu_row(3 + i, "PLAYER", C_PLAYER_DIGIT(i),
              (menu_inputs[i] == INPUT_KBD_A && menu_fire_cr) ? kbd_a_cr_name : input_names[menu_inputs[i]],
              menu_item == 3 + i);
 
