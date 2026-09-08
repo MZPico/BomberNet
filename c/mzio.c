@@ -480,17 +480,11 @@ fs_put:                     ; A = logical code, HL = shadow cell (still old)
     push hl
     ld   e,a
     ld   d,0
-    ld   b,a
+    ld   hl,_game_table
     ld   a,(_title_mode)
     or   a
-    jr   z,fs_game
-    ld   a,b
-    cp   0x5b               ; title table covers 00h..5Ah (Z)
-    jr   nc,fs_game
+    jr   z,fs_lookup
     ld   hl,_title_table
-    jr   fs_lookup
-fs_game:
-    ld   hl,_game_table
 fs_lookup:
     add  hl,de
     add  hl,de

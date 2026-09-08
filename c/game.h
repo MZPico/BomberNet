@@ -39,8 +39,8 @@
 #define C_BOX_V      0x0d
 #define C_BOX_TL     0x1c
 #define C_BOX_TR     0x1d
-#define C_BOX_BL     0x2d
-#define C_BOX_BR     0x2e
+#define C_BOX_BL     0xac
+#define C_BOX_BR     0xad
 #define C_ENEMY_BASE 0xc0   /* + type*4 + anim */
 #define C_FIRE       0xe0   /* >= 0xe0 is fire */
 
@@ -145,7 +145,7 @@ extern ftimer_t tmr_player_anim, tmr_enemy_die, tmr_enemy_move, tmr_time;
 extern uint8_t draw_buf[SCREEN_CELLS];
 extern uint8_t map_layer[SCREEN_CELLS];
 extern uint8_t shadow_vram[SCREEN_CELLS];
-extern uint8_t title_mode;   /* 1: codes < 0x5b use title_table */
+extern uint8_t title_mode;   /* 1: flush translates through title_table (all 256 codes) */
 
 extern const uint16_t row_off[SCREEN_H];   /* y * 40 */
 #ifdef HOST

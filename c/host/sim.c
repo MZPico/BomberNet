@@ -121,7 +121,7 @@ void flush_screen(void) {
     const uint8_t *t;
     draw_buf[i] = C_SPACE;
     if (a == shadow_vram[i]) continue;
-    t = (title_mode && a < 0x5b) ? title_table + a * 2 : game_table + a * 2;
+    t = (title_mode ? title_table : game_table) + a * 2;
     shadow_vram[i] = a;
     vram[i] = t[0];
     vattr[i] = t[1];

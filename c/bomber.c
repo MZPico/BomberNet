@@ -264,15 +264,15 @@ static void title_menu(void) {
   for (i = 0; i < menu_players; i++)
     menu_row(3 + i, "PLAYER", i + 1, input_names[menu_inputs[i]], menu_item == 3 + i);
 
-  title_text(draw_at(5, 19), "HI-SCORE");
-  print_num5(draw_at(14, 19), hi_score);
-  title_text(draw_at(22, 19), "SCORE");
-  print_num5(draw_at(28, 19), players[0].score);
-  title_ticks++;
-  if (title_ticks & 0x10) title_text_hl(draw_at(8, 21), "PUSH SPACE TO START GAME");
-  p = draw_at(9, 22);
+  p = draw_at(9, 18);
   p[0] = T_ARR_UP; p[1] = T_ARR_DOWN; title_text(p + 3, "SELECT");
   p[12] = T_ARR_LEFT; p[13] = T_ARR_RIGHT; title_text(p + 15, "CHANGE");
+  title_text(draw_at(5, 20), "HI-SCORE");
+  print_num5(draw_at(14, 20), hi_score);
+  title_text(draw_at(22, 20), "SCORE");
+  print_num5(draw_at(28, 20), players[0].score);
+  title_ticks++;
+  if (title_ticks & 0x10) title_text_hl(draw_at(8, 22), "PUSH SPACE TO START GAME");
 }
 
 static void title_frame(void) {
