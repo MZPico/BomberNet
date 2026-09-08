@@ -24,7 +24,7 @@ static uint8_t last_lives, last_stage, last_enemies;
 static int scenario;
 static uint8_t scn_keys(void) {
   if (title_mode) {
-    if (frames == 2) return KEY_DOWN;                     /* MODE -> deathmatch */
+    if (frames == 2) return KEY_RIGHT;                    /* MODE -> deathmatch */
     return (frames >= 6 && frames < 9) ? KEY_SPACE : 0;
   }
   if (frames == 12) {                                     /* place P2 next to P1, open a lane down */
