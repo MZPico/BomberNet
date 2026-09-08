@@ -69,10 +69,21 @@ static uint8_t near_player(uint8_t gx, uint8_t gy) {
   return 0;
 }
 
+static const uint8_t dm_corners[MAX_PLAYERS][2] = { {0, 0}, {18, 10}, {18, 0}, {0, 10} };
+
 void generate_map(void) {
   uint8_t i, gx, gy, sx, sy, n;
   for (i = 0; i < MAX_PLAYERS; i++) {
     if (!players[i].active) continue;
+    if (game_mode == GAME_DM) {              /* fixed corners, opposite for P1/P2 */
+      gx = dm_corners[i][0]; gy = dm_corners[i][1];
+      sx = gx; sy = gy;
+      cell_to_screen(&sx, &sy);
+      pgx[i] = gx; pgy[i] = gy;
+      players[i].x = sx;
+      players[i].y = sy;
+      continue;
+    }
     for (;;) {
       random_cell(&gx, &gy);
       if (gx < 2 || gx > 16 || gy < 2 || gy > 8) continue;

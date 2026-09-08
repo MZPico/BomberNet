@@ -90,6 +90,11 @@ typedef struct {
 
 #define MAX_PLAYERS 4
 
+/* game modes */
+#define GAME_COOP 0
+#define GAME_DM   1         /* deathmatch: no enemies, last one standing */
+#define DM_ROUNDS_TO_WIN 3
+
 typedef struct {
   uint8_t active;      /* takes part in the match */
   uint8_t input;       /* INPUT_* */
@@ -102,12 +107,15 @@ typedef struct {
   uint8_t lives;
   uint16_t score;
   uint8_t tile_a, tile_b;   /* standing frames: logical tile codes */
+  uint8_t kills;       /* deathmatch: kills this round */
+  uint8_t wins;        /* deathmatch: rounds won */
 } player_t;
 
 /* ---- globals (game.c) ---- */
 extern player_t players[MAX_PLAYERS];
 extern uint8_t player_count;
 extern uint8_t menu_players;              /* chosen on the title screen */
+extern uint8_t menu_mode, game_mode;      /* GAME_COOP / GAME_DM */
 extern uint16_t hi_score, time_left;
 extern uint8_t stage;
 extern uint8_t enemies_left, enemy_period;
@@ -140,6 +148,7 @@ uint8_t is_2x2_clear(const uint8_t *p);       /* returns 0x20 or the blocking co
 void print_string(uint8_t *p, const char *s);
 void print_num2(uint8_t *p, uint8_t v);
 void print_num5(uint8_t *p, uint16_t v);       /* 5 digits + fixed trailing 0 */
+void hud_text(uint8_t *p, const char *s);      /* ASCII A-Z/0-9/space -> game-mode glyphs */
 void clear_map(void);
 void clear_buffers(void);
 
@@ -194,6 +203,7 @@ void draw_bombs(void);
 /* ---- player.c ---- */
 void players_setup(uint8_t count);            /* activate players 0..count-1 with default inputs */
 void players_stage_reset(void);               /* standing, alive, at their start positions */
+void player_killed(player_t *p);              /* deathmatch credit when a player starts dying */
 void draw_players(void);
 void players_anim_step(void);
 void check_pickups(void);

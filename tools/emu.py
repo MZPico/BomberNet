@@ -82,11 +82,19 @@ class Emu:
 
     def run_until(self, addr, max_cycles=50_000_000):
         """Start running until PC == addr and wait for the CPU to stop there."""
-        self.data('run_until_addr', {'addr': addr, 'max_cycles': max_cycles})
+        for _ in range(200):
+            r = self.call('run_until_addr', {'addr': addr, 'max_cycles': max_cycles}, check=False)
+            if r.get('success'):
+                break
+            time.sleep(0.005)                  # previous run not finished yet
+        else:
+            raise RuntimeError('run_until_addr refused: ' + str(r.get('error')))
         while True:
-            r = self.call('get_registers', check=False)   # fails while running
-            if r.get('success') and r['data']['PC'] == addr:
-                return r['data']
+            s = self.call('get_state', check=False)      # fails while running
+            if s.get('success') and not s['data'].get('running'):
+                r = self.call('get_registers', check=False)
+                if r.get('success') and r['data']['PC'] == addr:
+                    return r['data']
             time.sleep(0.001)
 
     def cycles(self):

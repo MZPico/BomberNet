@@ -28,6 +28,8 @@ void players_setup(uint8_t count) {
     p->score = 0;
     p->lives = 3;
     p->keys = 0;
+    p->kills = 0;
+    p->wins = 0;
   }
 }
 
@@ -39,7 +41,8 @@ void players_stage_reset(void) {
     p->state = P_STAND1;
     p->death_tick = 0;
     p->life_lost = 0;
-    if (p->active && p->lives == 0) p->active = 0;   /* out of the match */
+    p->kills = 0;
+    if (game_mode == GAME_COOP && p->active && p->lives == 0) p->active = 0;   /* out of the match */
   }
 }
 
@@ -47,7 +50,24 @@ void players_stage_reset(void) {
 static void put_player_char(player_t *p, uint8_t *c, uint8_t code) {
   uint8_t old = *c;
   *c = code;
-  if (old >= C_ENEMY_BASE && p->state < P_DYING) p->state = P_DYING;
+  if (old >= C_ENEMY_BASE && p->state < P_DYING) {
+    p->state = P_DYING;
+    if (old >= C_FIRE) player_killed(p);
+  }
+}
+
+/* Deathmatch scoring: the owner of the closest exploding bomb gets the kill
+ * (+10, shown as 100); blowing yourself up costs 5. */
+void player_killed(player_t *p) {
+  uint8_t k;
+  if (game_mode != GAME_DM) return;
+  k = bomb_owner_near(p->x, p->y);
+  if (&players[k] == p) {
+    if (p->score >= 5) p->score -= 5;
+    return;
+  }
+  players[k].kills++;
+  players[k].score += 10;
 }
 
 /* state 0/1 standing, 6..13 dying */

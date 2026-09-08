@@ -73,6 +73,22 @@ void print_num5(uint8_t *p, uint16_t v) {
   *p = 0;                       /* the original always shows a trailing 0 */
 }
 
+/* game-mode glyph for each letter A..Z (0 = not available) */
+static const uint8_t hud_letters[26] = {
+  0x95, 0x15, 0x11, 0x97, 0x14, 0x00, 0x31, 0x98, 0x99, 0x00, 0x8f, 0x93, 0x94,
+  0x17, 0x12, 0x92, 0x00, 0x13, 0x10, 0x30, 0x18, 0x9e, 0x8e, 0x9f, 0x96, 0x00,
+};
+
+void hud_text(uint8_t *p, const char *s) {
+  while (*s) {
+    uint8_t c = (uint8_t)*s++;
+    if (c >= 'A' && c <= 'Z') c = hud_letters[c - 'A'];
+    else if (c >= '0' && c <= '9') c -= '0';
+    else c = C_SPACE;
+    *p++ = c;
+  }
+}
+
 void clear_map(void) {
   uint16_t i;
   for (i = 0; i < SCREEN_CELLS; i++) map_layer[i] = C_SPACE;

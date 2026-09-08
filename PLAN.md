@@ -74,7 +74,7 @@ menu selects 2 players, P1 moves on cursor keys, P2 moves W/A/S/D and drops a
 bomb with E (owner 1), VRAM rows checked as text (the emulator's PNG capture of
 text-heavy screens is unreliable, so rows are dumped from D000h instead).
 
-## Phase 2 - deathmatch mode
+## Phase 2 - deathmatch mode - DONE 2026-09-08
 
 1. Arena variant: optional enemies off, symmetric spawn corners, brick count
    parameter, round timer from `time_left`.
@@ -82,6 +82,19 @@ text-heavy screens is unreliable, so rows are dumped from D000h instead).
    match score; rematch screen.
 3. Scoring: kill = points to the bomb owner, self-kill = penalty.
 4. Test with the host simulator using scripted inputs for 2 bots.
+
+Result: MODE on the title toggles with cursor UP/DOWN (deathmatch forces 2
+players). Arena = the normal map without monsters, bonus or exit; players start
+in opposite corners. A kill (fire from another player's bomb, decided by the
+closest exploding bomb) gives +100 on the score and a kill; self-kill costs 50.
+A round ends when at most one player is left alive (after the death animation)
+or when the timer runs out; winner = last one standing, else most kills, else
+draw. Result message in the arena ("PLAYER n WINS THE ROUND / THE MATCH",
+"DRAW"), fire continues; first to 3 rounds wins the match and the game returns
+to the title. HUD shows round wins instead of lives. Letters W K V X were added
+to the game-mode table (8Eh 8Fh 9Eh 9Fh) and `hud_text` prints ASCII messages.
+Verified in the emulator with a scripted round (P1 bombs P2 in the corner, runs
+clear): kill credited, P2 dies, message shown, wins=1, next round from corners.
 
 ## Phase 3 - joysticks and 4 players
 

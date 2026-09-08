@@ -53,6 +53,9 @@ for i, (ca, cb) in enumerate(colours):
 for i, ch in enumerate('PLMAYDHI'):
     gt[2 * (0x92 + i)] = ord(ch) - ord('A') + 1
     gt[2 * (0x92 + i) + 1] = 0x70
+for code, ch in ((0x8E, 'W'), (0x8F, 'K'), (0x9E, 'V'), (0x9F, 'X')):
+    gt[2 * code] = ord(ch) - ord('A') + 1
+    gt[2 * code + 1] = 0x70
 parts.append(carray('game_table', bytes(gt), 16,
                     'logical code -> (display code, attribute), game mode; original 2F4Fh, '
                     'A0h-BBh patched with player 2..4 sprites'))

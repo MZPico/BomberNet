@@ -218,8 +218,9 @@ What changed on purpose:
   quirks such as the exit restarting the stage) is kept, with comments marking the
   natural hook points for new features (walking animation, more bombs, blast range).
 
-Controls: player 1 cursor keys + SPACE, player 2 W/A/S/D + E; choose the player
-count on the title with cursor LEFT/RIGHT.
+Controls: player 1 cursor keys + SPACE, player 2 W/A/S/D + E; on the title choose the
+player count with cursor LEFT/RIGHT and the mode (COOP / DEATHMATCH) with UP/DOWN.
+Deathmatch: no monsters, corners start, first to 3 round wins; kills 100 points.
 
 Bugs fixed against the first C version, both found with the emulator: the BONUS and
 EXIT tiles were visible from the start (the original clears both flags after building

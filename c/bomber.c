@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "game.h"
 #include "data.h"
+#include <string.h>
 
 /* per stage: enemy count, enemy behaviour-cycle period; stage 5+ uses the last row */
 static const uint8_t stage_table[5][2] = {
@@ -16,6 +17,7 @@ static void load_stage_params(void) {
   uint8_t s = stage < 6 ? stage : 5;
   enemies_left = stage_table[s - 1][0];
   enemy_period = stage_table[s - 1][1];
+  if (game_mode == GAME_DM) enemies_left = 0;   /* arena: no monsters */
 }
 
 /* ---- HUD (row 24) ---- */
@@ -28,7 +30,7 @@ static void draw_hud_multi(void) {
     if (pl->score > hi_score) hi_score = pl->score;
     p[0] = C_HUD_P; p[1] = i + 1;
     print_num5(p + 3, pl->score);
-    p[10] = C_LIVES_ICON; p[11] = pl->lives;
+    p[10] = C_LIVES_ICON; p[11] = (game_mode == GAME_DM) ? pl->wins : pl->lives;
     p += 13;
   }
   p[0] = C_HUD_T;
@@ -152,12 +154,15 @@ static void title_menu(void) {
   menu_prev_keys = k;
   if ((edge & KEY_RIGHT) && menu_players < 2) menu_players++;
   if ((edge & KEY_LEFT) && menu_players > 1) menu_players--;
+  if (edge & (KEY_UP | KEY_DOWN)) menu_mode ^= 1;
+  if (menu_mode == GAME_DM && menu_players < 2) menu_players = 2;
   /* title mode: letters and 00h..09h digits are text, ':' '<' '>' and ASCII
    * digits would be logo block graphics; 23h/24h are the right/left arrows */
   p = draw_at(2, 21);
   print_string(p, "PLAYERS ");
   p[8] = 0x24; p[10] = menu_players; p[12] = 0x23;
-  print_string(p + 15, "MODE  COOP");
+  print_string(p + 15, menu_mode == GAME_DM ? "MODE  DEATHMATCH" : "MODE  COOP      ");
+  p[15 + 4] = 0x22; p[15 + 5] = 0x21;         /* up/down arrows */
   p = draw_at(2, 23);
   print_string(p, "P  CURSOR AND SPACE  P  WASD AND E");
   p[1] = 1; p[22] = 2;                      /* digit codes, not ASCII */
@@ -223,6 +228,10 @@ static void stage_start(void) {
   players_stage_reset();
   composite_map();
   bonus_present = exit_present = 0;   /* hidden until their brick burns (original 1268h) */
+  if (game_mode == GAME_DM) {         /* no items in the arena */
+    bonus_revealed = exit_revealed = 1;
+    exit_x = exit_y = 0;
+  }
   title_mode = 0;
 }
 
@@ -262,7 +271,80 @@ static uint8_t lose_lives(void) {
   return remaining;
 }
 
+/* ---- deathmatch ---- */
+
+/* 1 while more than one player is alive or someone is still dying */
+static uint8_t round_running(void) {
+  uint8_t i, alive = 0, dying = 0;
+  for (i = 0; i < MAX_PLAYERS; i++) {
+    player_t *p = &players[i];
+    if (!p->active) continue;
+    if (p->state < P_DYING) alive++;
+    else if (!p->life_lost) dying++;
+  }
+  return alive > 1 || dying;
+}
+
+/* winner index, or 0xff for a draw: last one standing, else most kills */
+static uint8_t round_winner(void) {
+  uint8_t i, best = 0xff, best_kills = 0, tie = 0, alive = 0, last = 0;
+  for (i = 0; i < MAX_PLAYERS; i++) {
+    player_t *p = &players[i];
+    if (!p->active) continue;
+    if (p->state < P_DYING) { alive++; last = i; }
+    if (p->kills > best_kills) { best_kills = p->kills; best = i; tie = 0; }
+    else if (p->kills == best_kills && best != 0xff) tie = 1;
+  }
+  if (alive == 1) return last;
+  return tie ? 0xff : best;
+}
+
+/* message in the middle of the arena until fire is pressed (min 40 frames) */
+static void show_message(const char *l1, const char *l2) {
+  uint8_t n = 40, i, any;
+  for (;;) {
+    frame_minimal();
+    hud_text(draw_at(8, 11), l1);
+    hud_text(draw_at(8, 12), l2);
+    input_poll();
+    any = 0;
+    for (i = 0; i < MAX_PLAYERS; i++)
+      if (players[i].active && (players[i].keys & KEY_SPACE)) any = 1;
+    if (n) n--;
+    else if (any) return;
+  }
+}
+
+static void run_deathmatch(void) {
+  char line[24];
+  uint8_t w, i;
+  players_setup(menu_players);
+  stage = 1;
+  for (;;) {
+    stage_start();
+    do { frame(); } while (round_running() && !timeout_flag);
+    idle_frames(10);
+    w = round_winner();
+    if (w == 0xff) {
+      show_message("      DRAW      ", "PRESS FIRE      ");
+    } else {
+      players[w].wins++;
+      strcpy(line, "PLAYER   WINS   ");
+      line[7] = '1' + w;
+      if (players[w].wins >= DM_ROUNDS_TO_WIN) {
+        show_message(line, "THE MATCH       ");
+        return;
+      }
+      show_message(line, "THE ROUND       ");
+    }
+    for (i = 0; i < MAX_PLAYERS; i++) players[i].keys = 0;
+    stage++;
+  }
+}
+
 static void run_game(void) {
+  game_mode = menu_mode;
+  if (game_mode == GAME_DM) { run_deathmatch(); return; }
   players_setup(menu_players);
   stage = 1;
   for (;;) {
