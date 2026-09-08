@@ -28,7 +28,7 @@ static void draw_hud_compact(void) {
   for (i = 0; i < player_count; i++) {
     player_t *pl = &players[i];
     if (pl->score > hi_score) hi_score = pl->score;
-    p[0] = i + 1;
+    p[0] = C_PLAYER_DIGIT(i);
     print_num4(p + 2, pl->score);
     p[7] = C_LIVES_ICON; p[8] = (game_mode == GAME_DM) ? pl->wins : pl->lives;
     p += 10;
@@ -49,7 +49,7 @@ static void draw_hud_multi(void) {
   for (i = 0; i < player_count; i++) {
     player_t *pl = &players[i];
     if (pl->score > hi_score) hi_score = pl->score;
-    p[0] = C_HUD_P; p[1] = i + 1;
+    p[0] = C_HUD_P; p[1] = C_PLAYER_DIGIT(i);
     print_num5(p + 3, pl->score);
     p[10] = C_LIVES_ICON; p[11] = (game_mode == GAME_DM) ? pl->wins : pl->lives;
     p += 13;
@@ -426,8 +426,11 @@ static void draw_box(void) {
 }
 
 static void box_line(uint8_t row, const char *s) {
-  uint8_t len = (uint8_t)strlen(s);
-  hud_text(draw_at(BOX_X + (BOX_W - len) / 2, row), s);
+  uint8_t len = (uint8_t)strlen(s), i;
+  uint8_t *p = draw_at(BOX_X + (BOX_W - len) / 2, row);
+  hud_text(p, s);
+  for (i = 0; i < len; i++)                 /* '1'..'4' after "PLAYER " in colour */
+    if (i >= 7 && s[i] >= '1' && s[i] <= '4' && s[i - 1] == ' ' && s[0] == 'P') p[i] = C_PLAYER_DIGIT(s[i] - '1');
 }
 
 /* framed message in the middle of the arena until fire is pressed (min 40 frames) */

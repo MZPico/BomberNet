@@ -39,6 +39,7 @@
 #define C_BOX_V      0x0d
 #define C_BOX_TL     0x1c
 #define C_BOX_TR     0x1d
+#define C_PLAYER_DIGIT(i) (player_digit_codes[i])   /* coloured '1'..'4' */
 #define C_BOX_BL     0xac
 #define C_BOX_BR     0xad
 #define C_ENEMY_BASE 0xc0   /* + type*4 + anim */
@@ -118,6 +119,7 @@ typedef struct {
 } player_t;
 
 /* ---- globals (game.c) ---- */
+extern const uint8_t player_digit_codes[MAX_PLAYERS];
 extern player_t players[MAX_PLAYERS];
 extern uint8_t player_count;
 extern uint8_t menu_players;              /* chosen on the title screen */

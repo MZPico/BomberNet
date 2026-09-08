@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include "game.h"
 
+const uint8_t player_digit_codes[MAX_PLAYERS] = {0xae, 0xaf, 0xbc, 0xbd};
 player_t players[MAX_PLAYERS];
 uint8_t player_count;
 uint8_t menu_players = 1;
