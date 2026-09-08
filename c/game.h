@@ -59,7 +59,7 @@ typedef struct {
 } enemy_t;
 
 /* bomb record */
-#define BOMB_SLOTS   5
+#define BOMB_SLOTS   8
 #define BOMB_FREE    0
 #define BOMB_TICK1   1      /* 1..4 ticking */
 #define BOMB_EXPLODE 5      /* 5..12 explosion phases */
@@ -122,6 +122,12 @@ extern player_t players[MAX_PLAYERS];
 extern uint8_t player_count;
 extern uint8_t menu_players;              /* chosen on the title screen */
 extern uint8_t menu_mode, game_mode;      /* GAME_COOP / GAME_DM */
+/* joystick types */
+#define JOY_NONE 0
+#define JOY_800  1          /* MZ-800/MZ-1500 digital sticks on ports F0h/F1h */
+#define JOY_1X03 2          /* MZ-700 (and MZ-1500) analogue MZ-1X03 on E008h, timed at VBLK */
+extern uint8_t joy_type;
+extern uint8_t joy_state[2];              /* MZ-1X03: key masks measured in the frame sync */
 extern uint16_t hi_score, time_left;
 extern uint8_t stage;
 extern uint8_t enemies_left, enemy_period;
@@ -154,6 +160,7 @@ uint8_t is_2x2_clear(const uint8_t *p);       /* returns 0x20 or the blocking co
 void print_string(uint8_t *p, const char *s);
 void print_num2(uint8_t *p, uint8_t v);
 void print_num5(uint8_t *p, uint16_t v);       /* 5 digits + fixed trailing 0 */
+void print_num4(uint8_t *p, uint16_t v);       /* 4 digits + fixed trailing 0 (compact HUD) */
 void hud_text(uint8_t *p, const char *s);      /* ASCII A-Z/0-9/space -> game-mode glyphs */
 void clear_map(void);
 void clear_buffers(void);
@@ -166,7 +173,10 @@ void clear_buffers(void);
 #define KEY_SPACE 0x10
 uint8_t mz_keys(void);                        /* keyboard set A: cursor keys + SPACE */
 uint8_t mz_keys_b(void);                      /* keyboard set B: W A S D + E */
-uint8_t mz_joy(uint8_t n);                    /* joystick 0/1 as a key mask (phase 3, returns 0 now) */
+uint8_t mz_joy(uint8_t n);                    /* joystick 0/1 as a key mask (type from joy_type) */
+uint8_t mz_joy800(uint8_t n);                 /* raw read of port F0h/F1h as a key mask */
+void mz_joy1x03_measure(void);                /* at the VBLK edge: fill joy_state[] for both sticks */
+void mz_wait_vblank(void);                    /* wait for the next VBLK falling edge (8255 PC7) */
 
 /* ---- input.c ---- */
 void input_poll(void);                        /* sample every active player's source into .keys */
@@ -177,8 +187,10 @@ void mz_delay(void);
 /* frame limiter: 8253 counter 1 runs at 15611 Hz; the original game frame
  * measured 58.6 ms (208k cycles) in play, i.e. 915 ticks */
 #define FRAME_TICKS 915
+#define FRAME_TICKS_VBLK 880                  /* then wait for the vblank edge: frame = 3 vblanks */
 void mz_timer_init(void);                     /* program counter 1, take first stamp */
-void mz_frame_sync(void);                     /* wait until FRAME_TICKS passed since last sync */
+void mz_frame_sync(uint16_t ticks);           /* wait until ticks passed since last sync */
+void frame_sync(void);                        /* limiter + joystick sampling (game.c) */
 void flush_screen(void);                      /* draw_buf -> VRAM diff, clears draw_buf */
 void composite_map(void);                     /* non-space map cells over draw_buf */
 

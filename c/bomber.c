@@ -21,10 +21,31 @@ static void load_stage_params(void) {
 }
 
 /* ---- HUD (row 24) ---- */
+/* 3-4 players: "n ddddd<man>c " per player (10 chars), time only with 3 */
+static void draw_hud_compact(void) {
+  uint8_t *p = draw_at(0, HUD_ROW);
+  uint8_t i;
+  for (i = 0; i < player_count; i++) {
+    player_t *pl = &players[i];
+    if (pl->score > hi_score) hi_score = pl->score;
+    p[0] = i + 1;
+    print_num4(p + 2, pl->score);
+    p[7] = C_LIVES_ICON; p[8] = (game_mode == GAME_DM) ? pl->wins : pl->lives;
+    p += 10;
+  }
+  if (player_count < 4) {
+    p[0] = C_HUD_T;
+    print_num5(p + 1, time_left);
+    p[6] = C_SPACE;
+    p[7] = C_ENEMY_ICON; p[8] = enemies_left;
+  }
+}
+
 /* multiplayer HUD: "P1 000000 <man>3  P2 000000 <man>3  T0970 <enemy>1 S01" */
 static void draw_hud_multi(void) {
   uint8_t *p = draw_at(0, HUD_ROW);
   uint8_t i;
+  if (player_count > 2) { draw_hud_compact(); return; }
   for (i = 0; i < player_count; i++) {
     player_t *pl = &players[i];
     if (pl->score > hi_score) hi_score = pl->score;
@@ -146,14 +167,21 @@ static void title_init(void) {
 }
 
 /* menu line on the title: player count (LEFT/RIGHT) and the P2 keys */
-static uint8_t menu_prev_keys;
+static uint8_t menu_prev_keys, menu_prev_keys_b;
 
 static void title_menu(void) {
   uint8_t k = mz_keys(), *p;
   uint8_t edge = k & ~menu_prev_keys;
   menu_prev_keys = k;
-  if ((edge & KEY_RIGHT) && menu_players < 2) menu_players++;
+  uint8_t kb = mz_keys_b(), maxp;
+  uint8_t edge_b = kb & ~menu_prev_keys_b;
+  menu_prev_keys_b = kb;
+  if (edge_b & KEY_UP) joy_type = (joy_type + 1) % 3;
+  if (edge_b & KEY_DOWN) joy_type = (joy_type + 2) % 3;
+  maxp = joy_type == JOY_NONE ? 2 : 4;
+  if ((edge & KEY_RIGHT) && menu_players < maxp) menu_players++;
   if ((edge & KEY_LEFT) && menu_players > 1) menu_players--;
+  if (menu_players > maxp) menu_players = maxp;
   if (edge & (KEY_UP | KEY_DOWN)) menu_mode ^= 1;
   if (menu_mode == GAME_DM && menu_players < 2) menu_players = 2;
   /* title mode: letters and 00h..09h digits are text, ':' '<' '>' and ASCII
@@ -166,6 +194,12 @@ static void title_menu(void) {
   p = draw_at(2, 23);
   print_string(p, "P  CURSOR AND SPACE  P  WASD AND E");
   p[1] = 1; p[22] = 2;                      /* digit codes, not ASCII */
+  p = draw_at(2, 20);
+  print_string(p, joy_type == JOY_800 ? "JOYSTICK MZ 800  " :
+                  joy_type == JOY_1X03 ? "JOYSTICK MZ 1X03 " : "JOYSTICK NONE    ");
+  p[17] = 0x22; p[18] = 0x21;              /* W/S arrows */
+  print_string(p + 20, "P  P  JOY");
+  p[21] = 3; p[24] = 4;
 }
 
 static void title_frame(void) {
@@ -185,7 +219,7 @@ static void title_frame(void) {
   print_string(draw_at(6, 17), str_box3_t);
   print_string(draw_at(6, 18), str_box3_m);
   print_string(draw_at(6, 19), str_box3_b);
-  print_string(draw_at(6, 20), str_down);
+  print_string(draw_at(6, 20), "    ");  /* row 20 now holds the joystick line */
   print_string(draw_at(8, 22), str_push_space);
   print_string(draw_at(2, 24), str_copyright);
   print_string(draw_at(4, 7), str_legend_row7);

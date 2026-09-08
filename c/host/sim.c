@@ -58,8 +58,12 @@ uint8_t mz_keys_b(void) { return scenario ? 0 : (uint8_t)(rand() & 0x1f); }
 void mz_tone(uint16_t ratio, uint8_t len) { (void)ratio; (void)len; tones++; }
 void mz_delay(void) {}
 uint8_t mz_joy(uint8_t n) { (void)n; return 0; }
+uint8_t mz_joy800(uint8_t n) { (void)n; return 0; }
+void mz_joy1x03_measure(void) {}
+void mz_wait_vblank(void) {}
+void frame_sync(void) {}
 void mz_timer_init(void) {}
-void mz_frame_sync(void) {}
+void mz_frame_sync(uint16_t t) { (void)t; }
 
 static char glyph(uint8_t c) {
   if (c == C_SPACE) return ' ';

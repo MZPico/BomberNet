@@ -89,6 +89,19 @@ void hud_text(uint8_t *p, const char *s) {
   }
 }
 
+void print_num4(uint8_t *p, uint16_t v) {
+  uint8_t i;
+  if (v > 9999) v = 9999;
+  for (i = 1; i < 4; i++) {
+    uint16_t d = pow10[i];
+    uint8_t q = 0;
+    while (v >= d) { v -= d; q++; }
+    *p++ = q;
+  }
+  *p++ = (uint8_t)v;
+  *p = 0;
+}
+
 void clear_map(void) {
   uint16_t i;
   for (i = 0; i < SCREEN_CELLS; i++) map_layer[i] = C_SPACE;

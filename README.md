@@ -221,6 +221,8 @@ What changed on purpose:
 Controls: player 1 cursor keys + SPACE, player 2 W/A/S/D + E; on the title choose the
 player count with cursor LEFT/RIGHT and the mode (COOP / DEATHMATCH) with UP/DOWN.
 Deathmatch: no monsters, corners start, first to 3 round wins; kills 100 points.
+Joysticks: W/S on the title cycle NONE / MZ-800 (ports F0h/F1h) / MZ-1X03 (MZ-700 analogue,
+E008h timed at VBLK); players 3 and 4 use joystick 1 and 2. Up to 4 players with a joystick type set.
 
 Bugs fixed against the first C version, both found with the emulator: the BONUS and
 EXIT tiles were visible from the start (the original clears both flags after building

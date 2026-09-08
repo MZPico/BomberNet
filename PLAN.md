@@ -96,7 +96,7 @@ to the game-mode table (8Eh 8Fh 9Eh 9Fh) and `hud_text` prints ASCII messages.
 Verified in the emulator with a scripted round (P1 bombs P2 in the corner, runs
 clear): kill credited, P2 dies, message shown, wins=1, next round from corners.
 
-## Phase 3 - joysticks and 4 players
+## Phase 3 - joysticks and 4 players - DONE 2026-09-08 (MZ-1X03 untested on hardware)
 
 1. MZ-800 joystick ports F0h/F1h (`IN`): verify the bit layout on mz800emu
    (`input_send_joystick`) and document it; a plain MZ-700 has no joystick
@@ -106,6 +106,23 @@ clear): kill credited, P2 dies, message shown, wins=1, next round from corners.
 4. Performance pass: profile a 4-player frame in the emulator; keep the
    frame under 915 ticks (candidates: sprite drawing in asm, HUD only when
    values change).
+
+Result: joystick type on the title (W/S cycle NONE / MZ 800 / MZ 1X03).
+MZ-800/MZ-1500 digital sticks are read on ports F0h/F1h with 8255 port A bit
+5/6 lowered for the read (`mz_joy800`). The MZ-700's MZ-1X03 analogue sticks
+(E008h bits 1..4) are measured once per frame right after the VBLK falling
+edge: 64 samples ~105 T apart, low count < 22 = left/up, > 46 = right/down,
+switches sampled during display; with that type the frame limiter targets 880
+ticks and then waits for the vblank edge, so frames are exactly 3 vblanks.
+Players 3/4 default to JOY1/JOY2 (max players 4 only with a joystick type
+selected); bomb slots 8; compact HUD for 3-4 players ("n dddd0<man>c", time
+shown only with 3). Verified in mz800emu with `[JOY] joyN_type = NUM_KEYPAD`
+in the private config: player 3 moves on the emulated stick and drops a bomb
+(owner 2). Frame cost in 4-player deathmatch: 174k cycles average (49 ms) with
+peaks to 262k during multiple explosions, against a 208k budget; average fits,
+peaks stretch the frame - the blast code is the candidate for an asm pass.
+The MZ-1X03 path cannot be exercised in the MZ-800 emulator build; it needs a
+real MZ-700 (or the mz700 emulator build) to calibrate the thresholds.
 
 ## Phase 4 - determinism harness (prerequisite for network)
 

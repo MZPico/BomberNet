@@ -6,6 +6,8 @@ player_t players[MAX_PLAYERS];
 uint8_t player_count;
 uint8_t menu_players = 1;
 uint8_t menu_mode = GAME_COOP, game_mode = GAME_COOP;
+uint8_t joy_type = JOY_NONE;
+uint8_t joy_state[2];
 uint16_t hi_score, time_left;
 uint8_t stage;
 uint8_t enemies_left, enemy_period;
@@ -50,6 +52,20 @@ void tick_timers(void) {
   tick_timer(&tmr_player_anim);
   tick_timer(&tmr_enemy_move);
   tick_timer(&tmr_time);
-  mz_frame_sync();
+  frame_sync();
   flush_screen();
 }
+
+#ifndef HOST
+/* Frame limiter. With an MZ-1X03 the frame is aligned to every 3rd vblank
+ * (60 ms) because the stick pulses can only be timed from the VBLK edge. */
+void frame_sync(void) {
+  if (joy_type == JOY_1X03) {
+    mz_frame_sync(FRAME_TICKS_VBLK);
+    mz_wait_vblank();
+    mz_joy1x03_measure();
+  } else {
+    mz_frame_sync(FRAME_TICKS);
+  }
+}
+#endif

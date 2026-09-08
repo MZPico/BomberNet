@@ -122,8 +122,190 @@ kb_5:
   __endasm;
 }
 
-/* Joysticks arrive in phase 3 (MZ-800 ports F0h/F1h). */
-uint8_t mz_joy(uint8_t n) { (void)n; return 0; }
+/* ---- joysticks ----
+ * MZ-800 / MZ-1500: ports F0h (joy 1) and F1h (joy 2), active low:
+ * bit0 up, bit1 down, bit2 left, bit3 right, bit4 fire. The lines are only
+ * driven while 8255 port A bit 5 (joy 1) / bit 6 (joy 2) is low; keyboard
+ * strobes leave them high, so lower the bit around the read. */
+uint8_t mz_joy800(uint8_t n) __naked {
+  __asm
+    push iy
+    ld   iy,4
+    add  iy,sp
+    ld   a,(iy+0)
+    or   a
+    jr   nz,j8_two
+    ld   a,0xdf             ; PA bit5 low: joy 1
+    ld   (0xe000),a
+    nop
+    nop
+    in   a,(0xf0)
+    jr   j8_got
+j8_two:
+    ld   a,0xbf             ; PA bit6 low: joy 2
+    ld   (0xe000),a
+    nop
+    nop
+    in   a,(0xf1)
+j8_got:
+    ld   b,a
+    ld   a,0xff
+    ld   (0xe000),a         ; lines back to idle
+    ld   a,b
+    cpl                     ; 1 = active
+    ld   c,a
+    xor  a
+    bit  0,c
+    jr   z,j8_1
+    or   0x01               ; KEY_UP
+j8_1:
+    bit  1,c
+    jr   z,j8_2
+    or   0x02               ; KEY_DOWN
+j8_2:
+    bit  3,c
+    jr   z,j8_3
+    or   0x04               ; KEY_RIGHT
+j8_3:
+    bit  2,c
+    jr   z,j8_4
+    or   0x08               ; KEY_LEFT
+j8_4:
+    bit  4,c
+    jr   z,j8_5
+    or   0x10               ; KEY_SPACE (fire 1)
+j8_5:
+    ld   l,a
+    ld   h,0
+    pop  iy
+    ret
+  __endasm;
+}
+
+uint8_t mz_joy(uint8_t n) {
+  if (joy_type == JOY_800) return mz_joy800(n);
+  if (joy_type == JOY_1X03) return joy_state[n & 1];
+  return 0;
+}
+
+/* VBLK is 8255 port C bit 7 (E002h): high during display, low in vblank. */
+void mz_wait_vblank(void) __naked {
+  __asm
+wv_disp:
+    ld   a,(0xe002)
+    bit  7,a
+    jr   z,wv_disp          ; still in vblank: wait for display
+    ld   a,(0xe008)
+    cpl
+    ld   (j13_sw),a         ; MZ-1X03 switches (1 = pressed) while VBLK is high
+wv_vbl:
+    ld   a,(0xe002)
+    bit  7,a
+    jr   nz,wv_vbl          ; display: wait for the falling edge
+    ret
+  __endasm;
+}
+
+/* MZ-1X03 on E008h bits 1..4 (active low). Call right after the VBLK
+ * falling edge: switches were sampled during display, then each axis holds
+ * its bit low for 68 + 28*pos T-states (pos 0..255, 128 = centre). The bit
+ * is sampled 64 times, about 105 T-states apart (full scale ~7200 T), so the
+ * count of low samples is ~pos/3.75: < 22 = left/up, > 46 = right/down.
+ * bit1 = X stick 1, bit2 = Y stick 1, bit3 = X stick 2, bit4 = Y stick 2;
+ * in display the same bits are SW1/SW2 of stick 1 and SW1/SW2 of stick 2. */
+void mz_joy1x03_measure(void) __naked {
+  __asm
+    push ix
+    ld   a,(j13_sw)         ; switches sampled by the display-phase probe below
+    ld   ixl,a
+    ld   b,64
+    ld   c,0                ; low count X1
+    ld   d,0                ; Y1
+    ld   e,0                ; X2
+    ld   h,0                ; Y2
+j13_loop:
+    ld   a,(0xe008)
+    bit  1,a
+    jr   nz,j13_a
+    inc  c
+j13_a:
+    bit  2,a
+    jr   nz,j13_b
+    inc  d
+j13_b:
+    bit  3,a
+    jr   nz,j13_c
+    inc  e
+j13_c:
+    bit  4,a
+    jr   nz,j13_d
+    inc  h
+j13_d:
+    djnz j13_loop
+    ; stick 1
+    ld   a,ixl
+    and  0x02               ; SW1 stick 1 -> fire
+    ld   l,0
+    jr   z,j13_s1f
+    ld   l,0x10
+j13_s1f:
+    ld   a,c
+    cp   22
+    jr   nc,j13_s1r
+    set  3,l                ; KEY_LEFT
+    jr   j13_s1y
+j13_s1r:
+    cp   47
+    jr   c,j13_s1y
+    set  2,l                ; KEY_RIGHT
+j13_s1y:
+    ld   a,d
+    cp   22
+    jr   nc,j13_s1d
+    set  0,l                ; KEY_UP
+    jr   j13_s1done
+j13_s1d:
+    cp   47
+    jr   c,j13_s1done
+    set  1,l                ; KEY_DOWN
+j13_s1done:
+    ld   a,l
+    ld   (_joy_state),a
+    ; stick 2
+    ld   a,ixl
+    and  0x08               ; SW1 stick 2 -> fire
+    ld   l,0
+    jr   z,j13_s2f
+    ld   l,0x10
+j13_s2f:
+    ld   a,e
+    cp   22
+    jr   nc,j13_s2r
+    set  3,l
+    jr   j13_s2y
+j13_s2r:
+    cp   47
+    jr   c,j13_s2y
+    set  2,l
+j13_s2y:
+    ld   a,h
+    cp   22
+    jr   nc,j13_s2d
+    set  0,l
+    jr   j13_s2done
+j13_s2d:
+    cp   47
+    jr   c,j13_s2done
+    set  1,l
+j13_s2done:
+    ld   a,l
+    ld   (_joy_state+1),a
+    pop  ix
+    ret
+j13_sw:
+    defb 0
+  __endasm;
+}
 
 /* mz_tone(ratio, len): RATIO=ratio, MSTA, busy loop len*256, MSTP. */
 void mz_tone(uint16_t ratio, uint8_t len) __naked {
@@ -178,9 +360,15 @@ void mz_timer_init(void) __naked {
   __endasm;
 }
 
-/* elapsed = (prev - now) & 0xffff (down counter); spin until >= FRAME_TICKS */
-void mz_frame_sync(void) __naked {
+/* mz_frame_sync(ticks): elapsed = (prev - now) & 0xffff (down counter); spin until >= ticks */
+void mz_frame_sync(uint16_t ticks) __naked {
   __asm
+    push iy
+    ld   iy,4
+    add  iy,sp
+    ld   c,(iy+0)
+    ld   b,(iy+1)
+    ld   (fsync_ticks),bc
 fsync_loop:
     ld   a,0x40             ; latch counter 1
     ld   (0xe007),a
@@ -191,13 +379,16 @@ fsync_loop:
     ld   hl,(fsync_prev)
     or   a
     sbc  hl,de              ; HL = prev - now (mod 65536)
-    ld   bc,FRAME_TICKS
+    ld   bc,(fsync_ticks)
     or   a
     sbc  hl,bc
     jr   c,fsync_loop       ; not yet
     ld   (fsync_prev),de
+    pop  iy
     ret
 fsync_prev:
+    defw 0
+fsync_ticks:
     defw 0
   __endasm;
 }
