@@ -281,12 +281,15 @@ static void title_menu(void) {
   p = draw_at(9, 19);
   p[0] = T_ARR_UP; p[1] = T_ARR_DOWN; title_text(p + 3, "SELECT");
   p[12] = T_ARR_LEFT; p[13] = T_ARR_RIGHT; title_text(p + 15, "CHANGE");
-  title_text(draw_at(5, 21), "HI-SCORE");
-  print_num5(draw_at(14, 21), hi_score);
-  title_text(draw_at(22, 21), "SCORE");
-  print_num5(draw_at(28, 21), players[0].score);
+  title_text(draw_at(5, 20), "HI-SCORE");
+  print_num5(draw_at(14, 20), hi_score);
+  title_text(draw_at(22, 20), "SCORE");
+  print_num5(draw_at(28, 20), players[0].score);
   title_ticks++;
-  if (title_ticks & 0x10) title_text_hl(draw_at(8, 23), "PUSH SPACE TO START GAME");
+  if (title_ticks & 0x10) title_text_hl(draw_at(8, 21), "PUSH SPACE TO START GAME");
+  p = draw_at(2, 23);
+  title_text(p, "COPYRIGHT  C  2026  MZPICO");
+  p[10] = 0x17; p[12] = 0x18;               /* the original's "(" ")" glyphs */
 }
 
 static void title_frame(void) {
