@@ -231,6 +231,17 @@ the map), and a lone dying enemy never disappeared because `tmr_enemy_die` was t
 twice per frame (the original ticks only four timers globally; `tmr_explode` and
 `tmr_enemy_die` are advanced by their users).
 
+Network play (phase 6): with an MZPico that has the NET extension (or mz800emu with
+`[UNICARD] mzpico_mode = 1`), the title shows a NETWORK row: HOST creates a room and
+shows its 4-letter code, JOIN asks for a code (UP/DOWN letter, LEFT/RIGHT position,
+SPACE join, E cancel). One local player per device (the LOCAL row picks its input);
+mode and player count come from the host. Both press SPACE in the lobby to ready up;
+the match is lockstep with 2 frames of input delay, hashes are compared every 16
+frames and a desync or a dropped peer ends the match with a message. The reference
+relay is `relay/relay.py` (WebSocket 8765, JSON lines TCP 8766); `tools/nettest.py`
+and `tools/lockstep_test.py` run two headless emulators through it. Protocol:
+`docs/net-protocol.md`.
+
 Determinism harness (phase 4): record a bot session on the host and replay it on the
 host or on the Z80 build in the emulator, comparing the state hash every frame:
 
