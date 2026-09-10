@@ -179,6 +179,10 @@ Decisions:
   about 16 EXWAIT port accesses per frame (< 0.1 ms of the 58 ms frame).
   CREATE/JOIN wait for the relay and use the existing IN_PROGRESS rule.
 
+Generic form (game id, opaque settings, configurable slots and bytes per slot,
+NETMSG, spectators) is specified in `docs/net-protocol.md`; the table below is
+the original BomberNet-shaped draft kept for history.
+
 Vendor commands 0xA0-0xA7 (input -> output; WORD little-endian):
 
 | code | name | in -> out | purpose |

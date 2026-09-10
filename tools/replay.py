@@ -29,14 +29,13 @@ try:
     wr(S('_menu_mode'), [mode]); wr(S('_menu_players'), [nplayers]); wr(S('_menu_inputs'), inputs)
     wr(S('_match_seed'), [seed & 0xff, seed >> 8]); wr(S('_hash_period'), [hash_period])
     wr(S('_joy_type'), [1 if nplayers > 2 else 0]); wr(S('_replay_active'), [1])
-    e.press('SPACE')
-    for _ in range(4): e.run_until(F)
-    e.release('SPACE')
     TM, SH, RK, FN = S('_title_mode'), S('_state_hash'), S('_replay_keys'), S('_frame_no')
-    k = 0; mismatches = 0
+    e.press('SPACE')
+    k = 0; mismatches = 0; started = False
     while k < len(records):
         e.run_until(F)
         if rd(TM, 1)[0]: continue
+        if not started: started = True; e.release('SPACE')   # first game flush = record 0
         h = rd(SH, 2); h = h[0] | (h[1] << 8)
         rec = records[k]
         fh = rec[4] | (rec[5] << 8)
