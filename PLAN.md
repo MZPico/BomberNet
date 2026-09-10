@@ -147,6 +147,12 @@ Host replay: coop 3994 frames and deathmatch 2996 frames, 0 mismatches.
 
 ## Phase 5 - MZPico network transport (reworked 2026-09-10 for the Unicard protocol)
 
+References: the Unicard MZF repository protocol,
+https://www.sharpwiki.cz/doku.php?id=en:unicard:z15mzfrepo (ports 0x50/0x51,
+0x52/0x53 reserved and unused; commands documented up to 0x72 USARTBPS; the
+uc3 socket commands 0x80-0x89 appear only in mz800emu's `unimgr_commands.h`),
+so 0xA0-0xA7 collides with nothing documented.
+
 Context: the firmware replaced `pico_mgr` (ports 0x40-0x44) with a Unicard-
 compatible device on ports 0x50 (command/status) and 0x51 (data), see
 `~/src/MZPico-firmware/docs/unicard-migration-plan.md`: one command byte,
