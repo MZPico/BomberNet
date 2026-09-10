@@ -188,19 +188,20 @@ static void exec_cmd(void) {
   case cmdN_SEND: { uint16_t f = P16(0); if (!running) { set_err(8); break; } memset(fr_keys[f & 255], params[2], 4); if (fr_avail == 0xffff || f > fr_avail) fr_avail = f; break; }
   case cmdN_POLL: { uint16_t f = P16(0); if (!running) { set_err(8); break; } o[0] = (uint8_t)fr_avail; o[1] = (uint8_t)(fr_avail >> 8); if (fr_avail != 0xffff && f <= fr_avail) memcpy(o + 2, fr_keys[f & 255], 4); set_out(o, 6); break; }
   case cmdN_HASH: break;
-  case cmdN_MSG: if (params[1] == 0) { o[0] = 0xff; o[1] = 0; set_out(o, 2); } break;
+  case cmdN_MSG: break;
+  case cmdN_RECV: o[0] = 0xff; set_out(o, 34); break;
   default: set_err(1); break;
   }
 }
 static uint8_t param_len(uint8_t c) {
   switch (c) {
-  case cmdN_CREATE: return 7;   /* + settings, handled in uc_wr */
+  case cmdN_CREATE: return 23;
   case cmdN_JOIN: return 0xff;  /* string-terminated after 4 fixed bytes */
   case cmdN_READY: return 1;
-  case cmdN_SEND: return 3;
+  case cmdN_SEND: return 6;
   case cmdN_POLL: return 2;
   case cmdN_HASH: return 4;
-  case cmdN_MSG: return 2;      /* + data */
+  case cmdN_MSG: return 34;
   default: return 0;
   }
 }
@@ -214,8 +215,6 @@ void uc_wr(uint8_t d) {
   if (!stub_net || !(st4[0] & UC_ST_BUSY)) return;
   if (plen < sizeof(params)) params[plen++] = d;
   if (cmd == cmdN_JOIN) { if (plen > 4 && d < 0x20) exec_cmd(); return; }
-  if (cmd == cmdN_CREATE && plen == 7) need = 7 + params[6];
-  if (cmd == cmdN_MSG && plen == 2) need = 2 + params[1];
   if (plen >= need) exec_cmd();
 }
 uint8_t uc_rd(void) {

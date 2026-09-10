@@ -19,6 +19,7 @@
 #define cmdN_POLL    0xa6
 #define cmdN_HASH    0xa7
 #define cmdN_MSG     0xa8
+#define cmdN_RECV    0xa9
 #define UC_ST_BUSY   0x01
 #define UC_ST_OUTPUT 0x02
 #define UC_ST_INPROG 0x40

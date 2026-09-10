@@ -14,6 +14,40 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 app = FastAPI(title="MZPico NET relay")
 
+
+class Conn:
+    """One device connection: a WebSocket or a TCP JSON-lines stream (the
+    native mz800emu transport, port TCP_PORT), same protocol on both."""
+    def __init__(self, ws: WebSocket | None = None, reader=None, writer=None):
+        self.ws, self.reader, self.writer = ws, reader, writer
+
+    async def send(self, text: str):
+        if self.ws:
+            await self.ws.send_text(text)
+        else:
+            self.writer.write((text + "\n").encode())
+            await self.writer.drain()
+
+    async def recv(self) -> str:
+        if self.ws:
+            return await self.ws.receive_text()
+        line = await self.reader.readline()
+        if not line:
+            raise ConnectionError("eof")
+        return line.decode(errors="replace").strip()
+
+    async def close(self):
+        try:
+            if self.ws:
+                await self.ws.close()
+            else:
+                self.writer.close()
+        except Exception:
+            pass
+
+
+TCP_PORT = 8766
+
 ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ"
 ROOM_TTL = 60.0
 HISTORY = 256
@@ -22,7 +56,7 @@ E_BUILD, E_ROOM, E_NOROOM, E_NOLINK, E_PARAM, E_FULL = 6, 7, 8, 9, 10, 11
 
 
 class Member:
-    def __init__(self, ws: WebSocket, slot: int):
+    def __init__(self, ws: Conn, slot: int):
         self.ws, self.slot, self.ready = ws, slot, False
 
 
@@ -30,7 +64,7 @@ class Room:
     def __init__(self, game: int, build: int, slots: int, nbytes: int, settings: str, code: str):
         self.game, self.build, self.slots, self.nbytes, self.settings, self.code = game, build, slots, nbytes, settings, code
         self.members: dict[int, Member] = {}
-        self.spectators: list[WebSocket] = []
+        self.spectators: list[Conn] = []
         self.running = False
         self.seed = 0
         self.inputs: dict[int, dict[int, str]] = {}   # frame -> slot -> hex
@@ -43,13 +77,13 @@ class Room:
     def ready_mask(self):
         return sum(1 << m.slot for m in self.members.values() if m.ready)
 
-    async def broadcast(self, msg: dict, exclude: WebSocket | None = None):
+    async def broadcast(self, msg: dict, exclude: Conn | None = None):
         data = json.dumps(msg)
         for m in list(self.members.values()) + [Member(s, -1) for s in self.spectators]:
             if m.ws is exclude:
                 continue
             try:
-                await m.ws.send_text(data)
+                await m.ws.send(data)
             except Exception:
                 pass
 
@@ -79,24 +113,33 @@ async def reaper():
                 del rooms[key]
 
 
+async def tcp_client(reader, writer):
+    await session(Conn(reader=reader, writer=writer))
+
+
 @app.on_event("startup")
 async def _start():
     asyncio.create_task(reaper())
+    await asyncio.start_server(tcp_client, "127.0.0.1", TCP_PORT)
 
 
-async def err(ws: WebSocket, code: int, text: str):
-    await ws.send_text(json.dumps({"op": "error", "code": code, "text": text}))
+async def err(ws: Conn, code: int, text: str):
+    await ws.send(json.dumps({"op": "error", "code": code, "text": text}))
 
 
 @app.websocket("/net")
-async def net(ws: WebSocket):
-    await ws.accept()
+async def net(websocket: WebSocket):
+    await websocket.accept()
+    await session(Conn(ws=websocket))
+
+
+async def session(ws: Conn):
     room: Room | None = None
     me: Member | None = None
     try:
         while True:
             try:
-                msg = json.loads(await ws.receive_text())
+                msg = json.loads(await ws.recv())
             except json.JSONDecodeError:
                 await err(ws, E_PARAM, "bad json")
                 continue
@@ -116,7 +159,7 @@ async def net(ws: WebSocket):
                 rooms[(game, code)] = room
                 me = Member(ws, 0)
                 room.members[0] = me
-                await ws.send_text(json.dumps({"op": "room", "code": code, "slot": 0, "slots": slots, "bytes": nbytes, "settings": room.settings}))
+                await ws.send(json.dumps({"op": "room", "code": code, "slot": 0, "slots": slots, "bytes": nbytes, "settings": room.settings}))
                 await room.broadcast({"op": "members", "count": 1, "ready": 0})
 
             elif op == "join":
@@ -134,14 +177,14 @@ async def net(ws: WebSocket):
                 if len(r.members) >= r.slots or r.running:
                     r.spectators.append(ws)
                     room = r
-                    await ws.send_text(json.dumps({"op": "room", "code": code, "slot": -1, "slots": r.slots, "bytes": r.nbytes, "settings": r.settings, "spectator": True}))
+                    await ws.send(json.dumps({"op": "room", "code": code, "slot": -1, "slots": r.slots, "bytes": r.nbytes, "settings": r.settings, "spectator": True}))
                     continue
                 slot = min(s for s in range(r.slots) if s not in r.members)
                 me = Member(ws, slot)
                 r.members[slot] = me
                 room = r
                 room.touch()
-                await ws.send_text(json.dumps({"op": "room", "code": code, "slot": slot, "slots": r.slots, "bytes": r.nbytes, "settings": r.settings}))
+                await ws.send(json.dumps({"op": "room", "code": code, "slot": slot, "slots": r.slots, "bytes": r.nbytes, "settings": r.settings}))
                 await room.broadcast({"op": "members", "count": len(room.members), "ready": room.ready_mask()})
 
             elif room is None:
@@ -193,17 +236,17 @@ async def net(ws: WebSocket):
                 if to < 0:
                     await room.broadcast(out, exclude=ws)
                 elif to in room.members:
-                    await room.members[to].ws.send_text(json.dumps(out))
+                    await room.members[to].ws.send(json.dumps(out))
 
             elif op == "leave":
                 break
 
             elif op == "ping":
-                await ws.send_text(json.dumps({"op": "pong", "t": msg.get("t")}))
+                await ws.send(json.dumps({"op": "pong", "t": msg.get("t")}))
 
             else:
                 await err(ws, E_PARAM, "unknown op")
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, ConnectionError, asyncio.IncompleteReadError):
         pass
     finally:
         if room:

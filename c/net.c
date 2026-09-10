@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include "game.h"
 #include "uc.h"
+#include <string.h>
 
 uint8_t net_device;
 
@@ -55,7 +56,7 @@ uint8_t net_create(uint16_t build, const uint8_t *settings, uint8_t len, char co
   uc_cmd(cmdN_CREATE);
   uc_wword(NET_GAME_ID); uc_wword(build);
   uc_wr(NET_SLOTS); uc_wr(NET_BYTES); uc_wr(len);
-  for (i = 0; i < len; i++) uc_wr(settings[i]);
+  for (i = 0; i < 16; i++) uc_wr(i < len ? settings[i] : 0);   /* fixed 16 bytes */
   if ((r = net_wait(st)) != 0) return r;
   if (!(st[0] & UC_ST_OUTPUT)) return 0xff;
   for (i = 0; i < 4; i++) code[i] = (char)uc_rd();
@@ -103,7 +104,7 @@ uint8_t net_send(uint16_t frame, uint8_t keys) {
   uint8_t st[4];
   uc_cmd(cmdN_SEND);
   uc_wword(frame);
-  uc_wr(keys);
+  uc_wr(keys); uc_wr(0); uc_wr(0); uc_wr(0);               /* fixed 4 bytes */
   return net_wait(st);
 }
 
@@ -131,18 +132,19 @@ uint8_t net_msg_send(uint8_t to, const uint8_t *data, uint8_t len) {
   uint8_t st[4], i;
   uc_cmd(cmdN_MSG);
   uc_wr(to); uc_wr(len);
-  for (i = 0; i < len; i++) uc_wr(data[i]);
+  for (i = 0; i < 32; i++) uc_wr(i < len ? data[i] : 0);     /* fixed 32 bytes */
   return net_wait(st);
 }
 
 uint8_t net_msg_recv(uint8_t *from, uint8_t *data) {
-  uint8_t st[4], n;
-  uc_cmd(cmdN_MSG);
-  uc_wr(0xff); uc_wr(0);
+  uint8_t st[4], n, buf[32];
+  uc_cmd(cmdN_RECV);
   if (net_wait(st) != 0 || !(st[0] & UC_ST_OUTPUT)) return 0;
   *from = uc_rd();
   n = uc_rd();
+  uc_read(buf, 32);
+  if (*from == 0xff) return 0;
   if (n > 32) n = 32;
-  uc_read(data, n);
+  memcpy(data, buf, n);
   return n;
 }

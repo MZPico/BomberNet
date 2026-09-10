@@ -1,4 +1,4 @@
-# MZPico NET protocol (draft 1, 2026-09-10)
+# MZPico NET protocol (draft 2, 2026-09-11)
 
 Multiplayer transport for Sharp MZ programs through an MZPico (physical, on a
 Pico W) or through the Unicard emulation of mz800emu (native or WASM on
@@ -11,7 +11,7 @@ first client.
 Vendor commands of the MZPico's Unicard-compatible repository device
 (ports 0x50 command/status, 0x51 data; contract per
 https://www.sharpwiki.cz/doku.php?id=en:unicard:z15mzfrepo and
-`MZPico-firmware/docs/unicard-migration-plan.md`). Codes 0xA0-0xA8; the
+`MZPico-firmware/docs/unicard-migration-plan.md`). Codes 0xA0-0xA9; the
 MZPico range 0x90-0x9A is taken by the manager extensions, the Unicard
 documents nothing above 0x72, mz800emu's uc3 socket commands sit at
 0x80-0x89.
@@ -56,14 +56,15 @@ run offline.
 | code | name | input | output |
 |---|---|---|---|
 | 0xA0 | NETSTATUS | - | 8 bytes: state, slot, members, ready mask, rtt/10 ms, frames buffered, msgs pending, last error |
-| 0xA1 | NETCREATE | game WORD, build WORD, slots, bytes per slot, settings len (0..16), settings | room code (4 chars + 0x0D), slot (=0) |
-| 0xA2 | NETJOIN | game WORD, build WORD, string code | slot, slots, bytes per slot, settings len, settings |
+| 0xA1 | NETCREATE | game WORD, build WORD, slots, bytes per slot, settings len (0..16), 16 settings bytes (fixed size) | room code (4 chars + 0x0D), slot (=0) |
+| 0xA2 | NETJOIN | game WORD, build WORD, string code | 20 bytes: slot, slots, bytes per slot, settings len, 16 settings bytes |
 | 0xA3 | NETLEAVE | - | - |
 | 0xA4 | NETREADY | 1 byte (0/1) | seed WORD, start frame WORD (0xFFFF,0xFFFF while waiting) |
-| 0xA5 | NETSEND | frame WORD, `bytes per slot` bytes | - |
+| 0xA5 | NETSEND | frame WORD, 4 input bytes (fixed size; `bytes per slot` used) | - |
 | 0xA6 | NETPOLL | frame WORD | avail WORD, then `slots * bytes` bytes (valid when avail >= frame; else zeros) |
 | 0xA7 | NETHASH | frame WORD, hash WORD | - |
-| 0xA8 | NETMSG | to (slot or 0xFF = all), len (1..32), bytes | - ; incoming messages are read with NETMSG len 0: from, len, bytes (len 0 = none) |
+| 0xA8 | NETMSG | to (slot or 0xFF = all), len (1..32), 32 bytes (fixed size) | - |
+| 0xA9 | NETRECV | - | 34 bytes: from (0xFF = none), len, 32 bytes |
 
 States (NETSTATUS byte 0): 0 NO_LINK (no WiFi / relay unreachable),
 1 READY (linked, not in a room), 2 IN_ROOM (waiting for members/ready),
@@ -103,9 +104,12 @@ Rooms die 60 s after their last message. Codes are 4 letters from a
 
 ## Frame budget
 
-Per game frame a lockstep client does NETSEND (cmd + 2 + N bytes) and
-NETPOLL (cmd + 2 bytes, status, 2 + S*N bytes): for S=4, N=1 about 16
-EXWAIT port accesses, well under 0.1 ms.
+Parameter blobs have fixed sizes so the device can use a plain byte-count
+parameter rule (the Unicard parser knows only bytes and strings).
+
+Per game frame a lockstep client does NETSEND (cmd + 6 bytes) and NETPOLL
+(cmd + 2 bytes, status, 2 + S*N bytes): for S=4, N=1 about 20 EXWAIT port
+accesses, well under 0.1 ms.
 
 ## Lockstep recipe (what BomberNet does in phase 6)
 
@@ -115,6 +119,18 @@ after a few polls); copy the S*N bytes into the game's per-frame input
 vector; run the frame; every `hash_period` frames NETHASH(F, state_hash).
 Local players on one machine occupy consecutive slots and send N bytes
 each (one NETSEND per local slot; the relay keys inputs by socket + slot).
+
+## Implementations
+
+- Z80 client: BomberNet `c/uc.c`, `c/net.c`.
+- Reference relay: BomberNet `relay/relay.py` (WebSocket `/net` on 8765 and
+  JSON lines on TCP 8766 for the native emulator); production: Durable Object.
+- Device: mz800emu `wasm` branch, `hw-generic/unicard/unimgr_net.c`
+  (`[UNICARD] mzpico_mode = 1`, `net_relay = host:port`); Emscripten exports
+  `mz_wasm_net_push(line)`, `mz_wasm_net_pop()`, `mz_wasm_net_link(1|0)` for
+  the page's WebSocket. Verified 2026-09-11: two headless instances through
+  the local relay via port I/O (`tools/nettest.py`).
+- Firmware: pending (phase 5 step 5).
 
 ## Open points
 

@@ -240,6 +240,17 @@ Steps (each ends tested):
    local Python relay), WASM build uses a JS WebSocket from the play page.
    Done before the firmware because it is the fastest end-to-end path and
    the mzpico.com deliverable.
+   DONE 2026-09-11 (native side): mz800emu `wasm` branch commit f57cf61 -
+   `hw-generic/unicard/unimgr_net.{c,h}` (state machine, frame window of 256,
+   messages, async CREATE/JOIN via status bit 6, TCP JSON-lines transport with
+   a reader thread, SPSC queues; Emscripten exports `mz_wasm_net_push/pop/link`),
+   hooks in `unimgr.c` (REV/REVD MZPico identity, INFO, param/exec/output,
+   IN_PROGRESS bit, vendor error code in status byte 2), `[UNICARD]
+   mzpico_mode` and `net_relay` in `unicard.c`. The relay gained a JSON-lines
+   TCP port (8766). `tools/nettest.py`: two headless instances through the
+   local relay, 13 checks green. Protocol draft 2: fixed-size blobs and
+   NETRECV 0xA9. Remaining for this step: the WASM build and the play-page
+   WebSocket glue in mz-catalog (`window.Module._mz_wasm_net_*`).
 5. Pico W firmware: `unicard.cpp` handlers, core-0 WebSocket client, ring
    buffers; needs the `USE_PICO_W` build and a Deluxe W board on the bench.
 6. Test: an echo program exchanging inputs between two browser emulators,
