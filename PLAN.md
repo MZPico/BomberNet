@@ -124,7 +124,7 @@ peaks stretch the frame - the blast code is the candidate for an asm pass.
 The MZ-1X03 path cannot be exercised in the MZ-800 emulator build; it needs a
 real MZ-700 (or the mz700 emulator build) to calibrate the thresholds.
 
-## Phase 4 - determinism harness (prerequisite for network) - IN PROGRESS 2026-09-10
+## Phase 4 - determinism harness (prerequisite for network) - DONE 2026-09-11
 
 1. `state_hash()` over players, bombs, enemies, map layer, RNG seed.
 2. Input recording/replay in the host simulator; replay the same input file
@@ -144,6 +144,10 @@ hash as it stood at that flush. Host: `SIM_RECORD=f SIM_MODE= SIM_PLAYERS= SIM_S
 records with the bot, `SIM_REPLAY=f` replays and compares. Z80: `tools/replay.py f`
 pokes the menu and seed, feeds the keys at every flush and compares the hash.
 Host replay: coop 3994 frames and deathmatch 2996 frames, 0 mismatches.
+Z80 replay in mz800emu against the host recordings: deathmatch 319 of 319
+frames identical, coop 250 of 319 identical before the driver's 50-minute
+timeout (the emulator ran at several seconds per frame next to other
+instances). The Z80 build and the host build are the same simulation.
 
 ## Phase 5 - MZPico network transport (reworked 2026-09-10 for the Unicard protocol)
 
