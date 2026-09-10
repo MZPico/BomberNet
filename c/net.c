@@ -51,11 +51,11 @@ uint8_t net_status(net_status_t *s) {
   return 0;
 }
 
-uint8_t net_create(uint16_t build, const uint8_t *settings, uint8_t len, char code[5], uint8_t *slot) {
+uint8_t net_create(uint16_t build, uint8_t slots, const uint8_t *settings, uint8_t len, char code[5], uint8_t *slot) {
   uint8_t st[4], r, i;
   uc_cmd(cmdN_CREATE);
   uc_wword(NET_GAME_ID); uc_wword(build);
-  uc_wr(NET_SLOTS); uc_wr(NET_BYTES); uc_wr(len);
+  uc_wr(slots); uc_wr(NET_BYTES); uc_wr(len);
   for (i = 0; i < 16; i++) uc_wr(i < len ? settings[i] : 0);   /* fixed 16 bytes */
   if ((r = net_wait(st)) != 0) return r;
   if (!(st[0] & UC_ST_OUTPUT)) return 0xff;
@@ -66,18 +66,20 @@ uint8_t net_create(uint16_t build, const uint8_t *settings, uint8_t len, char co
   return 0;
 }
 
-uint8_t net_join(uint16_t build, const char *code, uint8_t *slot, uint8_t *settings, uint8_t *len) {
-  uint8_t st[4], r, i, n;
+uint8_t net_join(uint16_t build, const char *code, uint8_t *slot, uint8_t *slots, uint8_t *settings, uint8_t *len) {
+  uint8_t st[4], r, i, n, buf[16];
   uc_cmd(cmdN_JOIN);
   uc_wword(NET_GAME_ID); uc_wword(build);
   uc_wstr(code);
   if ((r = net_wait(st)) != 0) return r;
   if (!(st[0] & UC_ST_OUTPUT)) return 0xff;
   *slot = uc_rd();
-  uc_rd(); uc_rd();                             /* slots, bytes per slot: fixed for this game */
+  *slots = uc_rd();
+  uc_rd();                                      /* bytes per slot: 1 for this game */
   n = uc_rd();
+  uc_read(buf, 16);
   if (n > 16) n = 16;
-  for (i = 0; i < n; i++) settings[i] = uc_rd();
+  for (i = 0; i < n; i++) settings[i] = buf[i];
   *len = n;
   return 0;
 }
@@ -147,4 +149,51 @@ uint8_t net_msg_recv(uint8_t *from, uint8_t *data) {
   if (n > 32) n = 32;
   memcpy(data, buf, n);
   return n;
+}
+
+/* ---------------- lockstep match ---------------- */
+
+uint8_t menu_net = NET_OFF;
+uint8_t net_active, net_slot, net_slots, net_waiting, net_abort;
+char net_code[5] = "AAAA";
+static uint16_t net_frame;
+static uint8_t net_local_input;
+
+void net_match_start(uint8_t local_input) {
+  uint8_t f;
+  net_local_input = local_input;
+  net_frame = 0;
+  net_waiting = 0;
+  net_abort = 0;
+  net_active = 1;
+  for (f = 0; f < NET_DELAY; f++) net_send(f, 0);   /* nobody moves in the first steps */
+}
+
+/* Send the local keys for step N+NET_DELAY, wait for the vector of step N. */
+void net_lockstep_poll(void) {
+  uint16_t avail;
+  uint8_t keys[NET_SLOTS], i, tries = 0;
+  net_status_t st;
+  if (net_abort) { for (i = 0; i < MAX_PLAYERS; i++) players[i].keys = 0; return; }
+  if (net_send(net_frame + NET_DELAY, input_read(net_local_input)) != 0) net_abort = 9;
+  while (!net_abort) {
+    if (net_poll(net_frame, &avail, keys) != 0) { net_abort = 9; break; }
+    if (avail != 0xffff && avail >= net_frame) break;
+    if (++tries > 4) {
+      net_waiting = 1;
+      if ((tries & 15) == 0 && net_status(&st) == 0 &&
+          (st.state == NETST_DESYNC || st.state == NETST_DROPPED || st.state == NETST_NOLINK))
+        net_abort = st.state ? st.state : 9;
+    }
+  }
+  for (i = 0; i < MAX_PLAYERS; i++)
+    players[i].keys = (!net_abort && i < net_slots && players[i].active) ? keys[i] : 0;
+  if (!net_abort) net_waiting = 0;
+  net_frame++;
+}
+
+void net_match_end(void) {
+  if (!net_active) return;
+  net_active = 0;
+  net_leave();
 }

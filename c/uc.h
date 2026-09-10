@@ -59,8 +59,8 @@ typedef struct {
 #define NETST_DROPPED 5
 #define NETST_SPECTATOR 6
 uint8_t net_status(net_status_t *st);
-uint8_t net_create(uint16_t build, const uint8_t *settings, uint8_t len, char code[5], uint8_t *slot);
-uint8_t net_join(uint16_t build, const char *code, uint8_t *slot, uint8_t *settings, uint8_t *len);
+uint8_t net_create(uint16_t build, uint8_t slots, const uint8_t *settings, uint8_t len, char code[5], uint8_t *slot);
+uint8_t net_join(uint16_t build, const char *code, uint8_t *slot, uint8_t *slots, uint8_t *settings, uint8_t *len);
 uint8_t net_leave(void);
 uint8_t net_ready(uint8_t ready, uint16_t *seed, uint16_t *start_frame);   /* 0xffff while waiting */
 uint8_t net_send(uint16_t frame, uint8_t keys);

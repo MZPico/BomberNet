@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "game.h"
 
-static uint8_t input_read(uint8_t source) {
+uint8_t input_read(uint8_t source) {
   switch (source) {
   case INPUT_KBD_A: return mz_keys();
   case INPUT_KBD_B: return mz_keys_b();
@@ -16,6 +16,7 @@ static uint8_t input_read(uint8_t source) {
 
 void input_poll(void) {
   uint8_t i;
+  if (net_active) { net_lockstep_poll(); return; }
   for (i = 0; i < MAX_PLAYERS; i++) {
     if (!players[i].active) { players[i].keys = 0; continue; }
     players[i].keys = replay_active ? replay_keys[i] : input_read(players[i].input);

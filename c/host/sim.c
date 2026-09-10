@@ -64,7 +64,7 @@ uint8_t mz_keys(void) {
 }
 
 
-uint8_t mz_keys_b(void) { return scenario ? 0 : (uint8_t)(rand() & 0x1f); }
+uint8_t mz_keys_b(void) { return (scenario || menu_net) ? 0 : (uint8_t)(rand() & 0x1f); }
 void mz_tone(uint16_t ratio, uint8_t len) { (void)ratio; (void)len; tones++; }
 void mz_delay(void) {}
 uint8_t mz_joy(uint8_t n) { (void)n; return 0; }
@@ -288,6 +288,7 @@ static void setup_from_env(void) {
   if ((v = getenv("SIM_SEED"))) match_seed = (uint16_t)strtoul(v, 0, 0);
   if ((v = getenv("SIM_HASH"))) hash_period = (uint8_t)atoi(v);
   stub_net = getenv("SIM_NET") != 0;
+  if ((v = getenv("SIM_NET_HOST"))) { stub_net = 1; menu_net = NET_HOST; }
   if (menu_players > 2) joy_type = JOY_800;
 }
 

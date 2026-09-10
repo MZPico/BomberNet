@@ -228,6 +228,25 @@ extern uint8_t replay_keys[MAX_PLAYERS];
 void rng_seed(uint16_t seed);
 void compute_state_hash(void);
 
+/* ---- network match (net.c, phase 6) ----
+ * Lockstep: every input_poll is one step; the local player's keys are sent
+ * for step N+NET_DELAY and the step's input vector is awaited from the
+ * device, then copied into players[].keys like a replay. */
+#define BUILD_ID  0x0601          /* bump on any change of the simulation or protocol */
+#define NET_OFF   0
+#define NET_HOST  1
+#define NET_JOIN  2
+#define NET_DELAY 2
+extern uint8_t menu_net;          /* NET_OFF / NET_HOST / NET_JOIN (title) */
+extern uint8_t net_active;        /* a lockstep match is running */
+extern uint8_t net_slot, net_slots, net_waiting;
+extern uint8_t net_abort;         /* 0 none, else NETST_DESYNC / NETST_DROPPED / 9 link lost */
+extern char net_code[5];
+uint8_t input_read(uint8_t source);
+void net_match_start(uint8_t local_input);   /* prime the first NET_DELAY steps */
+void net_lockstep_poll(void);                /* one step: fills players[].keys */
+void net_match_end(void);
+
 /* ---- util ---- */
 uint8_t rnd(void);
 void tick_timer(ftimer_t *t);

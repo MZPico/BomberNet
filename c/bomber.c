@@ -125,7 +125,10 @@ static void frame(void) {
   check_pickups();
   time_tick();
   frame_no++;
-  if (hash_period && (frame_no % hash_period) == 0) compute_state_hash();
+  if (hash_period && (frame_no % hash_period) == 0) {
+    compute_state_hash();
+    if (net_active) net_hash(frame_no, state_hash);
+  }
 }
 
 /* animations only: no input, no AI */
@@ -168,7 +171,7 @@ static void title_init(void) {
 
 /* ---- title menu: UP/DOWN pick a row, LEFT/RIGHT change its value ----
  * rows: MODE, PLAYERS, JOYSTICK, then one input row per player */
-static uint8_t menu_item, menu_prev_keys;
+static uint8_t menu_item, menu_prev_keys, menu_locked, lobby_keys;   /* locked: lobby owns the keys */
 static const char *const mode_names[2] = {"COOP      ", "DEATHMATCH"};
 static const char *const joy_names[3] = {"NONE   ", "MZ-800 ", "MZ-1X03"};
 static const char *const input_names[6] = {
@@ -217,15 +220,22 @@ static void menu_validate(void) {
   update_fire_key();
 }
 
+static const char *const net_names[3] = {"OFF   ", "HOST  ", "JOIN  "};
+#define MENU_FIXED (3 + (net_device == NETDEV_NET))
+#define MENU_PLAYER_ROWS (menu_net != NET_OFF ? 1 : menu_players)
+
 static void menu_change(int8_t dir) {
-  switch (menu_item) {
+  uint8_t item = menu_item;
+  if (item == 3 && net_device != NETDEV_NET) item = 4;      /* no NETWORK row: player rows start at 3 */
+  switch (item) {
   case 0: menu_mode ^= 1; break;
   case 1:
     if (dir > 0 && menu_players < 4) menu_players++;
     if (dir < 0 && menu_players > 1) menu_players--;
     break;
   case 2: joy_type = (uint8_t)((joy_type + 3 + dir) % 3); break;
-  default: input_cycle(menu_item - 3, dir); break;
+  case 3: menu_net = (uint8_t)((menu_net + 3 + dir) % 3); if (menu_net && menu_players < 2) menu_players = 2; break;
+  default: input_cycle(menu_item - MENU_FIXED, dir); break;
   }
   menu_validate();
 }
@@ -233,7 +243,7 @@ static void menu_change(int8_t dir) {
 #define MENU_X 3
 #define MENU_W 34
 #define MENU_Y 10
-#define MENU_H 9            /* frame rows 9..17: 3 fixed rows + 4 player rows */
+#define MENU_H 10           /* frame rows 10..19: up to 4 fixed rows + 4 player rows */
 
 static void draw_title_box(void) {
   uint8_t r, c;
@@ -260,11 +270,12 @@ static void menu_row(uint8_t row, const char *label, uint8_t digit, const char *
 }
 
 static void title_menu(void) {
-  uint8_t k = mz_keys(), i, rows, *p;
+  uint8_t k = menu_locked ? lobby_keys : mz_keys(), i, rows, row, *p;
   uint8_t edge = k & ~menu_prev_keys;
   char num[2];
   menu_prev_keys = k;
-  rows = 3 + menu_players;
+  rows = MENU_FIXED + MENU_PLAYER_ROWS;
+  if (menu_locked) edge = 0;
   if ((edge & KEY_UP) && menu_item > 0) { menu_item--; mz_tone(0x020a, 14); }
   if ((edge & KEY_DOWN) && menu_item < rows - 1) { menu_item++; mz_tone(0x020a, 14); }
   if (edge & KEY_LEFT) { menu_change(-1); mz_tone(0x030a, 14); }
@@ -276,26 +287,132 @@ static void title_menu(void) {
   num[0] = '0' + menu_players; num[1] = 0;
   menu_row(1, "PLAYERS", 0, num, menu_item == 1);
   menu_row(2, "JOYSTICK", 0, joy_names[joy_type], menu_item == 2);
-  for (i = 0; i < menu_players; i++)
-    menu_row(3 + i, "PLAYER", C_PLAYER_DIGIT(i),
-             (menu_inputs[i] == INPUT_KBD_A && menu_fire_cr) ? kbd_a_cr_name : input_names[menu_inputs[i]],
-             menu_item == 3 + i);
+  row = 3;
+  if (net_device == NETDEV_NET) menu_row(row++, "NETWORK", 0, net_names[menu_net], menu_item == 3);
+  if (menu_net != NET_OFF) {
+    menu_row(row, "LOCAL", 0, input_names[menu_inputs[0]], menu_item == row);
+  } else {
+    for (i = 0; i < menu_players; i++)
+      menu_row(row + i, "PLAYER", C_PLAYER_DIGIT(i),
+               (menu_inputs[i] == INPUT_KBD_A && menu_fire_cr) ? kbd_a_cr_name : input_names[menu_inputs[i]],
+               menu_item == row + i);
+  }
 
-  p = draw_at(3, 19);
+  p = draw_at(3, 20);
   p[0] = T_ARR_UP; p[1] = T_ARR_DOWN; title_text(p + 3, "SELECT");
   p[11] = T_ARR_LEFT; p[12] = T_ARR_RIGHT; title_text(p + 14, "CHANGE");
   title_text(p + 23, "NET ");
   title_text(p + 27, net_device == NETDEV_NET ? "MZPICO " : net_device == NETDEV_MZPICO ? "NO WIFI" :
                      net_device == NETDEV_UNICARD ? "UNICARD" : "NONE   ");
-  title_text(draw_at(5, 20), "HI-SCORE");
-  print_num5(draw_at(14, 20), hi_score);
-  title_text(draw_at(22, 20), "SCORE");
-  print_num5(draw_at(28, 20), players[0].score);
+  title_text(draw_at(5, 21), "HI-SCORE");
+  print_num5(draw_at(14, 21), hi_score);
+  title_text(draw_at(22, 21), "SCORE");
+  print_num5(draw_at(28, 21), players[0].score);
   title_ticks++;
-  if (title_ticks & 0x10) title_text_hl(draw_at(8, 21), "PUSH SPACE TO START GAME");
+  if (title_ticks & 0x10) title_text_hl(draw_at(8, 22), "PUSH SPACE TO START GAME");
   p = draw_at(2, 23);
   title_text(p, "COPYRIGHT  C  2026  MZPICO");
   p[10] = 0x17; p[12] = 0x18;               /* the original's "(" ")" glyphs */
+}
+
+static void title_frame(void);
+
+/* ---- network lobby (title mode) ---- */
+
+/* three centred lines in the menu frame area, drawn over the title */
+static void lobby_box(const char *l1, const char *l2, const char *l3) {
+  uint8_t r;
+  draw_title_box();
+  for (r = 1; r < MENU_H - 1; r++) {
+    uint8_t *p = draw_at(MENU_X + 1, MENU_Y + r), c;
+    for (c = 0; c < MENU_W - 2; c++) p[c] = C_SPACE;
+  }
+  title_text(draw_at(MENU_X + (MENU_W - (uint8_t)strlen(l1)) / 2, MENU_Y + 2), l1);
+  title_text_hl(draw_at(MENU_X + (MENU_W - (uint8_t)strlen(l2)) / 2, MENU_Y + 4), l2);
+  title_text(draw_at(MENU_X + (MENU_W - (uint8_t)strlen(l3)) / 2, MENU_Y + 6), l3);
+}
+
+/* title frame with a lobby overlay; returns the new key edges */
+static uint8_t lobby_frame(const char *l1, const char *l2, const char *l3) {
+  uint8_t k, edge;
+  k = mz_keys();
+  edge = k & ~menu_prev_keys;         /* before title_menu records this frame's keys */
+  lobby_keys = k;
+  menu_locked = 1;
+  title_frame();
+  menu_locked = 0;
+  lobby_box(l1, l2, l3);
+  return edge;
+}
+
+static void lobby_error(uint8_t r) {
+  char line[24];
+  uint8_t n;
+  strcpy(line, r == 6 ? "BUILD MISMATCH" : r == 7 ? "ROOM NOT FOUND" : r == 9 ? "NO CONNECTION" : "NETWORK ERROR 00");
+  if (line[14] == '0') { line[14] = '0' + r / 10; line[15] = '0' + r % 10; }
+  for (n = 0; n < 60; n++) lobby_frame(line, "", "");
+}
+
+static const char code_alphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+
+/* code entry: UP/DOWN letter, LEFT/RIGHT position, SPACE join; returns 0 = cancelled */
+static uint8_t lobby_enter_code(void) {
+  uint8_t pos = 0, idx[4], i, edge;
+  char line[16];
+  for (i = 0; i < 4; i++) {
+    const char *q = strchr(code_alphabet, net_code[i]);
+    idx[i] = q ? (uint8_t)(q - code_alphabet) : 0;
+  }
+  for (;;) {
+    for (i = 0; i < 4; i++) { line[i * 2] = code_alphabet[idx[i]]; line[i * 2 + 1] = ' '; }
+    line[7] = 0;
+    edge = lobby_frame("ENTER ROOM CODE", line, "SPACE JOIN  E CANCEL");
+    *draw_at(MENU_X + (MENU_W - 7) / 2 + pos * 2, MENU_Y + 5) = T_ARR_UP;
+    if (edge & KEY_UP) { idx[pos] = (uint8_t)((idx[pos] + 1) % 24); mz_tone(0x030a, 14); }
+    if (edge & KEY_DOWN) { idx[pos] = (uint8_t)((idx[pos] + 23) % 24); mz_tone(0x030a, 14); }
+    if ((edge & KEY_RIGHT) && pos < 3) pos++;
+    if ((edge & KEY_LEFT) && pos > 0) pos--;
+    if (mz_keys_b() & KEY_SPACE) return 0;
+    if (edge & KEY_SPACE) {
+      for (i = 0; i < 4; i++) net_code[i] = code_alphabet[idx[i]];
+      net_code[4] = 0;
+      return 1;
+    }
+  }
+}
+
+/* create or join, then wait until everybody is ready; returns 1 to start */
+static uint8_t net_lobby(void) {
+  uint8_t settings[16], len = 2, r, edge, n = 0, ready = 0;
+  uint16_t seed, start;
+  char l2[32], l3[32];
+  net_status_t st;
+  settings[0] = menu_mode; settings[1] = menu_players;
+  if (menu_net == NET_HOST) {
+    r = net_create(BUILD_ID, menu_players, settings, len, net_code, &net_slot);
+    if (r) { lobby_error(r); return 0; }
+    net_slots = menu_players;
+  } else {
+    if (!lobby_enter_code()) return 0;
+    r = net_join(BUILD_ID, net_code, &net_slot, &net_slots, settings, &len);
+    if (r) { lobby_error(r); return 0; }
+    if (len >= 2) { menu_mode = settings[0]; menu_players = settings[1]; menu_validate(); }
+  }
+  st.members = 1; st.ready_mask = 0;
+  for (;;) {
+    if ((n++ & 7) == 0) net_status(&st);
+    strcpy(l2, "ROOM ABCD  PLAYERS 0 OF 0");
+    memcpy(l2 + 5, net_code, 4);
+    l2[19] = '0' + st.members; l2[24] = '0' + net_slots;
+    strcpy(l3, ready ? "WAITING FOR THE OTHERS" : "SPACE READY   E CANCEL");
+    edge = lobby_frame(menu_net == NET_HOST ? "YOU ARE THE HOST" : "JOINED", l2, l3);
+    if (st.state == NETST_DROPPED || st.state == NETST_NOLINK) { lobby_error(9); net_leave(); return 0; }
+    if (mz_keys_b() & KEY_SPACE) { net_leave(); return 0; }
+    if (!ready && (edge & KEY_SPACE)) { ready = 1; mz_tone(0x030a, 14); }
+    if (ready && (n & 7) == 1) {
+      if (net_ready(1, &seed, &start) == 0 && seed != 0xffff) { match_seed = seed; return 1; }
+    }
+  }
 }
 
 static void title_frame(void) {
@@ -319,8 +436,13 @@ static void title_screen(void) {
   title_init();
   kbd_fire_cr = 0;                    /* the title starts on SPACE */
   update_fire_key();
-  while (mz_keys() & KEY_SPACE) title_frame();   /* release a held SPACE first */
-  do { title_frame(); } while (!(mz_keys() & KEY_SPACE));
+  for (;;) {
+    while (mz_keys() & KEY_SPACE) title_frame();   /* release a held SPACE first */
+    do { title_frame(); } while (!(mz_keys() & KEY_SPACE));
+    if (menu_net == NET_OFF || net_device != NETDEV_NET) return;
+    while (mz_keys() & KEY_SPACE) title_frame();
+    if (net_lobby()) return;
+  }
 }
 
 /* ---- stage life cycle ---- */
@@ -368,6 +490,7 @@ static void time_bonus(void) {
 static uint8_t play_stage(void) {
   for (;;) {
     frame();
+    if (net_abort) return 3;
     if (players_finished()) return 2;
     if (exit_touched) return 1;
     if (stage_cleared) return 0;
@@ -467,7 +590,8 @@ static void run_deathmatch(void) {
   stage = 1;
   for (;;) {
     stage_start();
-    do { frame(); } while (round_running() && !timeout_flag);
+    do { frame(); } while (round_running() && !timeout_flag && !net_abort);
+    if (net_abort) return;
     idle_frames(10);
     w = round_winner();
     if (w == 0xff) {
@@ -487,7 +611,7 @@ static void run_deathmatch(void) {
   }
 }
 
-static void run_game(void) {
+static void run_match(void) {
   game_mode = menu_mode;
   kbd_fire_cr = menu_fire_cr;
   rng_seed(match_seed);
@@ -501,6 +625,8 @@ static void run_game(void) {
   for (;;) {
     stage_start();
     switch (play_stage()) {
+    case 3:
+      return;                         /* network match aborted */
     case 0:
       idle_frames(20);
       time_bonus();
@@ -518,6 +644,19 @@ static void run_game(void) {
       }
       break;
     }
+  }
+}
+
+static void run_game(void) {
+  if (menu_net != NET_OFF && net_device == NETDEV_NET) {
+    hash_period = 16;
+    net_match_start(menu_inputs[0]);
+  }
+  run_match();
+  if (net_active) {
+    uint8_t reason = net_abort;
+    net_match_end();
+    if (reason) show_message(reason == NETST_DESYNC ? "DESYNC" : "CONNECTION LOST", "PRESS FIRE");
   }
 }
 
