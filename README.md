@@ -231,6 +231,15 @@ the map), and a lone dying enemy never disappeared because `tmr_enemy_die` was t
 twice per frame (the original ticks only four timers globally; `tmr_explode` and
 `tmr_enemy_die` are advanced by their users).
 
+Determinism harness (phase 4): record a bot session on the host and replay it on the
+host or on the Z80 build in the emulator, comparing the state hash every frame:
+
+```
+SIM_MODE=1 SIM_PLAYERS=2 SIM_SEED=0x1234 SIM_RECORD=build/replay/dm.bnr c/build/sim 3000 7
+SIM_REPLAY=build/replay/dm.bnr c/build/sim 3000 99        # host replay, different bot seed
+tools/replay.py build/replay/dm.bnr                       # same recording on the Z80 build
+```
+
 Host simulation:
 
 ```

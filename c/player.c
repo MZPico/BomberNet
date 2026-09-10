@@ -27,6 +27,11 @@ void players_setup(uint8_t count) {
     p->keys = 0;
     p->kills = 0;
     p->wins = 0;
+    p->anim = 0;
+    p->x = p->y = 0;
+    p->state = P_STAND1;
+    p->death_tick = 0;
+    p->life_lost = 0;
   }
 }
 

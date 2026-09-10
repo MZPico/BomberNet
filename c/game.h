@@ -213,6 +213,21 @@ void flush_screen(void);                      /* draw_buf -> VRAM diff, clears d
 void mz_set_attr(uint8_t x, uint8_t y, uint8_t attr);   /* direct write to the attribute plane */
 void composite_map(void);                     /* non-space map cells over draw_buf */
 
+/* ---- determinism (game.c) ----
+ * The simulation is a pure function of (match_seed, per-frame input vector).
+ * state_hash covers every variable the logic depends on; it is recomputed at
+ * the end of each frame when hash_period != 0 and frame_no % hash_period == 0.
+ * With replay_active the input vector comes from replay_keys[] instead of the
+ * hardware (host replay, emulator harness, and later the network). */
+extern uint16_t match_seed;               /* seeds the RNG at run_game */
+extern uint16_t frame_no;                 /* game frames since run_game */
+extern uint16_t state_hash;
+extern uint8_t hash_period;               /* 0 = never hash */
+extern uint8_t replay_active;
+extern uint8_t replay_keys[MAX_PLAYERS];
+void rng_seed(uint16_t seed);
+void compute_state_hash(void);
+
 /* ---- util ---- */
 uint8_t rnd(void);
 void tick_timer(ftimer_t *t);

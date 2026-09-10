@@ -30,6 +30,35 @@ ftimer_t tmr_enemy_move  = {0, 2};
 ftimer_t tmr_time        = {2, 20};
 
 static uint16_t rand_seed = 0xbc6e;
+uint16_t match_seed = 0xbc6e;
+uint16_t frame_no;
+uint16_t state_hash;
+uint8_t hash_period;
+uint8_t replay_active;
+uint8_t replay_keys[MAX_PLAYERS];
+
+void rng_seed(uint16_t seed) { rand_seed = seed ? seed : 1; }
+
+static uint16_t hh;
+static void h8(uint8_t b) { hh = (uint16_t)(((hh << 1) | (hh >> 15)) ^ b) + 0x9e37; }
+static void h16(uint16_t v) { h8((uint8_t)v); h8((uint8_t)(v >> 8)); }
+static void hbytes(const uint8_t *p, uint16_t n) { while (n--) h8(*p++); }
+
+void compute_state_hash(void) {
+  hh = 0x5a5a;
+  hbytes((const uint8_t *)players, sizeof(players));
+  hbytes((const uint8_t *)bombs, sizeof(bombs));
+  hbytes((const uint8_t *)enemies, sizeof(enemies));
+  hbytes(map_layer, SCREEN_CELLS);
+  h16(rand_seed); h16(time_left); h16(frame_no);
+  h8(stage); h8(enemies_left); h8(enemy_period); h8(stage_cleared); h8(exit_touched);
+  h8(timeout_flag); h8(hit_pending); h8(hit_spawned); h8(hit_x); h8(hit_y);
+  h8(bonus_x); h8(bonus_y); h8(bonus_present); h8(bonus_revealed);
+  h8(exit_x); h8(exit_y); h8(exit_present); h8(exit_revealed);
+  h8(enemy_anim); h8(bomb_anim); h8(game_mode); h8(player_count);
+  h8(tmr_player_anim.counter); h8(tmr_enemy_die.counter); h8(tmr_enemy_move.counter); h8(tmr_time.counter);
+  state_hash = hh;
+}
 
 /* 16-bit xorshift (full period). The original mixed its seed with the Z80
  * R register; that does not exist on the host build, so a proper generator

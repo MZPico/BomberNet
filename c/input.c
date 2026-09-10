@@ -16,8 +16,10 @@ static uint8_t input_read(uint8_t source) {
 
 void input_poll(void) {
   uint8_t i;
-  for (i = 0; i < MAX_PLAYERS; i++)
-    players[i].keys = players[i].active ? input_read(players[i].input) : 0;
+  for (i = 0; i < MAX_PLAYERS; i++) {
+    if (!players[i].active) { players[i].keys = 0; continue; }
+    players[i].keys = replay_active ? replay_keys[i] : input_read(players[i].input);
+  }
 }
 
 uint8_t players_alive(void) {

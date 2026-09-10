@@ -5,7 +5,10 @@
 
 void clear_bombs(void) {
   uint8_t i;
-  for (i = 0; i < BOMB_SLOTS; i++) bombs[i].state = BOMB_FREE;
+  for (i = 0; i < BOMB_SLOTS; i++) {
+    bomb_t *b = &bombs[i];
+    b->state = BOMB_FREE; b->x = b->y = b->timer = b->owner = 0;
+  }
 }
 
 /* Fire key while alive: first free record, at the player position, only if

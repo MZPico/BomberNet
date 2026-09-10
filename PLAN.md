@@ -124,7 +124,7 @@ peaks stretch the frame - the blast code is the candidate for an asm pass.
 The MZ-1X03 path cannot be exercised in the MZ-800 emulator build; it needs a
 real MZ-700 (or the mz700 emulator build) to calibrate the thresholds.
 
-## Phase 4 - determinism harness (prerequisite for network)
+## Phase 4 - determinism harness (prerequisite for network) - IN PROGRESS 2026-09-10
 
 1. `state_hash()` over players, bombs, enemies, map layer, RNG seed.
 2. Input recording/replay in the host simulator; replay the same input file
@@ -133,27 +133,90 @@ real MZ-700 (or the mz700 emulator build) to calibrate the thresholds.
 3. Rule: game logic never reads hardware directly; inputs enter only through
    the per-frame input vector, the seed only through the match setup.
 
-## Phase 5 - MZPico network transport
+Implementation: `match_seed` seeds the RNG in `run_game` (timers and animation
+phases reset there too); `input_poll` takes `replay_keys[4]` when `replay_active`
+(this is also the future network path); `compute_state_hash` (16-bit rotate/xor/add
+over players, bombs, enemies, map layer, RNG seed, time, frame_no and every logic
+scalar) runs after `stage_start` and at the end of every `hash_period`-th frame.
+Recording format `.bnr`: 16-byte header (BNR1, seed, mode, players, inputs[4],
+hash period), then 6 bytes per game frame: keys[4] for the coming frame and the
+hash as it stood at that flush. Host: `SIM_RECORD=f SIM_MODE= SIM_PLAYERS= SIM_SEED=`
+records with the bot, `SIM_REPLAY=f` replays and compares. Z80: `tools/replay.py f`
+pokes the menu and seed, feeds the keys at every flush and compares the hash.
+Host replay: coop 3994 frames and deathmatch 2996 frames, 0 mismatches.
 
-1. Protocol spec (shared doc in this repo): new command family on ports
-   0x40/0x41: `NET_STATUS`, `NET_CREATE_ROOM`, `NET_JOIN_ROOM(code)`,
-   `NET_SEND(frame, input)`, `NET_POLL` -> inputs of all players up to frame N,
-   `NET_LEAVE`; results follow `COMMAND_RESULT_*` like `mz-comm.h`.
-2. Relay service on mzpico.com (extend the FastAPI cloud repo or a sibling
-   service): rooms with 4-character codes, WebSocket per player, broadcast of
-   per-frame inputs, seed distribution, timeouts. Stateless beyond a room.
-3. Pico W firmware: WebSocket client for the relay, the NET command handlers,
-   ring buffer of received inputs (needs the `USE_PICO_W` build).
-4. Virtual MZPico device in the WASM emulator on mzpico.com: same ports and
-   command handlers, forwarding to a browser WebSocket. Developed first,
-   because it is the fastest place to test the protocol end to end.
-5. Test: two browser emulators in one room exchanging inputs with a trivial
-   echo program before the game touches it.
+## Phase 5 - MZPico network transport (reworked 2026-09-10 for the Unicard protocol)
+
+Context: the firmware replaced `pico_mgr` (ports 0x40-0x44) with a Unicard-
+compatible device on ports 0x50 (command/status) and 0x51 (data), see
+`~/src/MZPico-firmware/docs/unicard-migration-plan.md`: one command byte,
+parameters streamed on the data port (strings end at a byte < 0x20), a 4-byte
+status record (BUSY, CMD_OUTPUT, ..., bit 6 IN_PROGRESS for core-0 work, bit 7
+ERROR), MZPico vendor commands in 0x90-0xEF (0x90-0x9A taken: LISTVOL,
+GETCONFIG, WIFISTATUS, INFO, SETSORT, SERVEDSUM, MOUNTS, SETCONFIG, COPY).
+mz800emu carries the reference Unicard emulation (`hw-generic/unicard/unimgr.c`)
+and its WASM build is what runs on mzpico.com, so "the virtual MZPico" is that
+emulation plus the same vendor commands, not a separate device. The Unicard's
+own uc3 socket commands (TCPOPEN.. 0x80-0x89) are not used: they are generic
+sockets, unimplemented on both sides, and would push framing onto the Z80.
+
+Decisions:
+- The game talks to the device with the manager's existing Z80 client
+  (`external/manager/mz-comm.c`: `uc_cmd`, `uc_wr`, `uc_rd`, `uc_status4`,
+  `uc_read`, `uc_write`), copied into `c/` like `console.c`. Detection = REVD
+  with subtype 'M' (0x4D), then INFO feature bit NET; no device or no NET bit
+  = the NETWORK menu row reads NONE and everything else works offline.
+- Room/lockstep logic lives in the device (firmware core 0 / emulator glue);
+  the Z80 only sends its inputs and asks for the input vector of a frame.
+- All NET commands except CREATE/JOIN are answered from core-1-side ring
+  buffers that core 0 fills and drains, so they never set IN_PROGRESS and cost
+  about 16 EXWAIT port accesses per frame (< 0.1 ms of the 58 ms frame).
+  CREATE/JOIN wait for the relay and use the existing IN_PROGRESS rule.
+
+Vendor commands 0xA0-0xA7 (input -> output; WORD little-endian):
+
+| code | name | in -> out | purpose |
+|---|---|---|---|
+| 0xA0 | NETSTATUS | - -> 6 bytes: state (0 no link, 1 ready, 2 in room, 3 running, 4 desync, 5 dropped), slot, players in room, ready mask, rtt/10 ms, frames buffered | polled on the title and once per game frame |
+| 0xA1 | NETCREATE | build WORD, mode, players -> room code (4 chars, 0x0D), slot | async (IN_PROGRESS) |
+| 0xA2 | NETJOIN | string code, build WORD -> slot, mode, players, seed WORD | async; build mismatch -> ERROR code 6 |
+| 0xA3 | NETLEAVE | - -> - | |
+| 0xA4 | NETREADY | 1 byte -> start frame WORD (0xFFFF while waiting) | all ready -> relay fixes seed and start |
+| 0xA5 | NETSEND | frame WORD, keys byte -> - | local player's input for frame N+delay |
+| 0xA6 | NETPOLL | frame WORD -> avail WORD, keys[4] | inputs of all slots for that frame; avail < frame means wait |
+| 0xA7 | NETHASH | frame WORD, hash WORD -> - | relay compares; mismatch -> state 4 |
+
+Relay (mzpico.com, beside the cloud repo service, FastAPI WebSocket): rooms
+with 4-character codes, one socket per device, JSON frames {create, join,
+ready, input, hash, leave}; broadcasts inputs per frame, chooses the seed,
+enforces one build id per room, drops a room after 60 s of silence.
+Stateless beyond a room. The browser build connects directly with a
+WebSocket; the Pico W with lwIP + a minimal WebSocket client.
+
+Steps (each ends tested):
+1. Protocol doc in this repo (`docs/net-protocol.md`) and PR to the firmware
+   plan; agree the command codes before any code.
+2. Z80 client: copy `mz-comm.c`, add `net.c` (detect, NETSTATUS, the seven
+   commands), NETWORK row on the title (NONE / MZPICO ready / room code).
+   Test: stub device in the host simulator and in the mz800emu Unicard
+   emulation answering REVD/INFO/NETSTATUS.
+3. Relay service with a Python test client; two clients exchange inputs.
+4. mz800emu: vendor commands in `unimgr.c` behind a transport callback -
+   native build uses a TCP/WebSocket socket to the relay (lets the phase 4
+   harness drive two emulator instances through a local relay), WASM build
+   uses a JS WebSocket. This is done before the firmware because it is the
+   fastest end-to-end path and the mzpico.com deliverable.
+5. Pico W firmware: `unicard.cpp` handlers, core-0 WebSocket client, ring
+   buffers; needs the `USE_PICO_W` build and a Deluxe W board on the bench.
+6. Test: an echo program exchanging inputs between two browser emulators,
+   then browser + physical MZ-800.
 
 ## Phase 6 - lockstep netcode in the game
 
 1. Input delay of 2-3 frames (120-180 ms) so peers rarely stall; local input
-   is queued for frame N+delay, remote inputs are awaited before frame N runs.
+   is queued for frame N+delay (NETSEND), remote inputs are awaited before
+   frame N runs (NETPOLL until avail >= N, then replay_keys[] = keys[4] and
+   the phase-4 input path does the rest); NETHASH every hash_period frames.
 2. Match setup screen: create/join room, show code, ready state, seed from
    the relay; disconnect and timeout handling (pause, then forfeit).
 3. Mixed sessions: physical MZ-800 with MZPico and mzpico.com browser in the

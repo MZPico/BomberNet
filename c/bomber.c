@@ -123,6 +123,8 @@ static void frame(void) {
   spawn_from_hit();
   check_pickups();
   time_tick();
+  frame_no++;
+  if (hash_period && (frame_no % hash_period) == 0) compute_state_hash();
 }
 
 /* animations only: no input, no AI */
@@ -341,6 +343,7 @@ static void stage_start(void) {
     bonus_revealed = exit_revealed = 1;
     exit_x = exit_y = 0;
   }
+  if (hash_period) compute_state_hash();
   title_mode = 0;
 }
 
@@ -483,6 +486,11 @@ static void run_deathmatch(void) {
 static void run_game(void) {
   game_mode = menu_mode;
   kbd_fire_cr = menu_fire_cr;
+  rng_seed(match_seed);
+  frame_no = 0;
+  tmr_player_anim.counter = tmr_enemy_die.counter = tmr_enemy_move.counter = 0;
+  tmr_time.counter = 2;
+  enemy_anim = bomb_anim = 0;
   if (game_mode == GAME_DM) { run_deathmatch(); return; }
   players_setup(menu_players);
   stage = 1;

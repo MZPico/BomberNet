@@ -20,7 +20,10 @@ static const uint8_t spawn_positions[4][2] = {
 
 void clear_enemies(void) {
   uint8_t i;
-  for (i = 0; i < ENEMY_SLOTS; i++) enemies[i].state = ENEMY_FREE;
+  for (i = 0; i < ENEMY_SLOTS; i++) {
+    enemy_t *e = &enemies[i];
+    e->state = ENEMY_FREE; e->x = e->y = e->type = e->countdown = e->dir = 0;
+  }
 }
 
 /* Activate enemies_left records at random corners (type is kept from

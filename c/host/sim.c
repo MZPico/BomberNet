@@ -16,6 +16,15 @@
 #include "data.h"
 
 static unsigned long frames, budget = 20000, tones, vram_writes;
+
+/* ---- record / replay (SIM_RECORD=file, SIM_REPLAY=file) ----
+ * File: 16-byte header "BNR1", seed lo/hi, mode, players, inputs[4], hash_period,
+ * pad; then one record per game frame (flush with title_mode == 0):
+ * keys[4] fed to the frame that follows, then state_hash lo/hi as it stood at
+ * that flush (= hash at the end of the previous frame). */
+static FILE *rec_out, *rec_in;
+static unsigned long rec_frames, mismatches;
+static void record_replay_step(void);
 static uint8_t vram[SCREEN_CELLS], vattr[SCREEN_CELLS];
 static unsigned max_stage, deaths, exits, cleared, kills, bricks_burnt;
 static uint8_t last_lives, last_stage, last_enemies;
@@ -117,6 +126,7 @@ static void finish(void) {
 void flush_screen(void) {
   unsigned i;
   frames++;
+  if (!title_mode && (rec_out || rec_in)) record_replay_step();
   for (i = 0; i < SCREEN_CELLS; i++) {
     uint8_t a = draw_buf[i];
     const uint8_t *t;
@@ -143,10 +153,57 @@ void flush_screen(void) {
     if (frames == 40) dump("first stage frame");
     if (frames == 400) dump("in play");
   }
-  if (frames >= budget) finish();
+  if (frames >= budget) {
+    if (rec_out) { fclose(rec_out); printf("recorded %lu game frames\n", rec_frames); }
+    if (rec_in) printf("replay: %lu frames compared, %lu mismatches\n", rec_frames, mismatches);
+    finish();
+  }
 }
 
 void mz_set_attr(uint8_t x, uint8_t y, uint8_t attr) { vattr[y * SCREEN_W + x] = attr; }
+
+static void bot_fill_keys(void) {
+  unsigned i;
+  for (i = 0; i < MAX_PLAYERS; i++) {
+    static uint8_t hold[MAX_PLAYERS], cur[MAX_PLAYERS];
+    if (!players[i].active) { replay_keys[i] = 0; continue; }
+    if (hold[i] == 0) {
+      uint8_t r = rand() & 15;
+      hold[i] = 4 + (rand() & 31);
+      cur[i] = (r < 4) ? (KEY_UP << r) : (r < 6 ? KEY_SPACE : 0);
+      if (r >= 6 && r < 10) cur[i] = KEY_UP << (r - 6);
+    }
+    hold[i]--;
+    replay_keys[i] = cur[i];
+  }
+}
+
+/* called at every flush of a game frame */
+static void record_replay_step(void) {
+  uint8_t rec[6];
+  if (rec_out) {
+    bot_fill_keys();
+    memcpy(rec, replay_keys, 4);
+    rec[4] = (uint8_t)state_hash; rec[5] = (uint8_t)(state_hash >> 8);
+    fwrite(rec, 1, 6, rec_out);
+    rec_frames++;
+  } else if (rec_in) {
+    uint16_t h;
+    if (fread(rec, 1, 6, rec_in) != 6) {
+      printf("replay: end of file after %lu frames, %lu mismatches\n", rec_frames, mismatches);
+      exit(mismatches ? 1 : 0);
+    }
+    h = rec[4] | (rec[5] << 8);
+    if (h != state_hash) {
+      if (mismatches < 10)
+        printf("replay: HASH MISMATCH at game frame %lu (frame_no %u): file %04x, here %04x\n",
+               rec_frames, frame_no, h, state_hash);
+      mismatches++;
+    }
+    memcpy(replay_keys, rec, 4);
+    rec_frames++;
+  }
+}
 
 void composite_map(void) {
   unsigned i;
@@ -156,10 +213,40 @@ void composite_map(void) {
 
 void game_main(void);
 
+static void setup_from_env(void) {
+  const char *v;
+  if ((v = getenv("SIM_MODE"))) menu_mode = (uint8_t)atoi(v);
+  if ((v = getenv("SIM_PLAYERS"))) menu_players = (uint8_t)atoi(v);
+  if ((v = getenv("SIM_SEED"))) match_seed = (uint16_t)strtoul(v, 0, 0);
+  if ((v = getenv("SIM_HASH"))) hash_period = (uint8_t)atoi(v);
+  if (menu_players > 2) joy_type = JOY_800;
+}
+
 int main(int argc, char **argv) {
+  const char *v;
   if (argc > 1) budget = strtoul(argv[1], 0, 10);
   scenario = getenv("SIM_DM") != 0;
   srand(argc > 2 ? atoi(argv[2]) : 1);
+  setup_from_env();
+  if ((v = getenv("SIM_RECORD"))) {
+    uint8_t hdr[16] = {'B', 'N', 'R', '1'};
+    rec_out = fopen(v, "wb");
+    if (!rec_out) { perror(v); return 2; }
+    if (!hash_period) hash_period = 1;
+    hdr[4] = (uint8_t)match_seed; hdr[5] = (uint8_t)(match_seed >> 8);
+    hdr[6] = menu_mode; hdr[7] = menu_players;
+    memcpy(hdr + 8, menu_inputs, 4); hdr[12] = hash_period;
+    fwrite(hdr, 1, 16, rec_out);
+    replay_active = 1;
+  } else if ((v = getenv("SIM_REPLAY"))) {
+    uint8_t hdr[16];
+    rec_in = fopen(v, "rb");
+    if (!rec_in || fread(hdr, 1, 16, rec_in) != 16 || memcmp(hdr, "BNR1", 4)) { fprintf(stderr, "bad replay %s\n", v); return 2; }
+    match_seed = hdr[4] | (hdr[5] << 8); menu_mode = hdr[6]; menu_players = hdr[7];
+    memcpy(menu_inputs, hdr + 8, 4); hash_period = hdr[12];
+    if (menu_players > 2) joy_type = JOY_800;
+    replay_active = 1;
+  }
   game_main();
   return 0;
 }
