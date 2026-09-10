@@ -120,6 +120,7 @@ typedef struct {
 
 /* ---- globals (game.c) ---- */
 extern const uint8_t player_digit_codes[MAX_PLAYERS];
+extern const uint8_t player_attrs[MAX_PLAYERS];   /* VRAM attribute of each player's colour */
 extern player_t players[MAX_PLAYERS];
 extern uint8_t player_count;
 extern uint8_t menu_players;              /* chosen on the title screen */
@@ -209,6 +210,7 @@ void mz_timer_init(void);                     /* program counter 1, take first s
 void mz_frame_sync(uint16_t ticks);           /* wait until ticks passed since last sync */
 void frame_sync(void);                        /* limiter + joystick sampling (game.c) */
 void flush_screen(void);                      /* draw_buf -> VRAM diff, clears draw_buf */
+void mz_set_attr(uint8_t x, uint8_t y, uint8_t attr);   /* direct write to the attribute plane */
 void composite_map(void);                     /* non-space map cells over draw_buf */
 
 /* ---- util ---- */
@@ -239,6 +241,7 @@ void draw_bombs(void);
 void players_setup(uint8_t count);            /* activate players 0..count-1 with default inputs */
 void players_stage_reset(void);               /* standing, alive, at their start positions */
 void player_killed(player_t *p);              /* deathmatch credit when a player starts dying */
+void players_death_colour(void);              /* after flush: dying sprites keep the player colour */
 void draw_players(void);
 void players_anim_step(void);
 void check_pickups(void);

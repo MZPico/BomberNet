@@ -86,6 +86,22 @@ static void draw_player(player_t *p) {
   put_player_char(p, c + SCREEN_W + 1, code + 17);
 }
 
+/* The death frames (40h-5Fh) are green in the table; there is no room for
+ * coloured copies, so the attribute plane is patched after every flush. */
+void players_death_colour(void) {
+  uint8_t i;
+  for (i = 0; i < MAX_PLAYERS; i++) {
+    player_t *p = &players[i];
+    uint8_t a;
+    if (!p->active || p->state < P_DYING || p->life_lost) continue;
+    a = player_attrs[i];
+    mz_set_attr(p->x, p->y, a);
+    mz_set_attr(p->x + 1, p->y, a);
+    mz_set_attr(p->x, p->y + 1, a);
+    mz_set_attr(p->x + 1, p->y + 1, a);
+  }
+}
+
 void draw_players(void) {
   uint8_t i;
   for (i = 0; i < MAX_PLAYERS; i++)

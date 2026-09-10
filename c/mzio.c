@@ -138,6 +138,10 @@ kb_5:
   __endasm;
 }
 
+void mz_set_attr(uint8_t x, uint8_t y, uint8_t attr) {
+  *((uint8_t *)0xd800 + row_off[y] + x) = attr;
+}
+
 /* ---- joysticks ----
  * MZ-800 / MZ-1500: ports F0h (joy 1) and F1h (joy 2), active low:
  * bit0 up, bit1 down, bit2 left, bit3 right, bit4 fire. The lines are only

@@ -146,6 +146,8 @@ void flush_screen(void) {
   if (frames >= budget) finish();
 }
 
+void mz_set_attr(uint8_t x, uint8_t y, uint8_t attr) { vattr[y * SCREEN_W + x] = attr; }
+
 void composite_map(void) {
   unsigned i;
   for (i = 0; i < SCREEN_CELLS; i++)
