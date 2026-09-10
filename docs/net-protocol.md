@@ -75,8 +75,10 @@ Errors (status byte 2 on ERROR): 6 build mismatch, 7 room unknown/full,
 
 ## Relay
 
-WebSocket service beside the mzpico.com cloud repository (FastAPI). One
-socket per device. JSON frames:
+Production: a Durable Object in the mzpico.com site Worker (Cloudflare),
+`wss://mzpico.com/net` for the browser emulator, `ws://api.mzpico.com/net`
+for the Pico W (plain-HTTP host). Reference and local test double:
+`relay/relay.py` (FastAPI). One socket per device. JSON frames:
 
 ```
 -> {"op":"create","game":G,"build":B,"slots":S,"bytes":N,"settings":"<hex>"}

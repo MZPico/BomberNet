@@ -196,7 +196,20 @@ Vendor commands 0xA0-0xA7 (input -> output; WORD little-endian):
 | 0xA6 | NETPOLL | frame WORD -> avail WORD, keys[4] | inputs of all slots for that frame; avail < frame means wait |
 | 0xA7 | NETHASH | frame WORD, hash WORD -> - | relay compares; mismatch -> state 4 |
 
-Relay (mzpico.com, beside the cloud repo service, FastAPI WebSocket): rooms
+Infrastructure (2026-09-11, from the mz-catalog repo): mzpico.com is Cloudflare
+Workers end to end - static site plus a Worker for `/api/*` on D1, and the
+`api.mzpico.com` shim that serves the firmware over plain HTTP; the browser
+emulator is the WASM build from the `wasm` branch of MZPico/mz800emu served
+from `/play/`. So the production relay is a **Durable Object in the site
+Worker** (one instance per room, hibernating WebSockets, alarm for the 60 s
+expiry), reached as `wss://mzpico.com/net` from the play page and as
+`ws://api.mzpico.com/net` from the Pico W (plain HTTP host; if lwIP cannot
+hold a WebSocket, the DO also serves HTTP long-polling on the shim). High
+scores go to D1 through the same Worker with its same-origin / hourly budget /
+salted hash conventions. The FastAPI relay in `relay/` is the local reference
+and test double for the DO; its JSON protocol is the contract.
+
+Relay (reference implementation, `relay/relay.py`, FastAPI WebSocket): rooms
 with 4-character codes, one socket per device, JSON frames {create, join,
 ready, input, hash, leave}; broadcasts inputs per frame, chooses the seed,
 enforces one build id per room, drops a room after 60 s of silence.
@@ -218,11 +231,15 @@ Steps (each ends tested):
    slot 0), `SIM_NETTEST=1 c/build/sim` runs the client self-test. Emulator:
    the mz800emu Unicard answers REVD as a uc3 and is reported as UNICARD.
 3. Relay service with a Python test client; two clients exchange inputs.
-4. mz800emu: vendor commands in `unimgr.c` behind a transport callback -
-   native build uses a TCP/WebSocket socket to the relay (lets the phase 4
-   harness drive two emulator instances through a local relay), WASM build
-   uses a JS WebSocket. This is done before the firmware because it is the
-   fastest end-to-end path and the mzpico.com deliverable.
+   DONE 2026-09-10 as the reference (`relay/relay.py`, `relay/test_relay.py`,
+   13 checks); production version = Durable Object in mz-catalog's site Worker.
+4. mz800emu (`wasm` branch of MZPico/mz800emu, used by mz-catalog's play
+   page): vendor commands in `unimgr.c` behind a transport callback and a
+   config switch to identify as an MZPico - native build uses a socket to the
+   relay (lets the phase 4 harness drive two emulator instances through the
+   local Python relay), WASM build uses a JS WebSocket from the play page.
+   Done before the firmware because it is the fastest end-to-end path and
+   the mzpico.com deliverable.
 5. Pico W firmware: `unicard.cpp` handlers, core-0 WebSocket client, ring
    buffers; needs the `USE_PICO_W` build and a Deluxe W board on the bench.
 6. Test: an echo program exchanging inputs between two browser emulators,
