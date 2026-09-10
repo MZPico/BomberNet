@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "game.h"
 #include "data.h"
+#include "uc.h"
 #include <string.h>
 
 /* per stage: enemy count, enemy behaviour-cycle period; stage 5+ uses the last row */
@@ -280,9 +281,12 @@ static void title_menu(void) {
              (menu_inputs[i] == INPUT_KBD_A && menu_fire_cr) ? kbd_a_cr_name : input_names[menu_inputs[i]],
              menu_item == 3 + i);
 
-  p = draw_at(9, 19);
+  p = draw_at(3, 19);
   p[0] = T_ARR_UP; p[1] = T_ARR_DOWN; title_text(p + 3, "SELECT");
-  p[12] = T_ARR_LEFT; p[13] = T_ARR_RIGHT; title_text(p + 15, "CHANGE");
+  p[11] = T_ARR_LEFT; p[12] = T_ARR_RIGHT; title_text(p + 14, "CHANGE");
+  title_text(p + 23, "NET ");
+  title_text(p + 27, net_device == NETDEV_NET ? "MZPICO " : net_device == NETDEV_MZPICO ? "NO WIFI" :
+                     net_device == NETDEV_UNICARD ? "UNICARD" : "NONE   ");
   title_text(draw_at(5, 20), "HI-SCORE");
   print_num5(draw_at(14, 20), hi_score);
   title_text(draw_at(22, 20), "SCORE");
@@ -524,6 +528,7 @@ void main(void)
 #endif
 {
   mz_timer_init();
+  net_detect();
   clear_buffers();
   hi_score = 0;
   players_setup(1);

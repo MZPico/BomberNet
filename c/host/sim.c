@@ -161,6 +161,75 @@ void flush_screen(void) {
 }
 
 void mz_set_attr(uint8_t x, uint8_t y, uint8_t attr) { vattr[y * SCREEN_W + x] = attr; }
+#include "uc.h"
+/* ---- host stub of the MZPico NET device (SIM_NET=1): loop-back room ----
+ * Implements the port-level contract of docs/net-protocol.md for one peer:
+ * REVD/INFO detection, a room whose only member is this machine (all slots
+ * echo slot 0's input), so the lockstep code path can run on the host. */
+static int stub_net;
+static uint8_t st4[4], stptr, cmd, params[64], plen, need, out[64], olen, optr, in_room, running;
+static uint16_t out_frames[256][1];    /* keys per frame for the echo room */
+static uint8_t fr_keys[256][4];
+static uint16_t fr_avail = 0xffff;
+static void set_out(const uint8_t *d, uint8_t n) { memcpy(out, d, n); olen = n; optr = 0; st4[0] = n ? UC_ST_OUTPUT : 0; }
+static void set_err(uint8_t code) { st4[0] = UC_ST_ERROR; st4[2] = code; olen = 0; }
+static uint16_t P16(uint8_t i) { return params[i] | (params[i + 1] << 8); }
+static void exec_cmd(void) {
+  uint8_t o[16] = {0};
+  st4[1] = cmd; st4[0] = 0;
+  switch (cmd) {
+  case cmdREVD: o[2] = 0x4d; o[3] = 1; set_out(o, 4); st4[2] = 4; break;
+  case cmdX_INFO: o[0] = 1; o[3] = 0x01 | UC_INFO_NET; set_out(o, 16); break;
+  case cmdN_STATUS: o[0] = running ? NETST_RUNNING : in_room ? NETST_INROOM : NETST_READY; o[1] = 0; o[2] = in_room; o[3] = in_room; set_out(o, 8); break;
+  case cmdN_CREATE: if (P16(0) != NET_GAME_ID) { set_err(10); break; } in_room = 1; running = 0; fr_avail = 0xffff; memcpy(o, "TEST\r", 5); o[5] = 0; set_out(o, 6); break;
+  case cmdN_JOIN: set_err(7); break;
+  case cmdN_LEAVE: in_room = running = 0; break;
+  case cmdN_READY: if (!in_room) { set_err(8); break; } running = params[0]; o[0] = 0x34; o[1] = 0x12; o[2] = o[3] = 0; if (!running) o[0] = o[1] = o[2] = o[3] = 0xff; set_out(o, 4); break;
+  case cmdN_SEND: { uint16_t f = P16(0); if (!running) { set_err(8); break; } memset(fr_keys[f & 255], params[2], 4); if (fr_avail == 0xffff || f > fr_avail) fr_avail = f; break; }
+  case cmdN_POLL: { uint16_t f = P16(0); if (!running) { set_err(8); break; } o[0] = (uint8_t)fr_avail; o[1] = (uint8_t)(fr_avail >> 8); if (fr_avail != 0xffff && f <= fr_avail) memcpy(o + 2, fr_keys[f & 255], 4); set_out(o, 6); break; }
+  case cmdN_HASH: break;
+  case cmdN_MSG: if (params[1] == 0) { o[0] = 0xff; o[1] = 0; set_out(o, 2); } break;
+  default: set_err(1); break;
+  }
+}
+static uint8_t param_len(uint8_t c) {
+  switch (c) {
+  case cmdN_CREATE: return 7;   /* + settings, handled in uc_wr */
+  case cmdN_JOIN: return 0xff;  /* string-terminated after 4 fixed bytes */
+  case cmdN_READY: return 1;
+  case cmdN_SEND: return 3;
+  case cmdN_POLL: return 2;
+  case cmdN_HASH: return 4;
+  case cmdN_MSG: return 2;      /* + data */
+  default: return 0;
+  }
+}
+void uc_cmd(uint8_t c) {
+  if (!stub_net) return;
+  if (c == cmdSTSR) { stptr = 0; return; }
+  cmd = c; plen = 0; need = param_len(c); stptr = 0; olen = 0;
+  if (need == 0) exec_cmd(); else st4[0] = UC_ST_BUSY;
+}
+void uc_wr(uint8_t d) {
+  if (!stub_net || !(st4[0] & UC_ST_BUSY)) return;
+  if (plen < sizeof(params)) params[plen++] = d;
+  if (cmd == cmdN_JOIN) { if (plen > 4 && d < 0x20) exec_cmd(); return; }
+  if (cmd == cmdN_CREATE && plen == 7) need = 7 + params[6];
+  if (cmd == cmdN_MSG && plen == 2) need = 2 + params[1];
+  if (plen >= need) exec_cmd();
+}
+uint8_t uc_rd(void) {
+  if (!stub_net) return 0xff;
+  stptr = 0;
+  if (optr < olen) { uint8_t v = out[optr++]; if (optr == olen) st4[0] &= ~UC_ST_OUTPUT; return v; }
+  return 0;
+}
+void uc_status4(uint8_t *s) {
+  if (!stub_net) { memset(s, 0xff, 4); return; }
+  memcpy(s, st4, 4);
+}
+void uc_read(uint8_t *d, uint16_t n) { while (n--) *d++ = uc_rd(); }
+void uc_wstr(const char *s) { while (*s) uc_wr((uint8_t)*s++); uc_wr(0x0d); }
 
 static void bot_fill_keys(void) {
   unsigned i;
@@ -219,11 +288,14 @@ static void setup_from_env(void) {
   if ((v = getenv("SIM_PLAYERS"))) menu_players = (uint8_t)atoi(v);
   if ((v = getenv("SIM_SEED"))) match_seed = (uint16_t)strtoul(v, 0, 0);
   if ((v = getenv("SIM_HASH"))) hash_period = (uint8_t)atoi(v);
+  stub_net = getenv("SIM_NET") != 0;
   if (menu_players > 2) joy_type = JOY_800;
 }
 
+int nettest(void);
 int main(int argc, char **argv) {
   const char *v;
+  if (getenv("SIM_NETTEST")) { stub_net = 1; return nettest(); }
   if (argc > 1) budget = strtoul(argv[1], 0, 10);
   scenario = getenv("SIM_DM") != 0;
   srand(argc > 2 ? atoi(argv[2]) : 1);

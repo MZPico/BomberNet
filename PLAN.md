@@ -210,6 +210,13 @@ Steps (each ends tested):
    commands), NETWORK row on the title (NONE / MZPICO ready / room code).
    Test: stub device in the host simulator and in the mz800emu Unicard
    emulation answering REVD/INFO/NETSTATUS.
+   DONE 2026-09-10: `c/uc.{c,h}` (transport primitives from the manager),
+   `c/net.c` (REVD/INFO detection: NONE / UNICARD / MZPICO without NET /
+   MZPICO NET, shown as "NET ..." on the title hint row; full client API for
+   0xA0-0xA8). Host: `SIM_NET=1` enables a loop-back stub device in `sim.c`
+   implementing the port-level contract (one room "TEST", all slots echo
+   slot 0), `SIM_NETTEST=1 c/build/sim` runs the client self-test. Emulator:
+   the mz800emu Unicard answers REVD as a uc3 and is reported as UNICARD.
 3. Relay service with a Python test client; two clients exchange inputs.
 4. mz800emu: vendor commands in `unimgr.c` behind a transport callback -
    native build uses a TCP/WebSocket socket to the relay (lets the phase 4
