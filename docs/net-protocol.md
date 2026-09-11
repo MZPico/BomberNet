@@ -76,10 +76,16 @@ Errors (status byte 2 on ERROR): 6 build mismatch, 7 room unknown/full,
 
 ## Relay
 
-Production: a Durable Object in the mzpico.com site Worker (Cloudflare),
+Production: a Durable Object per room in the mzpico.com site Worker
+(mz-catalog `workers/site/net.js`, class `NetRoom`, route `/net`),
 `wss://mzpico.com/net` for the browser emulator, `ws://api.mzpico.com/net`
-for the Pico W (plain-HTTP host). Reference and local test double:
-`relay/relay.py` (FastAPI). One socket per device. JSON frames:
+for the Pico W (plain-HTTP host). Because a socket is handed to its room's
+object at upgrade time, the URL names the room: `/net?game=<id>&create=1`
+(the Worker picks a free code) or `/net?game=<id>&code=<ABCD>`; the first
+message must be the matching create/join. Rooms idle for 10 minutes or left
+by everyone are deleted. The reference relay `relay/relay.py` (FastAPI)
+ignores the query string, so clients written for the URL scheme work on both.
+One socket per device. JSON frames:
 
 ```
 -> {"op":"create","game":G,"build":B,"slots":S,"bytes":N,"settings":"<hex>"}

@@ -236,7 +236,13 @@ Steps (each ends tested):
    the mz800emu Unicard answers REVD as a uc3 and is reported as UNICARD.
 3. Relay service with a Python test client; two clients exchange inputs.
    DONE 2026-09-10 as the reference (`relay/relay.py`, `relay/test_relay.py`,
-   13 checks); production version = Durable Object in mz-catalog's site Worker.
+   13 checks); production version = Durable Object in mz-catalog's site Worker:
+   DONE 2026-09-11 locally - `workers/site/net.js` (`NetRoom`, hibernation
+   WebSocket API, attachments per socket, alarm expiry, `netUpgrade` picks free
+   codes), `/net` in `workers/site/index.js`, bindings + migration in both
+   wrangler configs; the same 13-check client passes against `wrangler dev`.
+   The page bridge opens one socket per room on the game's create/join line.
+   Not yet deployed (staging deploy needs the owner's wrangler login).
 4. mz800emu (`wasm` branch of MZPico/mz800emu, used by mz-catalog's play
    page): vendor commands in `unimgr.c` behind a transport callback and a
    config switch to identify as an MZPico - native build uses a socket to the

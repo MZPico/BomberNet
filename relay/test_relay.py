@@ -7,6 +7,10 @@ import websockets
 
 URL = sys.argv[1] if len(sys.argv) > 1 else "ws://127.0.0.1:8765/net"
 GAME, BUILD = 0x424E, 0x0101
+# Durable Object relay: the socket URL names the room (/net?game=G&create=1 or
+# /net?game=G&code=X). The Python relay ignores the query, so both work.
+def url_create(game=GAME): return f"{URL}?game={game}&create=1"
+def url_join(code, game=GAME): return f"{URL}?game={game}&code={code}"
 
 
 async def recv_op(ws, op, timeout=3):
@@ -24,14 +28,16 @@ async def main():
         print(("ok   " if cond else "FAIL ") + what)
         if not cond: fails += 1
 
-    async with websockets.connect(URL) as a, websockets.connect(URL) as b:
+    async with websockets.connect(url_create()) as a:
         await a.send(json.dumps({"op": "create", "game": GAME, "build": BUILD, "slots": 2, "bytes": 1, "settings": "0102"}))
         r = await recv_op(a, "room"); code = r["code"]
         check(r["slot"] == 0 and len(code) == 4, f"create -> room {code} slot 0")
 
-        await b.send(json.dumps({"op": "join", "game": GAME, "build": 0x0202, "code": code}))
-        e = await recv_op(b, "error"); check(e["code"] == 6, "join with wrong build -> error 6")
+        async with websockets.connect(url_join(code)) as bad:
+            await bad.send(json.dumps({"op": "join", "game": GAME, "build": 0x0202, "code": code}))
+            e = await recv_op(bad, "error"); check(e["code"] == 6, "join with wrong build -> error 6")
 
+        b = await websockets.connect(url_join(code))
         await b.send(json.dumps({"op": "join", "game": GAME, "build": BUILD, "code": code}))
         r = await recv_op(b, "room"); check(r["slot"] == 1 and r["settings"] == "0102", "join -> slot 1, settings passed")
         while (m := await recv_op(a, "members"))["count"] < 2: pass
@@ -59,7 +65,7 @@ async def main():
         await a.send(json.dumps({"op": "msg", "to": 1, "data": "4869"}))
         m = await recv_op(b, "msg"); check(m["from"] == 0 and m["data"] == "4869", "message A -> B")
 
-        async with websockets.connect(URL) as c:
+        async with websockets.connect(url_join(code)) as c:
             await c.send(json.dumps({"op": "join", "game": GAME, "build": BUILD, "code": code}))
             r = await recv_op(c, "room"); check(r.get("spectator") and r["slot"] == -1, "third joiner becomes spectator")
             await a.send(json.dumps({"op": "input", "frame": 20, "data": "1f"}))
@@ -67,10 +73,16 @@ async def main():
 
         await b.send(json.dumps({"op": "leave"}))
         m = await recv_op(a, "dropped"); check(m["slot"] == 1, "leave -> dropped slot 1")
+        await b.close()
 
-    async with websockets.connect(URL) as d:
-        await d.send(json.dumps({"op": "join", "game": GAME + 1, "build": BUILD, "code": code}))
-        e = await recv_op(d, "error"); check(e["code"] == 7, "same code under another game id -> unknown room")
+        # an unknown room: the Python relay answers error 7 to the join; the Durable
+        # Object sends error 7 and closes the socket at connect time - both are fine
+        try:
+            async with websockets.connect(url_join(code, GAME + 1)) as d:
+                await d.send(json.dumps({"op": "join", "game": GAME + 1, "build": BUILD, "code": code}))
+                e = await recv_op(d, "error"); check(e["code"] == 7, "same code under another game id -> unknown room")
+        except websockets.exceptions.ConnectionClosed as ex:
+            check("room unknown" in str(ex), "same code under another game id -> unknown room (closed by relay)")
     print("FAILURES:", fails)
     return fails
 
