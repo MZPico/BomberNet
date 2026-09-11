@@ -253,12 +253,17 @@ Steps (each ends tested):
    mzpico_mode` and `net_relay` in `unicard.c`. The relay gained a JSON-lines
    TCP port (8766). `tools/nettest.py`: two headless instances through the
    local relay, 13 checks green. Protocol draft 2: fixed-size blobs and
-   NETRECV 0xA9. Remaining for this step: the WASM build and the play-page
-   WebSocket glue in mz-catalog (`window.Module._mz_wasm_net_*`).
-5. Pico W firmware: `unicard.cpp` handlers, core-0 WebSocket client, ring
-   buffers; needs the `USE_PICO_W` build and a Deluxe W board on the bench.
-6. Test: an echo program exchanging inputs between two browser emulators,
-   then browser + physical MZ-800.
+   NETRECV 0xA9.
+   Browser side DONE 2026-09-11 (uncommitted in mz-catalog, on top of the
+   owner's work in progress there): mz800emu `wasm` branch 68a7718 makes the
+   Emscripten build identify as an MZPico by default; WASM rebuilt with the
+   NET exports and installed in `site/public/play/emu/`; new
+   `site/src/lib/mznet.ts` (WebSocket to `/net` on the page's origin,
+   reconnect, pumps lines through `mz_wasm_net_push/pop`, `mz_wasm_net_link`)
+   and a `#netpanel` line plus a hook appended to `Play.astro` (attaches on
+   `mz:ready`). Site builds clean. Not yet exercised in a browser: needs the
+   relay reachable at `/net` (Durable Object, next step) or a dev proxy to
+   the Python relay.
 
 ## Phase 6 - lockstep netcode in the game
 
