@@ -276,7 +276,22 @@ Steps (each ends tested):
    and a `#netpanel` line plus a hook appended to `Play.astro` (attaches on
    `mz:ready`). Site builds clean. Not yet exercised in a browser: needs the
    relay reachable at `/net` (Durable Object, next step) or a dev proxy to
-   the Python relay.
+   the Python relay. Later the same day: relay deployed as a Durable Object
+   and the browser-to-browser match verified on staging (see step 3).
+5. Pico W firmware: `unicard.cpp` handlers, core-0 WebSocket client, ring
+   buffers; needs the `USE_PICO_W` build and a Deluxe W board on the bench.
+   CODE DONE 2026-09-11 (MZPico-firmware, local commit f505a59, not pushed):
+   `src/mz_devices/unicard_net.{hpp,cpp}` (device state, same semantics as
+   the emulator's `unimgr_net.c`), `src/net_relay.{hpp,cpp}` (core-0
+   WebSocket client on raw lwIP, SPSC line queues), hooks in `unicard.cpp`
+   (param formats, exec, IN_PROGRESS for CREATE/JOIN, INFO bit 0x08 on W),
+   core-0 poll loop, ini keys `[cloud] net_relay` / `net_port`. Deluxe W and
+   frugal builds pass, host harness green (108 checks). Hardware validation
+   pending (`docs/net-extension.md` in the firmware repo).
+6. Test: an echo program exchanging inputs between two browser emulators,
+   then browser + physical MZ-800. Browser + browser done with the game
+   itself (`tools/browser_match.mjs`); browser + physical MZ-800 pending
+   hardware.
 
 ## Phase 6 - lockstep netcode in the game - DONE 2026-09-11 (emulator to emulator)
 
