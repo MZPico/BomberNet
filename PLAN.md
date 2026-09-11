@@ -242,7 +242,14 @@ Steps (each ends tested):
    codes), `/net` in `workers/site/index.js`, bindings + migration in both
    wrangler configs; the same 13-check client passes against `wrangler dev`.
    The page bridge opens one socket per room on the game's create/join line.
-   Not yet deployed (staging deploy needs the owner's wrangler login).
+   DEPLOYED to staging.mzpico.com 2026-09-11 (with the BomberNet catalog title
+   `titles/bombernet`): the 13-check client passes against
+   `wss://staging.mzpico.com/net`, and `tools/browser_match.mjs` drives two
+   Chromium tabs on the staging play page (host, join by typed code, ready,
+   40 s of play): both report "running", no desync. Automated Chromium needs
+   `--disable-audio-output` (the emulator is paced by the audio callback and
+   snap Chromium has no audio device here) and keys injected as synthetic
+   KeyboardEvents on the canvas. mz-catalog commits are local, not pushed.
 4. mz800emu (`wasm` branch of MZPico/mz800emu, used by mz-catalog's play
    page): vendor commands in `unimgr.c` behind a transport callback and a
    config switch to identify as an MZPico - native build uses a socket to the
