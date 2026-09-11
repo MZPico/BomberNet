@@ -265,7 +265,7 @@ Steps (each ends tested):
    relay reachable at `/net` (Durable Object, next step) or a dev proxy to
    the Python relay.
 
-## Phase 6 - lockstep netcode in the game
+## Phase 6 - lockstep netcode in the game - DONE 2026-09-11 (emulator to emulator)
 
 1. Input delay of 2-3 frames (120-180 ms) so peers rarely stall; local input
    is queued for frame N+delay (NETSEND), remote inputs are awaited before
@@ -277,6 +277,23 @@ Steps (each ends tested):
    same room; local players on one machine plus remote players.
 4. Test: hash comparison across two emulator instances driven by
    `tools/emu.py` through the relay.
+
+Result: NETWORK row (OFF / HOST / JOIN) on the title when the device has NET;
+HOST creates a room and shows the code, JOIN has a 4-letter code entry (UP/DOWN
+letter, LEFT/RIGHT position, SPACE join, E cancel); the lobby shows members and
+readies on SPACE; mode and player count come from the host's settings blob.
+One local player per device (the LOCAL row picks its input; every player
+record uses INPUT_NET so the state is identical on all devices). Every
+`input_poll` is a lockstep step: local keys are sent for step N+2, the vector
+for step N is awaited (a WAIT flag is raised after 4 polls), hashes go to the
+relay every 16 frames, DESYNC / DROPPED / link loss end the match with a
+message. Verified with `tools/lockstep_test.py`: two headless emulators through
+the reference relay, host and joiner, 60 frames of deathmatch in lockstep with
+no abort and no desync verdict from the relay at frames 16, 32 and 48. Fixed on
+the way: relay room TTL (60 s killed rooms while a host waited), lobby key edges
+shared with the menu, and the input-source field leaking into the hash.
+Open: several local players in one network room (one slot per connection today),
+browser and firmware peers (phase 5 steps 4b/5).
 
 ## Phase 7 - high scores on mzpico.com
 

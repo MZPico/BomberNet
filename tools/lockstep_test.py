@@ -44,15 +44,23 @@ try:
     print('in game: title_mode', a.rd(TM, 1)[0], b.rd(TM, 1)[0], 'net_active', a.rd(NA, 1)[0], b.rd(NA, 1)[0])
     a.e.press('LEFT'); b.e.press('D')                    # A walks left, B (WASD as local input? no: local input row 0 = cursor) -> use RIGHT
     b.e.release('D'); b.e.press('RIGHT')
-    mism = 0; last = None
+    # state_hash is recomputed every 16 frames; key each sample by the frame it
+    # describes, then compare the frames both instances hashed
+    HP = 16
+    seen = {'A': {}, 'B': {}}
     for i in range(N):
         a.e.run_until(F); b.e.run_until(F)
-        fa, fb = a.rd(FN, 2), b.rd(FN, 2)
-        ha, hb = a.rd(SH, 2), b.rd(SH, 2)
-        if fa == fb and ha != hb: mism += 1
-        if i % 10 == 0 or ha != hb:
-            print(f'step {i}: A frame {fa[0] | fa[1] << 8} hash {ha.hex()} | B frame {fb[0] | fb[1] << 8} hash {hb.hex()} abort {a.rd(NAB, 1)[0]}/{b.rd(NAB, 1)[0]}')
-    print(f'done: {N} steps, {mism} hash mismatches on equal frames; abort flags {a.rd(NAB, 1)[0]} {b.rd(NAB, 1)[0]}')
-    sys.exit(1 if mism else 0)
+        for name, inst in (('A', a), ('B', b)):
+            f = inst.rd(FN, 2); f = f[0] | f[1] << 8
+            h = inst.rd(SH, 2).hex()
+            if f >= HP: seen[name][(f // HP) * HP] = h
+        if i % 10 == 0:
+            print(f'step {i}: A frame {f} | hashed frames A {sorted(seen["A"])[-3:]} B {sorted(seen["B"])[-3:]} abort {a.rd(NAB, 1)[0]}/{b.rd(NAB, 1)[0]}')
+    common = sorted(set(seen['A']) & set(seen['B']))
+    mism = [f for f in common if seen['A'][f] != seen['B'][f]]
+    for f in common: print(f'frame {f}: A {seen["A"][f]} B {seen["B"][f]} {"MISMATCH" if f in mism else "ok"}')
+    aborts = (a.rd(NAB, 1)[0], b.rd(NAB, 1)[0])
+    print(f'done: {N} steps, {len(common)} hashed frames compared, {len(mism)} mismatches; abort flags {aborts}')
+    sys.exit(1 if mism or any(aborts) or not common else 0)
 finally:
     a.e.close(); b.e.close()
