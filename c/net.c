@@ -31,13 +31,17 @@ void net_detect(void) {
 
 /* wait for a command to finish: IN_PROGRESS -> poll; then OUTPUT or ERROR */
 static uint8_t net_wait(uint8_t st[4]) {
-  for (;;) {
+  uint16_t hi, lo;
+  /* ~20 s at 4 status reads per iteration: a card whose relay link stalls
+   * reports NO CONNECTION instead of freezing the machine */
+  for (hi = 0; hi < 40; hi++) for (lo = 0; lo < 0x2000; lo++) {
     uc_status4(st);
     if (st[0] & UC_ST_ERROR) return st[2] ? st[2] : 0xfe;
     if (st[0] & UC_ST_INPROG) continue;
     if (st[0] & UC_ST_BUSY) return 10;         /* parameters incomplete */
     return 0;
   }
+  return 9;
 }
 
 static void uc_wword(uint16_t v) { uc_wr((uint8_t)v); uc_wr((uint8_t)(v >> 8)); }

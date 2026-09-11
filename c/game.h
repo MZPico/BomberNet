@@ -191,6 +191,7 @@ void clear_buffers(void);
 extern uint8_t kbd_fire_cr;                   /* 1: keyboard set A fires with CR instead of SPACE */
 uint8_t mz_keys(void);                        /* keyboard set A: cursor keys + SPACE (or CR) */
 uint8_t mz_keys_b(void);                      /* keyboard set B: W A S D + E */
+uint8_t mz_key_letter(void);                  /* 'A'..'Z', 8 DEL, 0x1b BREAK, 0 none (code entry) */
 uint8_t mz_joy(uint8_t n);                    /* joystick 0/1 as a key mask (type from joy_type) */
 uint8_t mz_joy800(uint8_t n);                 /* raw read of port F0h/F1h as a key mask */
 void mz_joy1x03_measure(void);                /* at the VBLK edge: fill joy_state[] for both sticks */

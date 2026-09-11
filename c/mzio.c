@@ -86,6 +86,56 @@ mk_5:
   __endasm;
 }
 
+/* One key of the letter rows for typing a room code: 'A'..'Z', 8 for DEL,
+ * 1Bh for BREAK, 0 when none. Rows: F4h A..H, F3h I..P, F2h Q..X (bit 7..0),
+ * F1h Y (bit 7) Z (bit 6); F7h DEL = bit 6; F8h BREAK = bit 7. */
+uint8_t mz_key_letter(void) __naked {
+  __asm
+    ld   hl,mkl_tab
+mkl_row:
+    ld   a,(hl)             ; strobe value, 0 = end of table
+    or   a
+    jr   z,mkl_none
+    ld   (0xe000),a
+    inc  hl
+    nop
+    nop
+    ld   a,(0xe001)
+    ld   b,a
+    nop
+    ld   a,(0xe001)
+    or   b
+    cpl                     ; 1 = pressed
+    and  (hl)               ; keys of interest in this row
+    inc  hl
+    jr   nz,mkl_hit
+    inc  hl
+    jr   mkl_row
+mkl_hit:
+    ld   c,(hl)             ; code of bit 7; bit 6 = +1 ...
+mkl_bit:
+    rlca
+    jr   c,mkl_done
+    inc  c
+    jr   mkl_bit
+mkl_done:
+    ld   l,c
+    ld   h,0
+    ret
+mkl_none:
+    ld   hl,0
+    ret
+mkl_tab:
+    defb 0xf4,0xff,65       ; A..H
+    defb 0xf3,0xff,73       ; I..P
+    defb 0xf2,0xff,81       ; Q..X
+    defb 0xf1,0xc0,89       ; Y Z
+    defb 0xf7,0x40,7        ; DEL -> 8
+    defb 0xf8,0x80,0x1b     ; BREAK
+    defb 0
+  __endasm;
+}
+
 /* Keyboard set B: strobe F2h row: Q R S T U V W X (bit 7..0) -> W bit1 = up,
  * S bit5 = down; strobe F4h row: A B C D E F G H -> A bit7 = left, D bit4 =
  * right, E bit3 = fire. */

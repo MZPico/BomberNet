@@ -233,8 +233,8 @@ twice per frame (the original ticks only four timers globally; `tmr_explode` and
 
 Network play (phase 6): with an MZPico that has the NET extension (or mz800emu with
 `[UNICARD] mzpico_mode = 1`), the title shows a NETWORK row: HOST creates a room and
-shows its 4-letter code, JOIN asks for a code (UP/DOWN letter, LEFT/RIGHT position,
-SPACE join, E cancel). One local player per device (the LOCAL row picks its input);
+shows its 4-letter code, JOIN asks for a code (type the letters, or UP/DOWN letter and LEFT/RIGHT position, DEL back,
+SPACE join, BREAK cancel). One local player per device (the LOCAL row picks its input);
 mode and player count come from the host. Both press SPACE in the lobby to ready up;
 the match is lockstep with 2 frames of input delay, hashes are compared every 16
 frames and a desync or a dropped peer ends the match with a message. The reference

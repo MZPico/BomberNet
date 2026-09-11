@@ -356,8 +356,10 @@ static void lobby_error(uint8_t r) {
 static const char code_alphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZ";
 
 /* code entry: UP/DOWN letter, LEFT/RIGHT position, SPACE join; returns 0 = cancelled */
+/* Room code: type the letters (the cursor advances), or step through the
+ * alphabet with UP/DOWN and move with LEFT/RIGHT. DEL steps back. */
 static uint8_t lobby_enter_code(void) {
-  uint8_t pos = 0, idx[4], i, edge;
+  uint8_t pos = 0, idx[4], i, edge, key, last_key = 0xff;
   char line[16];
   for (i = 0; i < 4; i++) {
     const char *q = strchr(code_alphabet, net_code[i]);
@@ -366,13 +368,28 @@ static uint8_t lobby_enter_code(void) {
   for (;;) {
     for (i = 0; i < 4; i++) { line[i * 2] = code_alphabet[idx[i]]; line[i * 2 + 1] = ' '; }
     line[7] = 0;
-    edge = lobby_frame("ENTER ROOM CODE", line, "SPACE JOIN  E CANCEL");
+    edge = lobby_frame("TYPE THE ROOM CODE", line, "SPACE JOIN  BREAK CANCEL");
     *draw_at(MENU_X + (MENU_W - 7) / 2 + pos * 2, MENU_Y + 5) = T_ARR_UP;
     if (edge & KEY_UP) { idx[pos] = (uint8_t)((idx[pos] + 1) % 24); mz_tone(0x030a, 14); }
     if (edge & KEY_DOWN) { idx[pos] = (uint8_t)((idx[pos] + 23) % 24); mz_tone(0x030a, 14); }
     if ((edge & KEY_RIGHT) && pos < 3) pos++;
     if ((edge & KEY_LEFT) && pos > 0) pos--;
-    if (mz_keys_b() & KEY_SPACE) return 0;
+    key = mz_key_letter();
+    if (key != last_key) {
+      last_key = key;
+      if (key == 0x1b) return 0;
+      if (key == 8) { if (pos > 0) pos--; }
+      else if (key) {
+        const char *q = strchr(code_alphabet, key);
+        if (q) {
+          idx[pos] = (uint8_t)(q - code_alphabet);
+          if (pos < 3) pos++;
+          mz_tone(0x030a, 14);
+        } else {
+          mz_tone(0x0a0a, 14);          /* I and O are not used in codes */
+        }
+      }
+    }
     if (edge & KEY_SPACE) {
       for (i = 0; i < 4; i++) net_code[i] = code_alphabet[idx[i]];
       net_code[4] = 0;

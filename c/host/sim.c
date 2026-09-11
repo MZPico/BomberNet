@@ -65,6 +65,7 @@ uint8_t mz_keys(void) {
 
 
 uint8_t mz_keys_b(void) { return (scenario || menu_net) ? 0 : (uint8_t)(rand() & 0x1f); }
+uint8_t mz_key_letter(void) { return 0; }
 void mz_tone(uint16_t ratio, uint8_t len) { (void)ratio; (void)len; tones++; }
 void mz_delay(void) {}
 uint8_t mz_joy(uint8_t n) { (void)n; return 0; }
