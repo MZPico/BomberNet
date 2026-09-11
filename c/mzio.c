@@ -98,8 +98,9 @@ mkl_row:
     jr   z,mkl_none
     ld   (0xe000),a
     inc  hl
-    nop
-    nop
+    ld   b,12               ; ~40 us for the matrix lines to settle (a fresh row)
+mkl_settle:
+    djnz mkl_settle
     ld   a,(0xe001)
     ld   b,a
     nop
