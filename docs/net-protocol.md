@@ -99,7 +99,7 @@ for the Pico W (plain-HTTP host). Reference and local test double:
 <- {"op":"error","code":6..11,"text":"..."}
 ```
 
-Rooms die 60 s after their last message. Codes are 4 letters from a
+Rooms die 10 minutes after their last message (a host may wait a while). Codes are 4 letters from a
 26-letter alphabet without I/O. A room is bound to (game, build).
 
 ## Frame budget

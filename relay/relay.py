@@ -49,7 +49,7 @@ class Conn:
 TCP_PORT = 8766
 
 ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ"
-ROOM_TTL = 60.0
+ROOM_TTL = 600.0     # idle rooms only; a room whose members all leave is removed at once
 HISTORY = 256
 
 E_BUILD, E_ROOM, E_NOROOM, E_NOLINK, E_PARAM, E_FULL = 6, 7, 8, 9, 10, 11
@@ -169,6 +169,7 @@ async def session(ws: Conn):
                 game, build, code = int(msg.get("game", 0)), int(msg.get("build", 0)), str(msg.get("code", "")).upper()
                 r = rooms.get((game, code))
                 if not r:
+                    print(f"join refused: game={game:#x} build={build:#x} code={code!r} known={[k for k in rooms]}", flush=True)
                     await err(ws, E_ROOM, "room unknown")
                     continue
                 if r.build != build:
