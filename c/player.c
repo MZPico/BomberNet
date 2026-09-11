@@ -19,9 +19,10 @@ void players_setup(uint8_t count) {
   for (i = 0; i < MAX_PLAYERS; i++) {
     player_t *p = &players[i];
     p->active = i < count;
-    /* network match: one local player per device in slot net_slot, the
-     * others arrive through the lockstep vector */
-    p->input = net_active ? (i == net_slot ? menu_inputs[0] : INPUT_NET) : menu_inputs[i];
+    /* network match: every player's keys arrive through the lockstep vector
+     * (the local source is read by net_lockstep_poll), and the record must be
+     * identical on every device because it is part of the state hash */
+    p->input = net_active ? INPUT_NET : menu_inputs[i];
     p->tile_a = player_tiles[i][0];
     p->tile_b = player_tiles[i][1];
     p->score = 0;

@@ -159,6 +159,13 @@ char net_code[5] = "AAAA";
 static uint16_t net_frame;
 static uint8_t net_local_input;
 
+/* a failed NET command: ask the device why (desync / dropped) */
+static void net_fail(void) {
+  net_status_t st;
+  net_abort = 9;
+  if (net_status(&st) == 0 && (st.state == NETST_DESYNC || st.state == NETST_DROPPED)) net_abort = st.state;
+}
+
 void net_match_start(uint8_t local_input) {
   uint8_t f;
   net_local_input = local_input;
@@ -175,9 +182,9 @@ void net_lockstep_poll(void) {
   uint8_t keys[NET_SLOTS], i, tries = 0;
   net_status_t st;
   if (net_abort) { for (i = 0; i < MAX_PLAYERS; i++) players[i].keys = 0; return; }
-  if (net_send(net_frame + NET_DELAY, input_read(net_local_input)) != 0) net_abort = 9;
+  if (net_send(net_frame + NET_DELAY, input_read(net_local_input)) != 0) net_fail();
   while (!net_abort) {
-    if (net_poll(net_frame, &avail, keys) != 0) { net_abort = 9; break; }
+    if (net_poll(net_frame, &avail, keys) != 0) { net_fail(); break; }
     if (avail != 0xffff && avail >= net_frame) break;
     if (++tries > 4) {
       net_waiting = 1;
