@@ -218,8 +218,9 @@ What changed on purpose:
   quirks such as the exit restarting the stage) is kept, with comments marking the
   natural hook points for new features (walking animation, more bombs, blast range).
 
-Title menu: cursor UP/DOWN selects a row, LEFT/RIGHT changes it. Rows: MODE (COOP / 
-DEATHMATCH), PLAYERS (1..4; 3-4 need a joystick type), JOYSTICK (NONE / MZ-800 on ports
+Title menu: cursor UP/DOWN selects a row, LEFT/RIGHT changes it. Rows: MODE (COOP /
+DEATHMATCH), NETWORK (OFF / HOST / JOIN, shown with an MZPico that has the NET
+extension), PLAYERS (1..4; 3-4 need a joystick type), JOYSTICK (NONE / MZ-800 on ports
 F0h/F1h / MZ-1X03, the MZ-700 analogue stick on E008h timed at VBLK), then one row per
 player choosing its input: CURSOR AND SPACE, WASD AND E, JOYSTICK 1, JOYSTICK 2 (any
 combination, no duplicates). Deathmatch: no monsters, corners start, first to 3 round
