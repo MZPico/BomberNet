@@ -238,17 +238,19 @@ static const char *const net_names[3] = {"OFF   ", "HOST  ", "JOIN  "};
 #define MENU_FIXED (3 + (net_device == NETDEV_NET))
 #define MENU_PLAYER_ROWS (menu_net != NET_OFF ? 1 + menu_local : menu_players)   /* LOCAL row + its players */
 
+/* rows: MODE, NETWORK (only with a NET device), PLAYERS, JOYSTICK, then
+ * LOCAL (network game) and one input row per (local) player */
 static void menu_change(int8_t dir) {
   uint8_t item = menu_item;
-  if (item == 3 && net_device != NETDEV_NET) item = 4;      /* no NETWORK row: player rows start at 3 */
+  if (net_device != NETDEV_NET && item >= 1) item++;         /* no NETWORK row */
   switch (item) {
   case 0: menu_mode ^= 1; break;
-  case 1:
+  case 1: menu_net = (uint8_t)((menu_net + 3 + dir) % 3); if (menu_net && menu_players < 2) menu_players = 2; break;
+  case 2:
     if (dir > 0 && menu_players < 4) menu_players++;
     if (dir < 0 && menu_players > 1) menu_players--;
     break;
-  case 2: joy_type = (uint8_t)((joy_type + 3 + dir) % 3); break;
-  case 3: menu_net = (uint8_t)((menu_net + 3 + dir) % 3); if (menu_net && menu_players < 2) menu_players = 2; break;
+  case 3: joy_type = (uint8_t)((joy_type + 3 + dir) % 3); break;
   case 4:
     if (menu_net != NET_OFF) {                              /* LOCAL row */
       if (dir > 0 && menu_local < 3) menu_local++;
@@ -305,11 +307,11 @@ static void title_menu(void) {
 
   draw_title_box();
   menu_row(0, "MODE", 0, mode_names[menu_mode], menu_item == 0);
+  row = 1;
+  if (net_device == NETDEV_NET) { menu_row(row, "NETWORK", 0, net_names[menu_net], menu_item == row); row++; }
   num[0] = '0' + menu_players; num[1] = 0;
-  menu_row(1, "PLAYERS", 0, num, menu_item == 1);
-  menu_row(2, "JOYSTICK", 0, joy_names[joy_type], menu_item == 2);
-  row = 3;
-  if (net_device == NETDEV_NET) menu_row(row++, "NETWORK", 0, net_names[menu_net], menu_item == 3);
+  menu_row(row, "PLAYERS", 0, num, menu_item == row); row++;
+  menu_row(row, "JOYSTICK", 0, joy_names[joy_type], menu_item == row); row++;
   if (menu_net != NET_OFF) {                /* LOCAL n, then the local players' inputs */
     num[0] = '0' + menu_local;
     menu_row(row, "LOCAL", 0, num, menu_item == row);
