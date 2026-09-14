@@ -137,6 +137,38 @@ mkl_tab:
   __endasm;
 }
 
+/* State hash byte loop (game.c): hh = rotl16(hh) ^ *p++ + 9E37h, hash_n
+ * times. About 50 T per byte. */
+void hash_run(void) __naked {
+  __asm
+    ld   hl,(_hash_ptr)
+    ld   bc,(_hash_n)
+    ld   de,(_hh)
+hr_loop:
+    ld   a,b
+    or   c
+    jr   z,hr_done
+    dec  bc
+    sla  e                  ; rotate left 16
+    rl   d
+    jr   nc,hr_nc
+    inc  e                  ; bit 0 <- old bit 15 (bit 0 is clear after sla)
+hr_nc:
+    ld   a,(hl)
+    inc  hl
+    xor  e
+    add  a,0x37             ; + 9E37h
+    ld   e,a
+    ld   a,d
+    adc  a,0x9e
+    ld   d,a
+    jr   hr_loop
+hr_done:
+    ld   (_hh),de
+    ret
+  __endasm;
+}
+
 /* Keyboard set B: strobe F2h row: Q R S T U V W X (bit 7..0) -> W bit1 = up,
  * S bit5 = down; strobe F4h row: A B C D E F G H -> A bit7 = left, D bit4 =
  * right, E bit3 = fire. */

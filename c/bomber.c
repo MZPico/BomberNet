@@ -125,9 +125,9 @@ static void frame(void) {
   check_pickups();
   time_tick();
   frame_no++;
-  if (hash_period && (frame_no % hash_period) == 0) {
-    compute_state_hash();
-    if (net_active) net_hash(frame_no, state_hash);
+  if (hash_period) {
+    hash_frame_step();
+    if (net_active && (frame_no % hash_period) == 0) net_hash(frame_no, state_hash);
   }
 }
 

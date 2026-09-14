@@ -39,17 +39,68 @@ uint8_t replay_keys[MAX_PLAYERS];
 
 void rng_seed(uint16_t seed) { rand_seed = seed ? seed : 1; }
 
-static uint16_t hh;
+/* hh = rotl16(hh) ^ byte + 9E37h per byte. The byte loop is assembly on the
+ * Z80 (hash_run in mzio.c, over hash_ptr/hash_n): the C version at ~200 T
+ * per byte cost three frames per hash and showed as a hitch every 16 frames. */
+uint16_t hh;
+const uint8_t *hash_ptr;
+uint16_t hash_n;
 static void h8(uint8_t b) { hh = (uint16_t)(((hh << 1) | (hh >> 15)) ^ b) + 0x9e37; }
 static void h16(uint16_t v) { h8((uint8_t)v); h8((uint8_t)(v >> 8)); }
-static void hbytes(const uint8_t *p, uint16_t n) { while (n--) h8(*p++); }
+static void hbytes(const uint8_t *p, uint16_t n) {
+#ifdef HOST
+  while (n--) h8(*p++);
+#else
+  hash_ptr = p; hash_n = n; hash_run();
+#endif
+}
 
-void compute_state_hash(void) {
-  hh = 0x5a5a;
+/* The map (1000 bytes) is not hashed in one go: hash_frame_step hashes a
+ * few rows every frame of the period into map_acc, and the hash frame folds
+ * the accumulator in with the small records. Same schedule on every device,
+ * so the hashes still compare; any divergence shows within one period. */
+static uint16_t map_acc = 0x5a5a;
+static void hash_scalars(void);
+
+static void hash_records(void) {
   hbytes((const uint8_t *)players, sizeof(players));
   hbytes((const uint8_t *)bombs, sizeof(bombs));
   hbytes((const uint8_t *)enemies, sizeof(enemies));
+}
+
+/* every frame after frame_no++ (hash_period != 0): the period's slice */
+void hash_frame_step(void) {
+  uint8_t k = frame_no % hash_period, r0, r1;
+  if (hash_period < 2) { compute_state_hash(); return; }
+  if (k == 0) {                       /* hash frame: records + accumulated map */
+    hh = 0x5a5a;
+    hash_records();
+    h16(map_acc);
+    hash_scalars();
+    state_hash = hh;
+    map_acc = 0x5a5a;
+    return;
+  }
+  r0 = (uint8_t)(((k - 1) * SCREEN_H) / (hash_period - 1));
+  r1 = (uint8_t)((k * SCREEN_H) / (hash_period - 1));
+  if (r1 > r0) {
+    hh = map_acc;
+    hbytes(map_layer + r0 * SCREEN_W, (uint16_t)(r1 - r0) * SCREEN_W);
+    map_acc = hh;
+  }
+}
+
+/* full hash of the state right now (match start, hash_period 1) */
+void compute_state_hash(void) {
+  hh = 0x5a5a;
+  hash_records();
   hbytes(map_layer, SCREEN_CELLS);
+  hash_scalars();
+  state_hash = hh;
+  map_acc = 0x5a5a;
+}
+
+static void hash_scalars(void) {
   h16(rand_seed); h16(time_left); h16(frame_no);
   h8(stage); h8(enemies_left); h8(enemy_period); h8(stage_cleared); h8(exit_touched);
   h8(timeout_flag); h8(hit_pending); h8(hit_spawned); h8(hit_x); h8(hit_y);
@@ -57,7 +108,6 @@ void compute_state_hash(void) {
   h8(exit_x); h8(exit_y); h8(exit_present); h8(exit_revealed);
   h8(enemy_anim); h8(bomb_anim); h8(game_mode); h8(player_count);
   h8(tmr_player_anim.counter); h8(tmr_enemy_die.counter); h8(tmr_enemy_move.counter); h8(tmr_time.counter);
-  state_hash = hh;
 }
 
 /* 16-bit xorshift (full period). The original mixed its seed with the Z80

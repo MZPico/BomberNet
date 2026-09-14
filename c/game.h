@@ -227,13 +227,18 @@ extern uint8_t hash_period;               /* 0 = never hash */
 extern uint8_t replay_active;
 extern uint8_t replay_keys[MAX_PLAYERS];
 void rng_seed(uint16_t seed);
-void compute_state_hash(void);
+void compute_state_hash(void);       /* full hash now (match start) */
+void hash_frame_step(void);          /* per frame: slice of the map, or the hash frame */
+extern uint16_t hh;                  /* hash state (hash_run in mzio.c) */
+extern const uint8_t *hash_ptr;
+extern uint16_t hash_n;
+void hash_run(void);
 
 /* ---- network match (net.c, phase 6) ----
  * Lockstep: every input_poll is one step; the local player's keys are sent
  * for step N+NET_DELAY and the step's input vector is awaited from the
  * device, then copied into players[].keys like a replay. */
-#define BUILD_ID  0x0602          /* bump on any change of the simulation or protocol */
+#define BUILD_ID  0x0603          /* bump on any change of the simulation or protocol */
 #define NET_OFF   0
 #define NET_HOST  1
 #define NET_JOIN  2
