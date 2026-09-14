@@ -320,6 +320,8 @@ static void title_frame(void);
 /* ---- network lobby (title mode) ---- */
 
 /* three centred lines in the menu frame area, drawn over the title */
+static char lobby_extra[32];        /* optional 4th lobby row (link state); "" = none */
+
 static void lobby_box(const char *l1, const char *l2, const char *l3) {
   uint8_t r;
   draw_title_box();
@@ -329,7 +331,12 @@ static void lobby_box(const char *l1, const char *l2, const char *l3) {
   }
   title_text(draw_at(MENU_X + (MENU_W - (uint8_t)strlen(l1)) / 2, MENU_Y + 2), l1);
   title_text_hl(draw_at(MENU_X + (MENU_W - (uint8_t)strlen(l2)) / 2, MENU_Y + 4), l2);
-  title_text(draw_at(MENU_X + (MENU_W - (uint8_t)strlen(l3)) / 2, MENU_Y + 6), l3);
+  if (lobby_extra[0]) {               /* lobby: link state on its own row, hint one lower */
+    title_text(draw_at(MENU_X + (MENU_W - (uint8_t)strlen(lobby_extra)) / 2, MENU_Y + 5), lobby_extra);
+    title_text(draw_at(MENU_X + (MENU_W - (uint8_t)strlen(l3)) / 2, MENU_Y + 7), l3);
+  } else {
+    title_text(draw_at(MENU_X + (MENU_W - (uint8_t)strlen(l3)) / 2, MENU_Y + 6), l3);
+  }
 }
 
 /* title frame with a lobby overlay; returns the new key edges */
@@ -443,7 +450,7 @@ static void lobby_announce_delay(void) {
 /* create or join, then wait until everybody is ready; returns 1 to start */
 static uint8_t net_lobby(void) {
   uint8_t settings[16], len = 2, r, edge, n = 0, ready = 0, host = menu_net == NET_HOST;
-  uint8_t seq = 0, sent_at = 0, samples[4] = {0, 0, 0, 0}, announced = 0, members = 1;
+  uint8_t seq = 0, sent_at = 0, samples[4] = {0, 0, 0, 0}, announced = 0, members = 1, got_delay = 0;
   uint16_t seed, start;
   char l2[32], l3[32];
   net_status_t st;
@@ -462,7 +469,7 @@ static uint8_t net_lobby(void) {
   st.members = 1; st.ready_mask = 0;
   for (;;) {
     if ((n++ & 7) == 0) net_status(&st);
-    lobby_messages(host, n, seq, sent_at, samples);
+    if (lobby_messages(host, n, seq, sent_at, samples)) got_delay = 1;
     if (host) {
       if (st.members > 1 && (n % 10) == 0) {          /* ping the joiners */
         uint8_t m[2]; m[0] = LM_PING; m[1] = ++seq; sent_at = n;
@@ -473,12 +480,29 @@ static uint8_t net_lobby(void) {
         if (st.members > 1) lobby_announce_delay();
       }
     }
-    strcpy(l2, "ROOM ABCD  0 OF 0  DELAY 000MS");
+    strcpy(l2, "ROOM ABCD  PLAYERS 0 OF 0");
     memcpy(l2 + 5, net_code, 4);
-    l2[11] = '0' + st.members; l2[16] = '0' + net_slots;
-    r = net_delay * 20; l2[25] = '0' + r / 100; l2[26] = '0' + (r / 10) % 10;
+    l2[19] = '0' + st.members; l2[24] = '0' + net_slots;
+    /* what the lobby is doing right now, so a pause is never silent */
+    if (st.members < 2) {
+      strcpy(lobby_extra, host ? "WAITING FOR PLAYERS" : "WAITING FOR THE HOST");
+    } else if (host ? samples[0] == 0 : !got_delay) {
+      strcpy(lobby_extra, host ? "MEASURING THE LINK" : "HOST MEASURES THE LINK");
+    } else {
+      uint8_t c = 0;
+      strcpy(lobby_extra, "LINK 000MS   READY 0 OF 0");
+      r = net_delay * 20; lobby_extra[5] = '0' + r / 100; lobby_extra[6] = '0' + (r / 10) % 10;
+      for (r = 0; r < 8; r++) if (st.ready_mask & (1 << r)) c++;
+      lobby_extra[19] = '0' + c; lobby_extra[24] = '0' + st.members;
+    }
+    if (lobby_extra[0] != 'L') {              /* animated dots while waiting */
+      uint8_t d = (n >> 3) & 3, k = (uint8_t)strlen(lobby_extra);
+      for (r = 0; r < 3; r++) lobby_extra[k + r] = r < d ? '.' : ' ';
+      lobby_extra[k + 3] = 0;
+    }
     strcpy(l3, ready ? "WAITING FOR THE OTHERS" : "SPACE READY   E CANCEL");
     edge = lobby_frame(host ? "YOU ARE THE HOST" : "JOINED", l2, l3);
+    lobby_extra[0] = 0;
     if (st.state == NETST_DROPPED || st.state == NETST_NOLINK) { lobby_error(9); net_leave(); return 0; }
     if (mz_keys_b() & KEY_SPACE) { net_leave(); return 0; }
     if (!ready && (edge & KEY_SPACE)) {
