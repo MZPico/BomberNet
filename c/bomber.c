@@ -250,13 +250,14 @@ static void menu_change(int8_t dir) {
     if (dir > 0 && menu_players < 4) menu_players++;
     if (dir < 0 && menu_players > 1) menu_players--;
     break;
-  case 3: joy_type = (uint8_t)((joy_type + 3 + dir) % 3); break;
-  case 4:
-    if (menu_net != NET_OFF) {                              /* LOCAL row */
+  case 3:                                                    /* LOCAL (network game) or JOYSTICK */
+    if (menu_net != NET_OFF) {
       if (dir > 0 && menu_local < 3) menu_local++;
       if (dir < 0 && menu_local > 1) menu_local--;
-      break;
-    }
+    } else joy_type = (uint8_t)((joy_type + 3 + dir) % 3);
+    break;
+  case 4:
+    if (menu_net != NET_OFF) { joy_type = (uint8_t)((joy_type + 3 + dir) % 3); break; }
     /* fall through: a player row */
   default: input_cycle(menu_item - MENU_FIXED - (menu_net != NET_OFF), dir); break;
   }
@@ -329,12 +330,12 @@ static void title_menu(void) {
   row = 2;
   num[0] = '0' + menu_players; num[1] = 0;
   menu_row(row, "PLAYERS", 0, num, menu_item == row); row++;
-  menu_row(row, "JOYSTICK", 0, joy_names[joy_type], menu_item == row); row++;
-  if (menu_net != NET_OFF) {                /* LOCAL n, then the local players' inputs */
+  if (menu_net != NET_OFF) {                /* LOCAL n (players at this machine) */
     num[0] = '0' + menu_local;
     menu_row(row, "LOCAL", 0, num, menu_item == row);
     row++;
   }
+  menu_row(row, "JOYSTICK", 0, joy_names[joy_type], menu_item == row); row++;
   for (i = 0; i < local_count(); i++)
     menu_row(row + i, "PLAYER", C_PLAYER_DIGIT(i),
              (menu_inputs[i] == INPUT_KBD_A && menu_fire_cr) ? kbd_a_cr_name : input_names[menu_inputs[i]],
