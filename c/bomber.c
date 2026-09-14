@@ -8,6 +8,10 @@
 #include "data.h"
 #include "uc.h"
 #include <string.h>
+#ifdef HOST
+#include <stdio.h>
+#include <stdlib.h>
+#endif
 
 /* per stage: enemy count, enemy behaviour-cycle period; stage 5+ uses the last row */
 static const uint8_t stage_table[5][2] = {
@@ -182,10 +186,13 @@ static const char *const kbd_a_cr_name = "CURSOR AND CR   ";
 /* with two keyboard players, player A fires with CR (SPACE is next to WASD);
  * applied when the game starts, the title itself always listens to SPACE */
 static uint8_t menu_fire_cr;
+/* players whose keys are read on this machine: all of them locally, the
+ * LOCAL row's count in a network game */
+static uint8_t local_count(void) { return menu_net != NET_OFF ? menu_local : menu_players; }
 static void update_fire_key(void) {
   uint8_t i;
   menu_fire_cr = 0;
-  for (i = 0; i < menu_players; i++)
+  for (i = 0; i < local_count(); i++)
     if (menu_inputs[i] == INPUT_KBD_B) menu_fire_cr = 1;
 }
 
@@ -196,7 +203,7 @@ static uint8_t input_allowed(uint8_t in) {
 
 static uint8_t input_used(uint8_t in, uint8_t except) {
   uint8_t i;
-  for (i = 0; i < menu_players; i++)
+  for (i = 0; i < local_count(); i++)
     if (i != except && menu_inputs[i] == in) return 1;
   return 0;
 }
@@ -214,15 +221,22 @@ static void input_cycle(uint8_t i, int8_t dir) {
 static void menu_validate(void) {
   uint8_t i, maxp = joy_type == JOY_NONE ? 2 : 4;
   if (menu_mode == GAME_DM && menu_players < 2) menu_players = 2;
-  if (menu_players > maxp) menu_players = maxp;
-  for (i = 0; i < menu_players; i++)
+  if (menu_net != NET_OFF) {
+    if (menu_players < 2) menu_players = 2;               /* the room needs someone to join */
+    if (menu_players > 4) menu_players = 4;
+    if (menu_local > 3) menu_local = 3;                   /* menu rows: 4 fixed + LOCAL + 3 */
+    if (menu_local > maxp) menu_local = maxp;
+    if (menu_net == NET_HOST && menu_local > menu_players) menu_local = menu_players;
+    if (menu_local < 1) menu_local = 1;
+  } else if (menu_players > maxp) menu_players = maxp;
+  for (i = 0; i < local_count(); i++)
     if (!input_allowed(menu_inputs[i]) || input_used(menu_inputs[i], i)) input_cycle(i, 1);
   update_fire_key();
 }
 
 static const char *const net_names[3] = {"OFF   ", "HOST  ", "JOIN  "};
 #define MENU_FIXED (3 + (net_device == NETDEV_NET))
-#define MENU_PLAYER_ROWS (menu_net != NET_OFF ? 1 : menu_players)
+#define MENU_PLAYER_ROWS (menu_net != NET_OFF ? 1 + menu_local : menu_players)   /* LOCAL row + its players */
 
 static void menu_change(int8_t dir) {
   uint8_t item = menu_item;
@@ -235,7 +249,14 @@ static void menu_change(int8_t dir) {
     break;
   case 2: joy_type = (uint8_t)((joy_type + 3 + dir) % 3); break;
   case 3: menu_net = (uint8_t)((menu_net + 3 + dir) % 3); if (menu_net && menu_players < 2) menu_players = 2; break;
-  default: input_cycle(menu_item - MENU_FIXED, dir); break;
+  case 4:
+    if (menu_net != NET_OFF) {                              /* LOCAL row */
+      if (dir > 0 && menu_local < 3) menu_local++;
+      if (dir < 0 && menu_local > 1) menu_local--;
+      break;
+    }
+    /* fall through: a player row */
+  default: input_cycle(menu_item - MENU_FIXED - (menu_net != NET_OFF), dir); break;
   }
   menu_validate();
 }
@@ -289,14 +310,15 @@ static void title_menu(void) {
   menu_row(2, "JOYSTICK", 0, joy_names[joy_type], menu_item == 2);
   row = 3;
   if (net_device == NETDEV_NET) menu_row(row++, "NETWORK", 0, net_names[menu_net], menu_item == 3);
-  if (menu_net != NET_OFF) {
-    menu_row(row, "LOCAL", 0, input_names[menu_inputs[0]], menu_item == row);
-  } else {
-    for (i = 0; i < menu_players; i++)
-      menu_row(row + i, "PLAYER", C_PLAYER_DIGIT(i),
-               (menu_inputs[i] == INPUT_KBD_A && menu_fire_cr) ? kbd_a_cr_name : input_names[menu_inputs[i]],
-               menu_item == row + i);
+  if (menu_net != NET_OFF) {                /* LOCAL n, then the local players' inputs */
+    num[0] = '0' + menu_local;
+    menu_row(row, "LOCAL", 0, num, menu_item == row);
+    row++;
   }
+  for (i = 0; i < local_count(); i++)
+    menu_row(row + i, "PLAYER", C_PLAYER_DIGIT(i),
+             (menu_inputs[i] == INPUT_KBD_A && menu_fire_cr) ? kbd_a_cr_name : input_names[menu_inputs[i]],
+             menu_item == row + i);
 
   p = draw_at(3, 20);
   p[0] = T_ARR_UP; p[1] = T_ARR_DOWN; title_text(p + 3, "SELECT");
@@ -405,14 +427,21 @@ static uint8_t lobby_enter_code(void) {
   }
 }
 
-/* Lobby messages (NETMSG, byte 0 = kind). The host pings every 10 frames,
- * joiners echo, and the round trip in frames sets the input delay:
- * ceil(rtt / 2) + 1, clamped, which the host announces on every change and
- * before it readies up. A device that misses the announcement still plays
- * in step (every frame gets a vector), only with a different delay. */
+/* Lobby messages (NETMSG, byte 0 = kind).
+ *  - The host pings every 10 frames, joiners echo, and the round trip in
+ *    frames sets the input delay: ceil(rtt / 2) + 1, clamped.
+ *  - Every joiner says HELLO with its local player count (on entry and every
+ *    50 frames); the host seats players in slot order (its own first) and
+ *    announces the TABLE (total, seats, one byte per player: slot * 4 +
+ *    local index) whenever it changes and right before it readies up.
+ *  - The host readies up only once every seat is taken and every joiner is
+ *    ready, so the start message always follows the final table. */
 #define LM_PING  1
 #define LM_PONG  2
 #define LM_DELAY 3
+#define LM_HELLO 4
+#define LM_TABLE 5
+#define HELLO_TTL 150                 /* frames without a HELLO: the slot is gone */
 
 static void lobby_apply_rtt(uint8_t *samples, uint8_t rtt) {
   uint8_t i, m = 0, d;
@@ -425,94 +454,161 @@ static void lobby_apply_rtt(uint8_t *samples, uint8_t rtt) {
   net_delay = d;
 }
 
-/* drain the message queue; returns 1 when a delay announcement arrived */
-static uint8_t lobby_messages(uint8_t host, uint8_t n, uint8_t seq, uint8_t sent_at, uint8_t *samples) {
-  uint8_t from, m[32], len, got = 0;
-  while ((len = net_msg_recv(&from, m)) != 0) {
-    if (host && m[0] == LM_PONG && len >= 2 && m[1] == seq && from != 0)
-      lobby_apply_rtt(samples, (uint8_t)(n - sent_at));
-    else if (!host && m[0] == LM_PING && len >= 2 && from == 0) {
-      uint8_t r[2]; r[0] = LM_PONG; r[1] = m[1];
-      net_msg_send(0, r, 2);
-    } else if (!host && m[0] == LM_DELAY && len >= 2 && from == 0) {
-      net_delay = m[1] < NET_DELAY_MIN ? NET_DELAY_MIN : m[1] > NET_DELAY_MAX ? NET_DELAY_MAX : m[1];
-      got = 1;
-    }
-  }
-  return got;
+typedef struct {
+  uint8_t host, seq, sent_at, samples[4];
+  uint16_t n;                         /* lobby frame counter */
+  uint8_t counts[NET_SLOTS];          /* host: local players per slot (0 = empty) */
+  uint16_t seen[NET_SLOTS];           /* host: frame of the slot's last HELLO */
+  uint8_t seats, got_table, got_delay;
+} lobby_t;
+
+/* host: seat the players in slot order; returns 1 when the table changed */
+static uint8_t lobby_build_table(lobby_t *L) {
+  uint8_t t[MAX_PLAYERS], s, l, p = 0, i, changed = 0;
+  for (i = 0; i < MAX_PLAYERS; i++) t[i] = 0xff;
+  for (s = 0; s < NET_SLOTS; s++)
+    for (l = 0; l < L->counts[s] && p < net_total; l++) t[p++] = (uint8_t)(s * 4 + l);
+  for (i = 0; i < MAX_PLAYERS; i++) if (t[i] != net_table[i]) { net_table[i] = t[i]; changed = 1; }
+  if (p != L->seats) { L->seats = p; changed = 1; }
+  return changed;
 }
 
-static void lobby_announce_delay(void) {
+static void lobby_send_table(lobby_t *L) {
+  uint8_t m[8], i;
+  m[0] = LM_TABLE; m[1] = net_total; m[2] = L->seats;
+  for (i = 0; i < MAX_PLAYERS; i++) m[3 + i] = net_table[i];
+  net_msg_send(0xff, m, 7);
+}
+
+static void lobby_send_delay(void) {
   uint8_t m[2]; m[0] = LM_DELAY; m[1] = net_delay;
   net_msg_send(0xff, m, 2);
 }
 
+static void lobby_send_hello(void) {
+  uint8_t m[2]; m[0] = LM_HELLO; m[1] = menu_local;
+  net_msg_send(0, m, 2);
+}
+
+/* drain the message queue */
+static void lobby_messages(lobby_t *L) {
+  uint8_t from, m[32], len, i;
+  while ((len = net_msg_recv(&from, m)) != 0) {
+    if (L->host) {
+      if (m[0] == LM_PONG && len >= 2 && m[1] == L->seq && from != 0)
+        lobby_apply_rtt(L->samples, (uint8_t)(L->n - L->sent_at));
+      else if (m[0] == LM_HELLO && len >= 2 && from > 0 && from < NET_SLOTS) {
+        L->counts[from] = m[1] > 3 ? 3 : m[1];
+        L->seen[from] = L->n;
+      }
+    } else if (from == 0) {
+      if (m[0] == LM_PING && len >= 2) {
+        uint8_t r[2]; r[0] = LM_PONG; r[1] = m[1];
+        net_msg_send(0, r, 2);
+      } else if (m[0] == LM_DELAY && len >= 2) {
+        net_delay = m[1] < NET_DELAY_MIN ? NET_DELAY_MIN : m[1] > NET_DELAY_MAX ? NET_DELAY_MAX : m[1];
+        L->got_delay = 1;
+      } else if (m[0] == LM_TABLE && len >= 7) {
+        net_total = m[1] < 2 ? 2 : m[1] > MAX_PLAYERS ? MAX_PLAYERS : m[1];
+        L->seats = m[2];
+        for (i = 0; i < MAX_PLAYERS; i++) net_table[i] = m[3 + i];
+        L->got_table = 1;
+      }
+    }
+  }
+}
+
+static uint8_t bit_count(uint8_t v) {
+  uint8_t c = 0;
+  while (v) { c += v & 1; v >>= 1; }
+  return c;
+}
+
 /* create or join, then wait until everybody is ready; returns 1 to start */
 static uint8_t net_lobby(void) {
-  uint8_t settings[16], len = 2, r, edge, n = 0, ready = 0, host = menu_net == NET_HOST;
-  uint8_t seq = 0, sent_at = 0, samples[4] = {0, 0, 0, 0}, announced = 0, members = 1, got_delay = 0;
+  uint8_t settings[16], len = 2, r, edge, ready = 0, announced_delay = 0, i;
   uint16_t seed, start;
   char l2[32], l3[32];
   net_status_t st;
+  lobby_t L;
+  memset(&L, 0, sizeof(L));
+  L.host = menu_net == NET_HOST;
   net_delay = NET_DELAY_MIN + 1;
   settings[0] = menu_mode; settings[1] = menu_players;
-  if (menu_net == NET_HOST) {
+  for (i = 0; i < MAX_PLAYERS; i++) net_table[i] = 0xff;
+  if (L.host) {
     r = net_create(BUILD_ID, menu_players, settings, len, net_code, &net_slot);
     if (r) { lobby_error(r); return 0; }
     net_slots = menu_players;
+    net_total = menu_players;
+    L.counts[0] = menu_local;
+    lobby_build_table(&L);
   } else {
     if (!lobby_enter_code()) return 0;
     r = net_join(BUILD_ID, net_code, &net_slot, &net_slots, settings, &len);
     if (r) { lobby_error(r); return 0; }
     if (len >= 2) { menu_mode = settings[0]; menu_players = settings[1]; menu_validate(); }
+    net_total = menu_players;
+    lobby_send_hello();
   }
-  st.members = 1; st.ready_mask = 0;
+  st.members = 1; st.ready_mask = 0; st.state = NETST_INROOM;
+  net_status(&st);
   for (;;) {
-    if ((n++ & 7) == 0) net_status(&st);
-    if (lobby_messages(host, n, seq, sent_at, samples)) got_delay = 1;
-    if (host) {
-      if (st.members > 1 && (n % 10) == 0) {          /* ping the joiners */
-        uint8_t m[2]; m[0] = LM_PING; m[1] = ++seq; sent_at = n;
+    L.n++;
+    if ((L.n & 7) == 0) net_status(&st);
+    lobby_messages(&L);
+    if (L.host) {
+      if (st.members > 1 && (L.n % 10) == 0) {          /* ping the joiners */
+        uint8_t m[2]; m[0] = LM_PING; m[1] = ++L.seq; L.sent_at = (uint8_t)L.n;
         net_msg_send(0xff, m, 2);
       }
-      if (st.members != members || announced != net_delay) {   /* new joiner or new value */
-        members = st.members; announced = net_delay;
-        if (st.members > 1) lobby_announce_delay();
-      }
+      for (i = 1; i < NET_SLOTS; i++)                    /* forget joiners that left */
+        if (L.counts[i] && (uint16_t)(L.n - L.seen[i]) > HELLO_TTL) L.counts[i] = 0;
+      if (lobby_build_table(&L) || (L.n % 50) == 0) { if (st.members > 1) lobby_send_table(&L); }
+      if (announced_delay != net_delay && st.members > 1) { announced_delay = net_delay; lobby_send_delay(); }
+    } else if ((L.n % 50) == 0) {
+      lobby_send_hello();
     }
-    strcpy(l2, "ROOM ABCD  PLAYERS 0 OF 0");
+    strcpy(l2, "ROOM ABCD  SEATS 0 OF 0");
     memcpy(l2 + 5, net_code, 4);
-    l2[19] = '0' + st.members; l2[24] = '0' + net_slots;
+    l2[17] = '0' + L.seats; l2[22] = '0' + net_total;
     /* what the lobby is doing right now, so a pause is never silent */
-    if (st.members < 2) {
-      strcpy(lobby_extra, host ? "WAITING FOR PLAYERS" : "WAITING FOR THE HOST");
-    } else if (host ? samples[0] == 0 : !got_delay) {
-      strcpy(lobby_extra, host ? "MEASURING THE LINK" : "HOST MEASURES THE LINK");
+    if (!L.host && !L.got_table) {
+      strcpy(lobby_extra, "WAITING FOR THE HOST");
+    } else if (L.seats < net_total) {
+      strcpy(lobby_extra, "WAITING FOR PLAYERS");
+    } else if (L.host ? L.samples[0] == 0 : !L.got_delay) {
+      strcpy(lobby_extra, L.host ? "MEASURING THE LINK" : "HOST MEASURES THE LINK");
     } else {
-      uint8_t c = 0;
       strcpy(lobby_extra, "LINK 000MS   READY 0 OF 0");
       r = net_delay * 20; lobby_extra[5] = '0' + r / 100; lobby_extra[6] = '0' + (r / 10) % 10;
-      for (r = 0; r < 8; r++) if (st.ready_mask & (1 << r)) c++;
-      lobby_extra[19] = '0' + c; lobby_extra[24] = '0' + st.members;
+      lobby_extra[19] = '0' + bit_count(st.ready_mask); lobby_extra[24] = '0' + st.members;
     }
     if (lobby_extra[0] != 'L') {              /* animated dots while waiting */
-      uint8_t d = (n >> 3) & 3, k = (uint8_t)strlen(lobby_extra);
+      uint8_t d = (L.n >> 3) & 3, k = (uint8_t)strlen(lobby_extra);
       for (r = 0; r < 3; r++) lobby_extra[k + r] = r < d ? '.' : ' ';
       lobby_extra[k + 3] = 0;
     }
     strcpy(l3, ready ? "WAITING FOR THE OTHERS" : "SPACE READY   E CANCEL");
-    edge = lobby_frame(host ? "YOU ARE THE HOST" : "JOINED", l2, l3);
+    edge = lobby_frame(L.host ? "YOU ARE THE HOST" : "JOINED", l2, l3);
+#ifdef HOST
+    if (getenv("SIM_LOBBY_DEBUG")) fprintf(stderr, "lobby n=%u ready=%u seats=%u total=%u members=%u mask=%02x state=%u edge=%02x\n", L.n, ready, L.seats, net_total, st.members, st.ready_mask, st.state, edge);
+#endif
     lobby_extra[0] = 0;
     if (st.state == NETST_DROPPED || st.state == NETST_NOLINK) { lobby_error(9); net_leave(); return 0; }
     if (mz_keys_b() & KEY_SPACE) { net_leave(); return 0; }
-    if (!ready && (edge & KEY_SPACE)) {
-      ready = 1; mz_tone(0x030a, 14);
-      if (host) { announced = net_delay; lobby_announce_delay(); }
-    }
-    if (ready && (n & 7) == 1) {
+    if (!ready && (edge & KEY_SPACE)) { ready = 1; mz_tone(0x030a, 14); }
+    if (ready && (L.n & 7) == 1) {
+      /* the host goes last: full table, every joiner ready */
+      if (L.host && (L.seats < net_total || bit_count(st.ready_mask & 0xfe) < st.members - 1)) continue;
+      if (L.host) { lobby_send_table(&L); lobby_send_delay(); }
       if (net_ready(1, &seed, &start) == 0 && seed != 0xffff) {
         match_seed = seed;
-        lobby_messages(host, n, seq, sent_at, samples);   /* a late announcement */
+        lobby_messages(&L);                                /* a late announcement */
+        if (!L.host && !L.got_table) {                     /* should not happen: one player per slot */
+          for (i = 0; i < MAX_PLAYERS; i++) net_table[i] = (uint8_t)(i * 4);
+        }
+        menu_players = net_total;
         return 1;
       }
     }
@@ -754,7 +850,7 @@ static void run_match(void) {
 static void run_game(void) {
   if (menu_net != NET_OFF && net_device == NETDEV_NET) {
     hash_period = 16;
-    net_match_start(menu_inputs[0]);
+    net_match_start();
   }
   run_match();
   if (net_active) {

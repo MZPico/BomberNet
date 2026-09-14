@@ -46,7 +46,7 @@ void net_detect(void);
  * 9 not linked, 10 bad parameter, 11 buffer full, 0xff no output). */
 #define NET_GAME_ID  0x424e      /* 'BN' */
 #define NET_SLOTS    4
-#define NET_BYTES    1
+#define NET_BYTES    4          /* input bytes per slot: one per local player of that device */
 typedef struct {
   uint8_t state;        /* NETST_* */
   uint8_t slot, members, ready_mask, rtt, buffered, msgs, last_error;
@@ -63,8 +63,8 @@ uint8_t net_create(uint16_t build, uint8_t slots, const uint8_t *settings, uint8
 uint8_t net_join(uint16_t build, const char *code, uint8_t *slot, uint8_t *slots, uint8_t *settings, uint8_t *len);
 uint8_t net_leave(void);
 uint8_t net_ready(uint8_t ready, uint16_t *seed, uint16_t *start_frame);   /* 0xffff while waiting */
-uint8_t net_send(uint16_t frame, uint8_t keys);
-uint8_t net_poll(uint16_t frame, uint16_t *avail, uint8_t keys[NET_SLOTS]);
+uint8_t net_send(uint16_t frame, const uint8_t keys[NET_BYTES]);
+uint8_t net_poll(uint16_t frame, uint16_t *avail, uint8_t keys[NET_SLOTS * NET_BYTES]);
 uint8_t net_hash(uint16_t frame, uint16_t hash);
 uint8_t net_msg_send(uint8_t to, const uint8_t *data, uint8_t len);
 uint8_t net_msg_recv(uint8_t *from, uint8_t *data);                       /* returns len (0 = none) */

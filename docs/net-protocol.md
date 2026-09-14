@@ -35,9 +35,10 @@ run offline.
   room declares `slots` (1..4) and `bytes per slot` (1..4) at creation;
   every member sends `bytes per slot` bytes of input per frame and reads
   `slots * bytes` per frame. The relay never interprets input bytes.
-- Members signal **ready**; when all slots are filled and ready the relay
+- Members signal **ready**; when every member present is ready the relay
   fixes the **seed** (WORD) and the **start frame** and the state becomes
-  RUNNING. Frames are numbered from 0 by the game; the relay stores the
+  RUNNING (`slots` is only the maximum; a game whose devices carry several
+  players lets its host ready up last, once every seat is taken). Frames are numbered from 0 by the game; the relay stores the
   last 256 frames per room.
 - **Hashes** are opaque WORDs; the relay compares the values reported for
   the same frame and flags DESYNC when they differ.
@@ -94,7 +95,7 @@ One socket per device. JSON frames:
 <- {"op":"room","code":"ABCD","slot":1,"slots":S,"bytes":N,"settings":"<hex>"}
 <- {"op":"members","count":2,"ready":3}          (broadcast on change)
 -> {"op":"ready","ready":1}
-<- {"op":"start","seed":12345,"frame":0}          (broadcast when all ready)
+<- {"op":"start","seed":12345,"frame":0,"mask":3} (broadcast when all ready; mask = slots taking part)
 -> {"op":"input","frame":F,"data":"<hex>"}
 <- {"op":"input","frame":F,"slot":s,"data":"<hex>"}   (relayed to the others)
 -> {"op":"hash","frame":F,"hash":H}

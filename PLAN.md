@@ -310,9 +310,10 @@ Result: NETWORK row (OFF / HOST / JOIN) on the title when the device has NET;
 HOST creates a room and shows the code, JOIN has a 4-letter code entry (UP/DOWN
 letter, LEFT/RIGHT position, SPACE join, E cancel); the lobby shows members and
 readies on SPACE; mode and player count come from the host's settings blob.
-One local player per device (the LOCAL row picks its input; every player
-record uses INPUT_NET so the state is identical on all devices). Every
-`input_poll` is a lockstep step: local keys are sent for step N+2, the vector
+Up to 3 local players per device (LOCAL row + their input rows; the host seats
+players in slot order and announces the table in the lobby; every player record
+uses INPUT_NET so the state is identical on all devices). Every `input_poll` is a
+lockstep step: local keys (one byte per local player) are sent for step N+delay, the vector
 for step N is awaited (a WAIT flag is raised after 4 polls), hashes go to the
 relay every 16 frames, DESYNC / DROPPED / link loss end the match with a
 message. Verified with `tools/lockstep_test.py`: two headless emulators through

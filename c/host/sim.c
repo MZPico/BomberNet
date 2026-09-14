@@ -170,13 +170,13 @@ void mz_set_attr(uint8_t x, uint8_t y, uint8_t attr) { vattr[y * SCREEN_W + x] =
 static int stub_net;
 static uint8_t st4[4], stptr, cmd, params[64], plen, need, out[64], olen, optr, in_room, running;
 static uint16_t out_frames[256][1];    /* keys per frame for the echo room */
-static uint8_t fr_keys[256][4];
+static uint8_t fr_keys[256][16];
 static uint16_t fr_avail = 0xffff;
 static void set_out(const uint8_t *d, uint8_t n) { memcpy(out, d, n); olen = n; optr = 0; st4[0] = n ? UC_ST_OUTPUT : 0; }
 static void set_err(uint8_t code) { st4[0] = UC_ST_ERROR; st4[2] = code; olen = 0; }
 static uint16_t P16(uint8_t i) { return params[i] | (params[i + 1] << 8); }
 static void exec_cmd(void) {
-  uint8_t o[16] = {0};
+  uint8_t o[34] = {0};
   st4[1] = cmd; st4[0] = 0;
   switch (cmd) {
   case cmdREVD: o[2] = 0x4d; o[3] = 1; set_out(o, 4); st4[2] = 4; break;
@@ -186,8 +186,8 @@ static void exec_cmd(void) {
   case cmdN_JOIN: set_err(7); break;
   case cmdN_LEAVE: in_room = running = 0; break;
   case cmdN_READY: if (!in_room) { set_err(8); break; } running = params[0]; o[0] = 0x34; o[1] = 0x12; o[2] = o[3] = 0; if (!running) o[0] = o[1] = o[2] = o[3] = 0xff; set_out(o, 4); break;
-  case cmdN_SEND: { uint16_t f = P16(0); if (!running) { set_err(8); break; } memset(fr_keys[f & 255], params[2], 4); if (fr_avail == 0xffff || f > fr_avail) fr_avail = f; break; }
-  case cmdN_POLL: { uint16_t f = P16(0); if (!running) { set_err(8); break; } o[0] = (uint8_t)fr_avail; o[1] = (uint8_t)(fr_avail >> 8); if (fr_avail != 0xffff && f <= fr_avail) memcpy(o + 2, fr_keys[f & 255], 4); set_out(o, 6); break; }
+  case cmdN_SEND: { uint16_t f = P16(0); if (!running) { set_err(8); break; } memset(fr_keys[f & 255], 0, 16); memcpy(fr_keys[f & 255], params + 2, 4); if (fr_avail == 0xffff || f > fr_avail) fr_avail = f; break; }
+  case cmdN_POLL: { uint16_t f = P16(0); if (!running) { set_err(8); break; } o[0] = (uint8_t)fr_avail; o[1] = (uint8_t)(fr_avail >> 8); if (fr_avail != 0xffff && f <= fr_avail) memcpy(o + 2, fr_keys[f & 255], 16); set_out(o, 18); break; }
   case cmdN_HASH: break;
   case cmdN_MSG: break;
   case cmdN_RECV: o[0] = 0xff; set_out(o, 34); break;
@@ -289,7 +289,7 @@ static void setup_from_env(void) {
   if ((v = getenv("SIM_SEED"))) match_seed = (uint16_t)strtoul(v, 0, 0);
   if ((v = getenv("SIM_HASH"))) hash_period = (uint8_t)atoi(v);
   stub_net = getenv("SIM_NET") != 0;
-  if ((v = getenv("SIM_NET_HOST"))) { stub_net = 1; menu_net = NET_HOST; }
+  if ((v = getenv("SIM_NET_HOST"))) { stub_net = 1; menu_net = NET_HOST; menu_local = menu_players; }   /* all seats local: the stub has no joiners */
   if (menu_players > 2) joy_type = JOY_800;
 }
 

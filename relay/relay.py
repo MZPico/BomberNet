@@ -9,7 +9,8 @@ Stateless beyond rooms; a room dies 60 s after its last message. Room codes
 are 4 letters from a 24-letter alphabet (no I/O) and are namespaced per
 (game id): the same code can exist for two different games.
 """
-import asyncio, json, random, time
+import asyncio, json, os, random, time
+TRACE = os.environ.get("RELAY_TRACE") == "1"
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 app = FastAPI(title="MZPico NET relay")
@@ -144,6 +145,8 @@ async def session(ws: Conn):
                 await err(ws, E_PARAM, "bad json")
                 continue
             op = msg.get("op")
+            if TRACE and op not in ("input", "hash"): print(f"[{time.strftime('%H:%M:%S')}] slot={me.slot if me else None} {msg}", flush=True)
+            elif TRACE and op == "input" and int(msg.get("frame", -1)) < 12: print(f"[{time.strftime('%H:%M:%S')}] slot={me.slot if me else None} {msg}", flush=True)
 
             if op == "create":
                 if room:
@@ -198,11 +201,14 @@ async def session(ws: Conn):
                 me.ready = bool(msg.get("ready", 1))
                 room.touch()
                 await room.broadcast({"op": "members", "count": len(room.members), "ready": room.ready_mask()})
-                if not room.running and len(room.members) == room.slots and all(m.ready for m in room.members.values()):
+                # every member present is ready (the game decides when the room is
+                # full: BomberNet's host readies last, once every seat is taken)
+                if not room.running and all(m.ready for m in room.members.values()):
                     room.running = True
                     room.seed = random.randint(1, 0xFFFF)
                     room.inputs.clear(); room.hashes.clear()
-                    await room.broadcast({"op": "start", "seed": room.seed, "frame": 0})
+                    # mask: the slots taking part (a frame is complete when they all sent input)
+                    await room.broadcast({"op": "start", "seed": room.seed, "frame": 0, "mask": sum(1 << s for s in room.members)})
 
             elif op == "input":
                 if me is None or not room.running:
@@ -252,6 +258,7 @@ async def session(ws: Conn):
     finally:
         if room:
             if me is not None and room.members.get(me.slot) is me:
+                if TRACE: print(f"[{time.strftime('%H:%M:%S')}] slot={me.slot} session ended -> dropped", flush=True)
                 del room.members[me.slot]
                 await room.broadcast({"op": "dropped", "slot": me.slot})
                 if room.running:

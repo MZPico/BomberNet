@@ -234,8 +234,11 @@ twice per frame (the original ticks only four timers globally; `tmr_explode` and
 Network play (phase 6): with an MZPico that has the NET extension (or mz800emu with
 `[UNICARD] mzpico_mode = 1`), the title shows a NETWORK row: HOST creates a room and
 shows its 4-letter code, JOIN asks for a code (type the letters, or UP/DOWN letter and LEFT/RIGHT position, DEL back,
-SPACE join, BREAK cancel). One local player per device (the LOCAL row picks its input);
-mode and player count come from the host. Both press SPACE in the lobby to ready up;
+SPACE join, BREAK cancel). The host's PLAYERS row is the total (2..4); each device's
+LOCAL row says how many of them sit at that machine (1..3, with their own input rows),
+so any mix of local and network players works. Mode and total come from the host; the
+lobby shows SEATS taken and seats the players in slot order (host's first). Everybody
+presses SPACE to ready up, the host's READY goes out once every seat is taken;
 the match is lockstep with an input delay measured in the lobby (host pings, ceil(rtt/2)+1 frames, 2..8, shown as DELAY in ms), hashes are compared every 16
 frames and a desync or a dropped peer ends the match with a message. The reference
 relay is `relay/relay.py` (WebSocket 8765, JSON lines TCP 8766); `tools/nettest.py`

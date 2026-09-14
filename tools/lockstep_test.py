@@ -14,6 +14,8 @@ S = lambda n: sym_from_map(M, n)
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 40
 F, TM, SH, FN = S('_flush_screen'), S('_title_mode'), S('_state_hash'), S('_frame_no')
 MN, MM, MP, NC, NA, NAB, NS, ND = S('_menu_net'), S('_menu_mode'), S('_menu_players'), S('_net_code'), S('_net_active'), S('_net_abort'), S('_net_slot'), S('_net_device')
+ML, NT, NTOT, NDLY = S('_menu_local'), S('_net_table'), S('_net_total'), S('_net_delay')
+PLAYERS, LOCAL_A, LOCAL_B = int(os.environ.get('PLAYERS', 2)), int(os.environ.get('LOCAL_A', 1)), int(os.environ.get('LOCAL_B', 1))
 
 class Inst:
     def __init__(self, name):
@@ -29,7 +31,8 @@ a, b = Inst('A'), Inst('B')
 try:
     a.frames(4); b.frames(4)
     print('net_device', a.rd(ND, 1)[0], b.rd(ND, 1)[0], '(3 = MZPico with NET)')
-    a.wr(MM, [1]); a.wr(MP, [2]); a.wr(MN, [1])          # A: deathmatch, 2 players, HOST
+    a.wr(MM, [1]); a.wr(MP, [PLAYERS]); a.wr(MN, [1]); a.wr(ML, [LOCAL_A])   # A: deathmatch, HOST
+    b.wr(ML, [LOCAL_B])
     b.wr(MN, [2])                                        # B: JOIN
     a.tap('SPACE', 4)                                    # A enters the lobby (creates the room)
     a.frames(6)
@@ -38,10 +41,11 @@ try:
     b.tap('SPACE', 4); b.frames(4); b.tap('SPACE', 4); b.frames(4)
     print('B slot', b.rd(NS, 1)[0], 'A slot', a.rd(NS, 1)[0])
     a.tap('SPACE', 4); b.tap('SPACE', 4)                 # both ready
-    for _ in range(30):                                  # wait until both left the title
+    for _ in range(90):                                  # wait until both left the title (host readies last)
         if a.rd(TM, 1)[0] == 0 and b.rd(TM, 1)[0] == 0: break
         a.frames(1); b.frames(1)
     print('in game: title_mode', a.rd(TM, 1)[0], b.rd(TM, 1)[0], 'net_active', a.rd(NA, 1)[0], b.rd(NA, 1)[0])
+    print('seats: A total', a.rd(NTOT, 1)[0], 'table', a.rd(NT, 4).hex(), '| B total', b.rd(NTOT, 1)[0], 'table', b.rd(NT, 4).hex(), '| delay', a.rd(NDLY, 1)[0], b.rd(NDLY, 1)[0])
     a.e.press('LEFT'); b.e.press('D')                    # A walks left, B (WASD as local input? no: local input row 0 = cursor) -> use RIGHT
     b.e.release('D'); b.e.press('RIGHT')
     # state_hash is recomputed every 16 frames; key each sample by the frame it

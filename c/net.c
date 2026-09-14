@@ -6,6 +6,7 @@
 #include <string.h>
 
 uint8_t net_device;
+extern uint8_t net_slots;
 
 /* REVD: a Unicard-compatible device answers status {02,06,04,00} and 4 data
  * bytes {major, minor, subtype, pc}; subtype 'M' (4Dh) is an MZPico. Then
@@ -106,15 +107,15 @@ uint8_t net_ready(uint8_t ready, uint16_t *seed, uint16_t *start_frame) {
   return 0;
 }
 
-uint8_t net_send(uint16_t frame, uint8_t keys) {
-  uint8_t st[4];
+uint8_t net_send(uint16_t frame, const uint8_t keys[NET_BYTES]) {
+  uint8_t st[4], i;
   uc_cmd(cmdN_SEND);
   uc_wword(frame);
-  uc_wr(keys); uc_wr(0); uc_wr(0); uc_wr(0);               /* fixed 4 bytes */
+  for (i = 0; i < 4; i++) uc_wr(keys[i]);                 /* fixed 4 bytes */
   return net_wait(st);
 }
 
-uint8_t net_poll(uint16_t frame, uint16_t *avail, uint8_t keys[NET_SLOTS]) {
+uint8_t net_poll(uint16_t frame, uint16_t *avail, uint8_t keys[NET_SLOTS * NET_BYTES]) {
   uint8_t st[4], r, v[2];
   uc_cmd(cmdN_POLL);
   uc_wword(frame);
@@ -122,7 +123,10 @@ uint8_t net_poll(uint16_t frame, uint16_t *avail, uint8_t keys[NET_SLOTS]) {
   if (!(st[0] & UC_ST_OUTPUT)) return 0xff;
   uc_read(v, 2);
   *avail = v[0] | (v[1] << 8);
-  uc_read(keys, NET_SLOTS * NET_BYTES);
+  r = (uint8_t)(net_slots * NET_BYTES);                 /* the device outputs slots * bytes */
+  if (r == 0 || r > NET_SLOTS * NET_BYTES) r = NET_SLOTS * NET_BYTES;
+  uc_read(keys, r);
+  memset(keys + r, 0, NET_SLOTS * NET_BYTES - r);
   return 0;
 }
 
@@ -162,7 +166,8 @@ uint8_t net_active, net_slot, net_slots, net_waiting, net_abort;
 uint8_t net_delay = NET_DELAY_MIN + 1;
 char net_code[5] = "AAAA";
 static uint16_t net_frame;
-static uint8_t net_local_input;
+uint8_t net_table[MAX_PLAYERS] = {0, 4, 8, 12};   /* default: one player per device */
+uint8_t net_total = 2;
 
 /* a failed NET command: ask the device why (desync / dropped) */
 static void net_fail(void) {
@@ -171,23 +176,25 @@ static void net_fail(void) {
   if (net_status(&st) == 0 && (st.state == NETST_DESYNC || st.state == NETST_DROPPED)) net_abort = st.state;
 }
 
-void net_match_start(uint8_t local_input) {
+void net_match_start(void) {
   uint8_t f;
-  net_local_input = local_input;
+  static const uint8_t none[NET_BYTES] = {0, 0, 0, 0};
   net_frame = 0;
   net_waiting = 0;
   net_abort = 0;
   net_active = 1;
-  for (f = 0; f < net_delay; f++) net_send(f, 0);   /* nobody moves in the first steps */
+  for (f = 0; f < net_delay; f++) net_send(f, none);   /* nobody moves in the first steps */
 }
 
-/* Send the local keys for step N+net_delay, wait for the vector of step N. */
+/* Send the local players' keys for step N+net_delay (one byte per local
+ * player), wait for the vector of step N and deal it out by the seat table. */
 void net_lockstep_poll(void) {
   uint16_t avail;
-  uint8_t keys[NET_SLOTS], i, tries = 0;
+  uint8_t keys[NET_SLOTS * NET_BYTES], local[NET_BYTES], i, tries = 0;
   net_status_t st;
   if (net_abort) { for (i = 0; i < MAX_PLAYERS; i++) players[i].keys = 0; return; }
-  if (net_send(net_frame + net_delay, input_read(net_local_input)) != 0) net_fail();
+  for (i = 0; i < NET_BYTES; i++) local[i] = i < menu_local ? input_read(menu_inputs[i]) : 0;
+  if (net_send(net_frame + net_delay, local) != 0) net_fail();
   while (!net_abort) {
     if (net_poll(net_frame, &avail, keys) != 0) { net_fail(); break; }
     if (avail != 0xffff && avail >= net_frame) break;
@@ -199,7 +206,7 @@ void net_lockstep_poll(void) {
     }
   }
   for (i = 0; i < MAX_PLAYERS; i++)
-    players[i].keys = (!net_abort && i < net_slots && players[i].active) ? keys[i] : 0;
+    players[i].keys = (!net_abort && i < net_total && net_table[i] != 0xff && players[i].active) ? keys[net_table[i]] : 0;
   if (!net_abort) net_waiting = 0;
   net_frame++;
 }

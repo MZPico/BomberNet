@@ -238,7 +238,7 @@ void hash_run(void);
  * Lockstep: every input_poll is one step; the local player's keys are sent
  * for step N+NET_DELAY and the step's input vector is awaited from the
  * device, then copied into players[].keys like a replay. */
-#define BUILD_ID  0x0603          /* bump on any change of the simulation or protocol */
+#define BUILD_ID  0x0604          /* bump on any change of the simulation or protocol */
 #define NET_OFF   0
 #define NET_HOST  1
 #define NET_JOIN  2
@@ -251,7 +251,13 @@ extern uint8_t net_slot, net_slots, net_waiting;
 extern uint8_t net_abort;         /* 0 none, else NETST_DESYNC / NETST_DROPPED / 9 link lost */
 extern char net_code[5];
 uint8_t input_read(uint8_t source);
-void net_match_start(uint8_t local_input);   /* prime the first NET_DELAY steps */
+void net_match_start(void);                  /* prime the first net_delay steps */
+/* Seats: player p is played on device slot net_table[p] >> 2, local player
+ * (net_table[p] & 3) there; 0xff = no seat. The host builds the table in the
+ * lobby from every device's local player count and announces it. */
+extern uint8_t net_table[MAX_PLAYERS];
+extern uint8_t net_total;                    /* players in the match (the host's PLAYERS row) */
+extern uint8_t menu_local;                   /* local players on this device in a network game (1..3) */
 void net_lockstep_poll(void);                /* one step: fills players[].keys */
 void net_match_end(void);
 
