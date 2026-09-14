@@ -200,9 +200,12 @@ void net_lockstep_poll(void) {
     if (avail != 0xffff && avail >= net_frame) break;
     if (++tries > 4) {
       net_waiting = 1;
-      if ((tries & 15) == 0 && net_status(&st) == 0 &&
-          (st.state == NETST_DESYNC || st.state == NETST_DROPPED || st.state == NETST_NOLINK))
-        net_abort = st.state ? st.state : 9;
+      if ((tries & 15) == 0) {
+        if (net_status(&st) == 0 &&
+            (st.state == NETST_DESYNC || st.state == NETST_DROPPED || st.state == NETST_NOLINK))
+          net_abort = st.state ? st.state : 9;
+        else if (mz_key_letter() == 0x1b) net_abort = NET_ABORT_BREAK;   /* BREAK: give up waiting */
+      }
     }
   }
   for (i = 0; i < MAX_PLAYERS; i++)

@@ -248,7 +248,8 @@ extern uint8_t net_delay;         /* frames between a key press and its step; ho
 extern uint8_t menu_net;          /* NET_OFF / NET_HOST / NET_JOIN (title) */
 extern uint8_t net_active;        /* a lockstep match is running */
 extern uint8_t net_slot, net_slots, net_waiting;
-extern uint8_t net_abort;         /* 0 none, else NETST_DESYNC / NETST_DROPPED / 9 link lost */
+extern uint8_t net_abort;         /* 0 none, else NETST_DESYNC / NETST_DROPPED / 9 link lost / NET_ABORT_BREAK */
+#define NET_ABORT_BREAK 7          /* BREAK pressed while waiting for the others */
 extern char net_code[5];
 uint8_t input_read(uint8_t source);
 void net_match_start(void);                  /* prime the first net_delay steps */

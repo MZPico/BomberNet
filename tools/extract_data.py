@@ -59,7 +59,7 @@ for i, (ca, cb) in enumerate(colours):
 for i, ch in enumerate('PLMAYDHI'):
     gt[2 * (0x92 + i)] = ord(ch) - ord('A') + 1
     gt[2 * (0x92 + i) + 1] = 0x70
-for code, ch in ((0x8E, 'W'), (0x8F, 'K'), (0x9E, 'V'), (0x9F, 'X')):
+for code, ch in ((0x8E, 'W'), (0x8F, 'K'), (0x9E, 'V'), (0x9F, 'X'), (0xBE, 'F')):
     gt[2 * code] = ord(ch) - ord('A') + 1
     gt[2 * code + 1] = 0x70
 # box drawing for game-mode message frames, yellow: 0C horizontal, 0D vertical,

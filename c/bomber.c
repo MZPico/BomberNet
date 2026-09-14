@@ -589,14 +589,14 @@ static uint8_t net_lobby(void) {
       for (r = 0; r < 3; r++) lobby_extra[k + r] = r < d ? '.' : ' ';
       lobby_extra[k + 3] = 0;
     }
-    strcpy(l3, ready ? "WAITING FOR THE OTHERS" : "SPACE READY   E CANCEL");
+    strcpy(l3, ready ? "WAITING FOR THE OTHERS" : "SPACE READY  BREAK CANCEL");
     edge = lobby_frame(L.host ? "YOU ARE THE HOST" : "JOINED", l2, l3);
 #ifdef HOST
     if (getenv("SIM_LOBBY_DEBUG")) fprintf(stderr, "lobby n=%u ready=%u seats=%u total=%u members=%u mask=%02x state=%u edge=%02x\n", L.n, ready, L.seats, net_total, st.members, st.ready_mask, st.state, edge);
 #endif
     lobby_extra[0] = 0;
     if (st.state == NETST_DROPPED || st.state == NETST_NOLINK) { lobby_error(9); net_leave(); return 0; }
-    if (mz_keys_b() & KEY_SPACE) { net_leave(); return 0; }
+    if (mz_key_letter() == 0x1b) { net_leave(); return 0; }          /* BREAK cancels */
     if (!ready && (edge & KEY_SPACE)) { ready = 1; mz_tone(0x030a, 14); }
     if (ready && (L.n & 7) == 1) {
       /* the host goes last: full table, every joiner ready */
@@ -778,6 +778,9 @@ static void show_message(const char *l1, const char *l2) {
     any = 0;
     for (i = 0; i < MAX_PLAYERS; i++)
       if (players[i].active && (players[i].keys & KEY_SPACE)) any = 1;
+    /* after a network match ended (abort) the player records still read the
+     * lockstep vector, which no longer arrives: listen to the local keys */
+    if (!net_active && ((mz_keys() | mz_keys_b()) & KEY_SPACE)) any = 1;
     if (n) n--;
     else if (any) return;
   }
@@ -856,7 +859,7 @@ static void run_game(void) {
   if (net_active) {
     uint8_t reason = net_abort;
     net_match_end();
-    if (reason) show_message(reason == NETST_DESYNC ? "DESYNC" : "CONNECTION LOST", "PRESS FIRE");
+    if (reason) show_message(reason == NETST_DESYNC ? "DESYNC" : reason == NET_ABORT_BREAK ? "MATCH LEFT" : "CONNECTION LOST", "PRESS FIRE");
   }
 }
 
