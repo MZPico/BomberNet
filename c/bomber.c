@@ -353,6 +353,12 @@ static void title_menu(void) {
   p = draw_at(2, 23);
   title_text(p, "COPYRIGHT  C  2026  MZPICO");
   p[10] = 0x17; p[12] = 0x18;               /* the original's "(" ")" glyphs */
+  {                                         /* version at the right end of the line */
+    const char *v = GAME_VERSION;
+    p = draw_at(38 - (uint8_t)strlen(v) - 1, 23);
+    *p++ = 'V';
+    while (*v) { *p++ = *v == '.' ? 0x19 : (uint8_t)(*v - '0'); v++; }   /* 19h = '.' in the title table */
+  }
 }
 
 static void title_frame(void);
