@@ -398,12 +398,56 @@ static uint8_t lobby_enter_code(void) {
   }
 }
 
+/* Lobby messages (NETMSG, byte 0 = kind). The host pings every 10 frames,
+ * joiners echo, and the round trip in frames sets the input delay:
+ * ceil(rtt / 2) + 1, clamped, which the host announces on every change and
+ * before it readies up. A device that misses the announcement still plays
+ * in step (every frame gets a vector), only with a different delay. */
+#define LM_PING  1
+#define LM_PONG  2
+#define LM_DELAY 3
+
+static void lobby_apply_rtt(uint8_t *samples, uint8_t rtt) {
+  uint8_t i, m = 0, d;
+  for (i = 3; i > 0; i--) samples[i] = samples[i - 1];
+  samples[0] = rtt;
+  for (i = 0; i < 4; i++) if (samples[i] > m) m = samples[i];
+  d = (uint8_t)((m + 1) / 2 + 1);
+  if (d < NET_DELAY_MIN) d = NET_DELAY_MIN;
+  if (d > NET_DELAY_MAX) d = NET_DELAY_MAX;
+  net_delay = d;
+}
+
+/* drain the message queue; returns 1 when a delay announcement arrived */
+static uint8_t lobby_messages(uint8_t host, uint8_t n, uint8_t seq, uint8_t sent_at, uint8_t *samples) {
+  uint8_t from, m[32], len, got = 0;
+  while ((len = net_msg_recv(&from, m)) != 0) {
+    if (host && m[0] == LM_PONG && len >= 2 && m[1] == seq && from != 0)
+      lobby_apply_rtt(samples, (uint8_t)(n - sent_at));
+    else if (!host && m[0] == LM_PING && len >= 2 && from == 0) {
+      uint8_t r[2]; r[0] = LM_PONG; r[1] = m[1];
+      net_msg_send(0, r, 2);
+    } else if (!host && m[0] == LM_DELAY && len >= 2 && from == 0) {
+      net_delay = m[1] < NET_DELAY_MIN ? NET_DELAY_MIN : m[1] > NET_DELAY_MAX ? NET_DELAY_MAX : m[1];
+      got = 1;
+    }
+  }
+  return got;
+}
+
+static void lobby_announce_delay(void) {
+  uint8_t m[2]; m[0] = LM_DELAY; m[1] = net_delay;
+  net_msg_send(0xff, m, 2);
+}
+
 /* create or join, then wait until everybody is ready; returns 1 to start */
 static uint8_t net_lobby(void) {
-  uint8_t settings[16], len = 2, r, edge, n = 0, ready = 0;
+  uint8_t settings[16], len = 2, r, edge, n = 0, ready = 0, host = menu_net == NET_HOST;
+  uint8_t seq = 0, sent_at = 0, samples[4] = {0, 0, 0, 0}, announced = 0, members = 1;
   uint16_t seed, start;
   char l2[32], l3[32];
   net_status_t st;
+  net_delay = NET_DELAY_MIN + 1;
   settings[0] = menu_mode; settings[1] = menu_players;
   if (menu_net == NET_HOST) {
     r = net_create(BUILD_ID, menu_players, settings, len, net_code, &net_slot);
@@ -418,16 +462,35 @@ static uint8_t net_lobby(void) {
   st.members = 1; st.ready_mask = 0;
   for (;;) {
     if ((n++ & 7) == 0) net_status(&st);
-    strcpy(l2, "ROOM ABCD  PLAYERS 0 OF 0");
+    lobby_messages(host, n, seq, sent_at, samples);
+    if (host) {
+      if (st.members > 1 && (n % 10) == 0) {          /* ping the joiners */
+        uint8_t m[2]; m[0] = LM_PING; m[1] = ++seq; sent_at = n;
+        net_msg_send(0xff, m, 2);
+      }
+      if (st.members != members || announced != net_delay) {   /* new joiner or new value */
+        members = st.members; announced = net_delay;
+        if (st.members > 1) lobby_announce_delay();
+      }
+    }
+    strcpy(l2, "ROOM ABCD  0 OF 0  DELAY 000MS");
     memcpy(l2 + 5, net_code, 4);
-    l2[19] = '0' + st.members; l2[24] = '0' + net_slots;
+    l2[11] = '0' + st.members; l2[16] = '0' + net_slots;
+    r = net_delay * 20; l2[25] = '0' + r / 100; l2[26] = '0' + (r / 10) % 10;
     strcpy(l3, ready ? "WAITING FOR THE OTHERS" : "SPACE READY   E CANCEL");
-    edge = lobby_frame(menu_net == NET_HOST ? "YOU ARE THE HOST" : "JOINED", l2, l3);
+    edge = lobby_frame(host ? "YOU ARE THE HOST" : "JOINED", l2, l3);
     if (st.state == NETST_DROPPED || st.state == NETST_NOLINK) { lobby_error(9); net_leave(); return 0; }
     if (mz_keys_b() & KEY_SPACE) { net_leave(); return 0; }
-    if (!ready && (edge & KEY_SPACE)) { ready = 1; mz_tone(0x030a, 14); }
+    if (!ready && (edge & KEY_SPACE)) {
+      ready = 1; mz_tone(0x030a, 14);
+      if (host) { announced = net_delay; lobby_announce_delay(); }
+    }
     if (ready && (n & 7) == 1) {
-      if (net_ready(1, &seed, &start) == 0 && seed != 0xffff) { match_seed = seed; return 1; }
+      if (net_ready(1, &seed, &start) == 0 && seed != 0xffff) {
+        match_seed = seed;
+        lobby_messages(host, n, seq, sent_at, samples);   /* a late announcement */
+        return 1;
+      }
     }
   }
 }

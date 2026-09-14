@@ -159,6 +159,7 @@ uint8_t net_msg_recv(uint8_t *from, uint8_t *data) {
 
 uint8_t menu_net = NET_OFF;
 uint8_t net_active, net_slot, net_slots, net_waiting, net_abort;
+uint8_t net_delay = NET_DELAY_MIN + 1;
 char net_code[5] = "AAAA";
 static uint16_t net_frame;
 static uint8_t net_local_input;
@@ -177,16 +178,16 @@ void net_match_start(uint8_t local_input) {
   net_waiting = 0;
   net_abort = 0;
   net_active = 1;
-  for (f = 0; f < NET_DELAY; f++) net_send(f, 0);   /* nobody moves in the first steps */
+  for (f = 0; f < net_delay; f++) net_send(f, 0);   /* nobody moves in the first steps */
 }
 
-/* Send the local keys for step N+NET_DELAY, wait for the vector of step N. */
+/* Send the local keys for step N+net_delay, wait for the vector of step N. */
 void net_lockstep_poll(void) {
   uint16_t avail;
   uint8_t keys[NET_SLOTS], i, tries = 0;
   net_status_t st;
   if (net_abort) { for (i = 0; i < MAX_PLAYERS; i++) players[i].keys = 0; return; }
-  if (net_send(net_frame + NET_DELAY, input_read(net_local_input)) != 0) net_fail();
+  if (net_send(net_frame + net_delay, input_read(net_local_input)) != 0) net_fail();
   while (!net_abort) {
     if (net_poll(net_frame, &avail, keys) != 0) { net_fail(); break; }
     if (avail != 0xffff && avail >= net_frame) break;

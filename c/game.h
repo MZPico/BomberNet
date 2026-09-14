@@ -237,7 +237,9 @@ void compute_state_hash(void);
 #define NET_OFF   0
 #define NET_HOST  1
 #define NET_JOIN  2
-#define NET_DELAY 6          /* 120 ms budget for the relay hop; 2 stalled every few steps over the internet */
+#define NET_DELAY_MIN 2      /* input delay in frames: measured per match in the lobby (see net_delay) */
+#define NET_DELAY_MAX 8
+extern uint8_t net_delay;         /* frames between a key press and its step; host sets it from the lobby round trip */
 extern uint8_t menu_net;          /* NET_OFF / NET_HOST / NET_JOIN (title) */
 extern uint8_t net_active;        /* a lockstep match is running */
 extern uint8_t net_slot, net_slots, net_waiting;

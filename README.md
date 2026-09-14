@@ -236,7 +236,7 @@ Network play (phase 6): with an MZPico that has the NET extension (or mz800emu w
 shows its 4-letter code, JOIN asks for a code (type the letters, or UP/DOWN letter and LEFT/RIGHT position, DEL back,
 SPACE join, BREAK cancel). One local player per device (the LOCAL row picks its input);
 mode and player count come from the host. Both press SPACE in the lobby to ready up;
-the match is lockstep with 6 frames (120 ms) of input delay, hashes are compared every 16
+the match is lockstep with an input delay measured in the lobby (host pings, ceil(rtt/2)+1 frames, 2..8, shown as DELAY in ms), hashes are compared every 16
 frames and a desync or a dropped peer ends the match with a message. The reference
 relay is `relay/relay.py` (WebSocket 8765, JSON lines TCP 8766); `tools/nettest.py`
 and `tools/lockstep_test.py` run two headless emulators through it. Protocol:
