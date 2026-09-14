@@ -167,7 +167,8 @@ void print_num5(uint8_t *p, uint16_t v);       /* 5 digits + fixed trailing 0 */
 void print_num4(uint8_t *p, uint16_t v);       /* 4 digits + fixed trailing 0 (compact HUD) */
 void hud_text(uint8_t *p, const char *s);      /* ASCII A-Z/0-9/space -> game-mode glyphs */
 void title_text(uint8_t *p, const char *s);    /* ASCII -> title-mode codes (digits, '-', letters) */
-void title_text_hl(uint8_t *p, const char *s); /* same, letters in yellow (hl_letters) */
+void title_text_hl(uint8_t *p, const char *s);
+void title_text_dim(uint8_t *p, const char *s);   /* greyed-out (blue) */ /* same, letters in yellow (hl_letters) */
 /* title-mode box glyphs (title_table) */
 #define T_BOX_H  0x0c
 #define T_BOX_TL 0x10

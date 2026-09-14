@@ -115,6 +115,14 @@ void title_text(uint8_t *p, const char *s) {
 }
 
 /* yellow text in title mode: letters 60h-79h, digits 7Ah-7Fh / 25h-28h, dash 29h */
+/* greyed-out menu text (blue): letters only */
+void title_text_dim(uint8_t *p, const char *s) {
+  while (*s) {
+    uint8_t c = (uint8_t)*s++;
+    *p++ = (c >= 'A' && c <= 'Z') ? (uint8_t)(0xe0 + (c - 'A')) : C_SPACE;
+  }
+}
+
 void title_text_hl(uint8_t *p, const char *s) {
   while (*s) {
     uint8_t c = (uint8_t)*s++;

@@ -96,8 +96,12 @@ for d in range(10):
     tt[2 * code + 1] = 0x60
 tt[2 * 0x29] = 0x2A
 tt[2 * 0x29 + 1] = 0x60
+# dim (blue) alphabet at E0-F9 for greyed-out menu rows; the title never draws E0-FF
+for i in range(26):
+    tt[2 * (0xE0 + i)] = i + 1
+    tt[2 * (0xE0 + i) + 1] = 0x10
 parts.append(carray('title_table', bytes(tt), 16,
-                    'title mode, all 256 codes: original 314Fh for 00h-59h, Z, game table above, yellow text at 60h-7Fh/25h-29h'))
+                    'title mode, all 256 codes: original 314Fh for 00h-59h, Z, game table above, yellow text at 60h-7Fh/25h-29h, dim text at E0h-F9h'))
 
 sys.path.insert(0, here)
 from make_logo import compose

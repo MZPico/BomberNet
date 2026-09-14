@@ -41,7 +41,9 @@ T_GLYPH = [
 ]
 
 
-def compose(body, tt, word='BOMBERNeT'):
+def compose(body, tt, layout=(('BOMBER', 2), ('NET', 54))):
+    """Same geometry as the original BOMBER MAN: BOMBER at dot column 2, the
+    checker divider at 50..53 (char columns 25, 26), the second word at 54."""
     od = original_dots(body, tt)
     glyphs = {'B': glyph(od, 2), 'O': glyph(od, 10), 'M': glyph(od, 18),
               'E': glyph(od, 34), 'R': glyph(od, 42), 'N': glyph(od, 70), 'T': T_GLYPH}
@@ -52,18 +54,21 @@ def compose(body, tt, word='BOMBERNeT'):
     e2[6][7] = 0
     glyphs['e'] = e2
     dots = [[0] * 80 for _ in range(12)]
-    x = 4
-    for ch in word:
-        g = glyphs[ch]
-        for r in range(7):
-            for c in range(8):
-                dots[2 + r][x + c] = g[r][c]
-        x += 8
+    for word, x in layout:
+        for ch in word:
+            g = glyphs[ch]
+            for r in range(7):
+                for c in range(8):
+                    dots[2 + r][x + c] = g[r][c]
+            x += 8
     codes = bytearray(240)
     for r in range(6):
         for c in range(40):
-            if r in (0, 5) or c in (0, 39):
+            if r in (0, 5) or c in (0, 39) or c in (25, 26):
                 codes[r * 40 + c] = 0x2e
+                if c in (25, 26):
+                    for dr in range(2):
+                        dots[2 * r + dr][2 * c] = dots[2 * r + dr][2 * c + 1] = 1
                 continue
             n = dots[2 * r][2 * c] + dots[2 * r][2 * c + 1] * 2 + dots[2 * r + 1][2 * c] * 4 + dots[2 * r + 1][2 * c + 1] * 8
             codes[r * 40 + c] = 0x20 if n == 0 else (0x2f if n == 1 else 0x30 + n)

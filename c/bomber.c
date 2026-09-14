@@ -235,17 +235,17 @@ static void menu_validate(void) {
 }
 
 static const char *const net_names[3] = {"OFF   ", "HOST  ", "JOIN  "};
-#define MENU_FIXED (3 + (net_device == NETDEV_NET))
+#define MENU_FIXED 4        /* MODE, NETWORK, PLAYERS, JOYSTICK */
 #define MENU_PLAYER_ROWS (menu_net != NET_OFF ? 1 + menu_local : menu_players)   /* LOCAL row + its players */
 
 /* rows: MODE, NETWORK (only with a NET device), PLAYERS, JOYSTICK, then
  * LOCAL (network game) and one input row per (local) player */
 static void menu_change(int8_t dir) {
-  uint8_t item = menu_item;
-  if (net_device != NETDEV_NET && item >= 1) item++;         /* no NETWORK row */
-  switch (item) {
+  switch (menu_item) {
   case 0: menu_mode ^= 1; break;
-  case 1: menu_net = (uint8_t)((menu_net + 3 + dir) % 3); if (menu_net && menu_players < 2) menu_players = 2; break;
+  case 1:                                                    /* greyed out without a NET device */
+    if (net_device == NETDEV_NET) { menu_net = (uint8_t)((menu_net + 3 + dir) % 3); if (menu_net && menu_players < 2) menu_players = 2; }
+    break;
   case 2:
     if (dir > 0 && menu_players < 4) menu_players++;
     if (dir < 0 && menu_players > 1) menu_players--;
@@ -292,6 +292,14 @@ static void menu_row(uint8_t row, const char *label, uint8_t digit, const char *
   if (selected) title_text_hl(p + 13, value); else title_text(p + 13, value);
 }
 
+/* a row that cannot be chosen (the cursor skips it) */
+static void menu_row_dim(uint8_t row, const char *label, const char *value) {
+  uint8_t *p = draw_at(MENU_X + 2, MENU_Y + 1 + row);
+  p[0] = C_SPACE;
+  title_text_dim(p + 2, label);
+  title_text_dim(p + 13, value);
+}
+
 static void title_menu(void) {
   uint8_t k = menu_locked ? lobby_keys : mz_keys(), i, rows, row, *p;
   uint8_t edge = k & ~menu_prev_keys;
@@ -299,16 +307,26 @@ static void title_menu(void) {
   menu_prev_keys = k;
   rows = MENU_FIXED + MENU_PLAYER_ROWS;
   if (menu_locked) edge = 0;
-  if ((edge & KEY_UP) && menu_item > 0) { menu_item--; mz_tone(0x020a, 14); }
-  if ((edge & KEY_DOWN) && menu_item < rows - 1) { menu_item++; mz_tone(0x020a, 14); }
+  if ((edge & KEY_UP) && menu_item > 0) {
+    menu_item--;
+    if (menu_item == 1 && net_device != NETDEV_NET) menu_item = 0;     /* skip the greyed NETWORK row */
+    mz_tone(0x020a, 14);
+  }
+  if ((edge & KEY_DOWN) && menu_item < rows - 1) {
+    menu_item++;
+    if (menu_item == 1 && net_device != NETDEV_NET) menu_item = 2;
+    mz_tone(0x020a, 14);
+  }
   if (edge & KEY_LEFT) { menu_change(-1); mz_tone(0x030a, 14); }
   if (edge & KEY_RIGHT) { menu_change(1); mz_tone(0x030a, 14); }
   if (menu_item >= rows) menu_item = rows - 1;
+  if (menu_item == 1 && net_device != NETDEV_NET) menu_item = 2;
 
   draw_title_box();
   menu_row(0, "MODE", 0, mode_names[menu_mode], menu_item == 0);
-  row = 1;
-  if (net_device == NETDEV_NET) { menu_row(row, "NETWORK", 0, net_names[menu_net], menu_item == row); row++; }
+  if (net_device == NETDEV_NET) menu_row(1, "NETWORK", 0, net_names[menu_net], menu_item == 1);
+  else menu_row_dim(1, "NETWORK", "NONE");
+  row = 2;
   num[0] = '0' + menu_players; num[1] = 0;
   menu_row(row, "PLAYERS", 0, num, menu_item == row); row++;
   menu_row(row, "JOYSTICK", 0, joy_names[joy_type], menu_item == row); row++;
@@ -325,9 +343,6 @@ static void title_menu(void) {
   p = draw_at(3, 20);
   p[0] = T_ARR_UP; p[1] = T_ARR_DOWN; title_text(p + 3, "SELECT");
   p[11] = T_ARR_LEFT; p[12] = T_ARR_RIGHT; title_text(p + 14, "CHANGE");
-  title_text(p + 23, "NET ");
-  title_text(p + 27, net_device == NETDEV_NET ? "MZPICO " : net_device == NETDEV_MZPICO ? "NO WIFI" :
-                     net_device == NETDEV_UNICARD ? "UNICARD" : "NONE   ");
   title_text(draw_at(5, 21), "HI-SCORE");
   print_num5(draw_at(14, 21), hi_score);
   title_text(draw_at(22, 21), "SCORE");
