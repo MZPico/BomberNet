@@ -233,11 +233,11 @@ void compute_state_hash(void);
  * Lockstep: every input_poll is one step; the local player's keys are sent
  * for step N+NET_DELAY and the step's input vector is awaited from the
  * device, then copied into players[].keys like a replay. */
-#define BUILD_ID  0x0601          /* bump on any change of the simulation or protocol */
+#define BUILD_ID  0x0602          /* bump on any change of the simulation or protocol */
 #define NET_OFF   0
 #define NET_HOST  1
 #define NET_JOIN  2
-#define NET_DELAY 2
+#define NET_DELAY 6          /* 120 ms budget for the relay hop; 2 stalled every few steps over the internet */
 extern uint8_t menu_net;          /* NET_OFF / NET_HOST / NET_JOIN (title) */
 extern uint8_t net_active;        /* a lockstep match is running */
 extern uint8_t net_slot, net_slots, net_waiting;
