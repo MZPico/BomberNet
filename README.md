@@ -1,6 +1,6 @@
-# BomberNet
+# BomberNet — Bomberman for Sharp MZ-700/800 (disassembly, C port, multiplayer)
 
-Version 0.1.0 (tag `v0.1.0`; shown at the bottom of the title screen). — Bomberman for Sharp MZ-700/800 (disassembly, C port, multiplayer)
+Version 0.1.0 (tag `v0.1.0`, shown at the bottom of the title screen).
 
 Sharp MZ-700 machine-code tape image (attribute 01, name ` F1200`), Z80,
 load and exec address `1200h`, body `2010h` bytes (`1200h`–`320Fh`).
