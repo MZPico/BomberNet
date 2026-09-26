@@ -35,9 +35,9 @@ void uc_wstr(const char *s);             /* string parameter, 0x0D terminated */
 
 /* ---- net.c ---- */
 #define NETDEV_NONE    0
-#define NETDEV_UNICARD 1      /* a Unicard: files only */
+#define NETDEV_UNICARD 1      /* a Unicard without NET support: files only */
 #define NETDEV_MZPICO  2      /* MZPico without NET support */
-#define NETDEV_NET     3      /* MZPico with NET */
+#define NETDEV_NET     3      /* MZPico or Unicard with NET (INFO feature bit) */
 extern uint8_t net_device;
 void net_detect(void);
 
