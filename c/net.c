@@ -9,9 +9,12 @@ uint8_t net_device;
 extern uint8_t net_slots;
 
 /* REVD: a Unicard-compatible device answers status {02,06,04,00} and 4 data
- * bytes {major, minor, subtype, pc}; subtype 'M' (4Dh) is an MZPico. Then
- * INFO (16 bytes) tells whether the NET extension is present. With no device
- * the ports float and the status bytes do not match. */
+ * bytes {major, minor, subtype, pc}; subtype 'M' (4Dh) is an MZPico. With no
+ * device the ports float and the status bytes do not match. Then INFO (16
+ * bytes) tells whether the NET extension is present, on an MZPico as well as
+ * on a Unicard firmware that implements it. A device without INFO answers
+ * ERROR (a Unicard may leave a stale OUTPUT bit), so the whole status is
+ * checked: no ERROR, OUTPUT set, command 95h and 16 bytes to read. */
 void net_detect(void) {
   uint8_t st[4], v[16];
   net_device = NETDEV_NONE;
@@ -19,11 +22,10 @@ void net_detect(void) {
   uc_status4(st);
   if (st[0] != 0x02 || st[1] != cmdREVD || st[2] != 0x04) return;
   uc_read(v, 4);
-  if (v[2] != 0x4d) { net_device = NETDEV_UNICARD; return; }
-  net_device = NETDEV_MZPICO;
+  net_device = (v[2] == 0x4d) ? NETDEV_MZPICO : NETDEV_UNICARD;
   uc_cmd(cmdX_INFO);
   uc_status4(st);
-  if (!(st[0] & UC_ST_OUTPUT)) return;
+  if ((st[0] & (UC_ST_ERROR | UC_ST_OUTPUT)) != UC_ST_OUTPUT || st[1] != cmdX_INFO || st[2] != 16) return;
   uc_read(v, 16);
   if (v[3] & UC_INFO_NET) net_device = NETDEV_NET;
 }
