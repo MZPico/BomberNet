@@ -278,7 +278,7 @@ What changed on purpose:
   natural hook points for new features (walking animation, more bombs, blast range).
 
 Title menu: cursor UP/DOWN selects a row, LEFT/RIGHT changes it. Rows: MODE (COOP /
-DEATHMATCH), NETWORK (OFF / HOST / JOIN, shown with an MZPico that has the NET
+DEATHMATCH), NETWORK (OFF / HOST / JOIN, shown with an MZPico or a Unicard that has the NET
 extension), PLAYERS (1..4; 3-4 need a joystick type), JOYSTICK (NONE / MZ-800 on ports
 F0h/F1h / MZ-1X03, the MZ-700 analogue stick on E008h timed at VBLK), then one row per
 player choosing its input: CURSOR AND SPACE, WASD AND E, JOYSTICK 1, JOYSTICK 2 (any
@@ -291,7 +291,7 @@ the map), and a lone dying enemy never disappeared because `tmr_enemy_die` was t
 twice per frame (the original ticks only four timers globally; `tmr_explode` and
 `tmr_enemy_die` are advanced by their users).
 
-Network play (phase 6): with an MZPico that has the NET extension (or mz800emu with
+Network play (phase 6): with an MZPico or a Unicard that has the NET extension (or mz800emu with
 `[UNICARD] mzpico_mode = 1`), the title shows a NETWORK row: HOST creates a room and
 shows its 4-letter code, JOIN asks for a code (type the letters, or UP/DOWN letter and LEFT/RIGHT position, DEL back,
 SPACE join, BREAK cancel). The host's PLAYERS row is the total (2..4); each device's
@@ -301,7 +301,9 @@ lobby shows SEATS taken and seats the players in slot order (host's first). Ever
 presses SPACE to ready up, the host's READY goes out once every seat is taken;
 the match is lockstep with an input delay measured in the lobby (host pings, ceil(rtt/2)+1 frames of 60 ms, 2..8, shown as DELAY in ms), hashes are compared every 16
 frames and a desync or a dropped peer ends the match with a message. The reference
-relay is `relay/relay.py` (WebSocket 8765, JSON lines TCP 8766); `tools/nettest.py`
+relay is `relay/relay.py` (WebSocket 8765, JSON lines TCP 8766; `RELAY_TCP_HOST=0.0.0.0` opens the
+TCP port to the LAN for a Unicard; the Unicard has only this TCP transport, so it plays on a LAN or
+through a self-hosted relay, not through mzpico.com or against its browser player); `tools/nettest.py`
 and `tools/lockstep_test.py` run two headless emulators through it. Protocol:
 `docs/net-protocol.md`.
 

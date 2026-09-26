@@ -5,7 +5,10 @@ Runs beside the mzpico.com cloud repository service:
 
     uvicorn relay:app --host 0.0.0.0 --port 8765
 
-Stateless beyond rooms; a room dies 60 s after its last message. Room codes
+The JSON-lines TCP port (8766, native mz800emu and the Unicard firmware)
+listens on 127.0.0.1; set RELAY_TCP_HOST=0.0.0.0 to reach it from the LAN.
+
+Stateless beyond rooms; a room dies 600 s after its last message. Room codes
 are 4 letters from a 24-letter alphabet (no I/O) and are namespaced per
 (game id): the same code can exist for two different games.
 """
@@ -51,7 +54,8 @@ class Conn:
             pass
 
 
-TCP_PORT = 8766
+TCP_PORT = int(os.environ.get("RELAY_TCP_PORT", "8766"))
+TCP_HOST = os.environ.get("RELAY_TCP_HOST", "127.0.0.1")
 
 ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ"
 ROOM_TTL = 600.0     # idle rooms only; a room whose members all leave is removed at once
@@ -125,7 +129,7 @@ async def tcp_client(reader, writer):
 @app.on_event("startup")
 async def _start():
     asyncio.create_task(reaper())
-    await asyncio.start_server(tcp_client, "127.0.0.1", TCP_PORT)
+    await asyncio.start_server(tcp_client, TCP_HOST, TCP_PORT)
 
 
 async def err(ws: Conn, code: int, text: str):

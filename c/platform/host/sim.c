@@ -180,14 +180,14 @@ static uint8_t st4[4], stptr, cmd, params[64], plen, need, out[64], olen, optr, 
 static uint16_t out_frames[256][1];    /* keys per frame for the echo room */
 static uint8_t fr_keys[256][16];
 static uint16_t fr_avail = 0xffff;
-static void set_out(const uint8_t *d, uint8_t n) { memcpy(out, d, n); olen = n; optr = 0; st4[0] = n ? UC_ST_OUTPUT : 0; }
+static void set_out(const uint8_t *d, uint8_t n) { memcpy(out, d, n); olen = n; optr = 0; st4[0] = n ? UC_ST_OUTPUT : 0; st4[2] = n; }
 static void set_err(uint8_t code) { st4[0] = UC_ST_ERROR; st4[2] = code; olen = 0; }
 static uint16_t P16(uint8_t i) { return params[i] | (params[i + 1] << 8); }
 static void exec_cmd(void) {
   uint8_t o[34] = {0};
   st4[1] = cmd; st4[0] = 0;
   switch (cmd) {
-  case cmdREVD: o[2] = 0x4d; o[3] = 1; set_out(o, 4); st4[2] = 4; break;
+  case cmdREVD: o[2] = 0x4d; o[3] = 1; set_out(o, 4); break;
   case cmdX_INFO: o[0] = 1; o[3] = 0x01 | UC_INFO_NET; set_out(o, 16); break;
   case cmdN_STATUS: o[0] = running ? NETST_RUNNING : in_room ? NETST_INROOM : NETST_READY; o[1] = 0; o[2] = in_room; o[3] = in_room; set_out(o, 8); break;
   case cmdN_CREATE: if (P16(0) != NET_GAME_ID) { set_err(10); break; } in_room = 1; running = 0; fr_avail = 0xffff; memcpy(o, "TEST\r", 5); o[5] = 0; set_out(o, 6); break;
