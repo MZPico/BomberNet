@@ -6,7 +6,6 @@
 #include <stdint.h>
 #include "game.h"
 #include "data.h"
-#include "uc.h"
 #include <string.h>
 #ifdef HOST
 #include <stdio.h>
@@ -177,11 +176,6 @@ static void title_init(void) {
  * rows: MODE, PLAYERS, JOYSTICK, then one input row per player */
 static uint8_t menu_item, menu_prev_keys, menu_locked, lobby_keys;   /* locked: lobby owns the keys */
 static const char *const mode_names[2] = {"COOP      ", "DEATHMATCH"};
-static const char *const joy_names[3] = {"NONE   ", "MZ-800 ", "MZ-1X03"};
-static const char *const input_names[6] = {
-  "", "CURSOR AND SPACE", "WASD AND E      ", "JOYSTICK 1      ", "JOYSTICK 2      ", "",
-};
-static const char *const kbd_a_cr_name = "CURSOR AND CR   ";
 
 /* with two keyboard players, player A fires with CR (SPACE is next to WASD);
  * applied when the game starts, the title itself always listens to SPACE */
@@ -254,10 +248,10 @@ static void menu_change(int8_t dir) {
     if (menu_net != NET_OFF) {
       if (dir > 0 && menu_local < 3) menu_local++;
       if (dir < 0 && menu_local > 1) menu_local--;
-    } else joy_type = (uint8_t)((joy_type + 3 + dir) % 3);
+    } else joy_type = (uint8_t)((joy_type + PLAT_JOY_TYPES + dir) % PLAT_JOY_TYPES);
     break;
   case 4:
-    if (menu_net != NET_OFF) { joy_type = (uint8_t)((joy_type + 3 + dir) % 3); break; }
+    if (menu_net != NET_OFF) { joy_type = (uint8_t)((joy_type + PLAT_JOY_TYPES + dir) % PLAT_JOY_TYPES); break; }
     /* fall through: a player row */
   default: input_cycle(menu_item - MENU_FIXED - (menu_net != NET_OFF), dir); break;
   }
@@ -302,7 +296,7 @@ static void menu_row_dim(uint8_t row, const char *label, const char *value) {
 }
 
 static void title_menu(void) {
-  uint8_t k = menu_locked ? lobby_keys : mz_keys(), i, rows, row, *p;
+  uint8_t k = menu_locked ? lobby_keys : plat_keys_a(), i, rows, row, *p;
   uint8_t edge = k & ~menu_prev_keys;
   char num[2];
   menu_prev_keys = k;
@@ -311,15 +305,15 @@ static void title_menu(void) {
   if ((edge & KEY_UP) && menu_item > 0) {
     menu_item--;
     if (menu_item == 1 && net_device != NETDEV_NET) menu_item = 0;     /* skip the greyed NETWORK row */
-    mz_tone(0x020a, 14);
+    plat_tone(0x020a, 14);
   }
   if ((edge & KEY_DOWN) && menu_item < rows - 1) {
     menu_item++;
     if (menu_item == 1 && net_device != NETDEV_NET) menu_item = 2;
-    mz_tone(0x020a, 14);
+    plat_tone(0x020a, 14);
   }
-  if (edge & KEY_LEFT) { menu_change(-1); mz_tone(0x030a, 14); }
-  if (edge & KEY_RIGHT) { menu_change(1); mz_tone(0x030a, 14); }
+  if (edge & KEY_LEFT) { menu_change(-1); plat_tone(0x030a, 14); }
+  if (edge & KEY_RIGHT) { menu_change(1); plat_tone(0x030a, 14); }
   if (menu_item >= rows) menu_item = rows - 1;
   if (menu_item == 1 && net_device != NETDEV_NET) menu_item = 2;
 
@@ -335,10 +329,10 @@ static void title_menu(void) {
     menu_row(row, "LOCAL", 0, num, menu_item == row);
     row++;
   }
-  menu_row(row, "JOYSTICK", 0, joy_names[joy_type], menu_item == row); row++;
+  menu_row(row, "JOYSTICK", 0, plat_joy_names[joy_type], menu_item == row); row++;
   for (i = 0; i < local_count(); i++)
     menu_row(row + i, "PLAYER", C_PLAYER_DIGIT(i),
-             (menu_inputs[i] == INPUT_KBD_A && menu_fire_cr) ? kbd_a_cr_name : input_names[menu_inputs[i]],
+             (menu_inputs[i] == INPUT_KBD_A && menu_fire_cr) ? plat_kbd_a_alt_name : plat_input_names[menu_inputs[i]],
              menu_item == row + i);
 
   p = draw_at(3, 20);
@@ -388,7 +382,7 @@ static void lobby_box(const char *l1, const char *l2, const char *l3) {
 /* title frame with a lobby overlay; returns the new key edges */
 static uint8_t lobby_frame(const char *l1, const char *l2, const char *l3) {
   uint8_t k, edge;
-  k = mz_keys();
+  k = plat_keys_a();
   edge = k & ~menu_prev_keys;         /* before title_menu records this frame's keys */
   lobby_keys = k;
   menu_locked = 1;
@@ -423,11 +417,11 @@ static uint8_t lobby_enter_code(void) {
     line[7] = 0;
     edge = lobby_frame("TYPE THE ROOM CODE", line, "SPACE JOIN  BREAK CANCEL");
     *draw_at(MENU_X + (MENU_W - 7) / 2 + pos * 2, MENU_Y + 5) = T_ARR_UP;
-    if (edge & KEY_UP) { idx[pos] = (uint8_t)((idx[pos] + 1) % 24); mz_tone(0x030a, 14); }
-    if (edge & KEY_DOWN) { idx[pos] = (uint8_t)((idx[pos] + 23) % 24); mz_tone(0x030a, 14); }
+    if (edge & KEY_UP) { idx[pos] = (uint8_t)((idx[pos] + 1) % 24); plat_tone(0x030a, 14); }
+    if (edge & KEY_DOWN) { idx[pos] = (uint8_t)((idx[pos] + 23) % 24); plat_tone(0x030a, 14); }
     if ((edge & KEY_RIGHT) && pos < 3) pos++;
     if ((edge & KEY_LEFT) && pos > 0) pos--;
-    key = mz_key_letter();
+    key = plat_key_char();
     if (key != last_key) {
       last_key = key;
       if (key == 0x1b) return 0;
@@ -437,9 +431,9 @@ static uint8_t lobby_enter_code(void) {
         if (q) {
           idx[pos] = (uint8_t)(q - code_alphabet);
           if (pos < 3) pos++;
-          mz_tone(0x030a, 14);
+          plat_tone(0x030a, 14);
         } else {
-          mz_tone(0x0a0a, 14);          /* I and O are not used in codes */
+          plat_tone(0x0a0a, 14);          /* I and O are not used in codes */
         }
       }
     }
@@ -621,8 +615,8 @@ static uint8_t net_lobby(void) {
 #endif
     lobby_extra[0] = 0;
     if (st.state == NETST_DROPPED || st.state == NETST_NOLINK) { lobby_error(9); net_leave(); return 0; }
-    if (mz_key_letter() == 0x1b) { net_leave(); return 0; }          /* BREAK cancels */
-    if (!ready && (edge & KEY_SPACE)) { ready = 1; mz_tone(0x030a, 14); }
+    if (plat_key_char() == 0x1b) { net_leave(); return 0; }          /* BREAK cancels */
+    if (!ready && (edge & KEY_SPACE)) { ready = 1; plat_tone(0x030a, 14); }
     if (ready && (L.n & 7) == 1) {
       /* the host goes last: full table, every joiner ready */
       if (L.host && (L.seats < net_total || bit_count(st.ready_mask & 0xfe) < st.members - 1)) continue;
@@ -659,13 +653,13 @@ static void title_frame(void) {
 /* returns when SPACE is pressed */
 static void title_screen(void) {
   title_init();
-  kbd_fire_cr = 0;                    /* the title starts on SPACE */
+  kbd_alt_fire = 0;                    /* the title starts on SPACE */
   update_fire_key();
   for (;;) {
-    while (mz_keys() & KEY_SPACE) title_frame();   /* release a held SPACE first */
-    do { title_frame(); } while (!(mz_keys() & KEY_SPACE));
+    while (plat_keys_a() & KEY_SPACE) title_frame();   /* release a held SPACE first */
+    do { title_frame(); } while (!(plat_keys_a() & KEY_SPACE));
     if (menu_net == NET_OFF || net_device != NETDEV_NET) return;
-    while (mz_keys() & KEY_SPACE) title_frame();
+    while (plat_keys_a() & KEY_SPACE) title_frame();
     if (net_lobby()) return;
   }
 }
@@ -702,7 +696,7 @@ static void time_bonus(void) {
   while (time_left) {
     uint8_t i;
     frame_minimal();
-    mz_tone(0x0a00, 10);
+    plat_tone(0x0a00, 10);
     time_left -= 10;
     for (i = 0; i < MAX_PLAYERS; i++)
       if (players[i].active && players[i].state < P_DYING) players[i].score++;
@@ -804,8 +798,10 @@ static void show_message(const char *l1, const char *l2) {
     for (i = 0; i < MAX_PLAYERS; i++)
       if (players[i].active && (players[i].keys & KEY_SPACE)) any = 1;
     /* after a network match ended (abort) the player records still read the
-     * lockstep vector, which no longer arrives: listen to the local keys */
-    if (!net_active && ((mz_keys() | mz_keys_b()) & KEY_SPACE)) any = 1;
+     * lockstep vector, which no longer arrives: listen to the local keys
+     * (only then: a local game must see nothing but the players' own input,
+     * or recordings do not replay) */
+    if (!net_active && players[0].input == INPUT_NET && ((plat_keys_a() | plat_keys_b()) & KEY_SPACE)) any = 1;
     if (n) n--;
     else if (any) return;
   }
@@ -841,7 +837,7 @@ static void run_deathmatch(void) {
 
 static void run_match(void) {
   game_mode = menu_mode;
-  kbd_fire_cr = menu_fire_cr;
+  kbd_alt_fire = menu_fire_cr;
   rng_seed(match_seed);
   frame_no = 0;
   tmr_player_anim.counter = tmr_enemy_die.counter = tmr_enemy_move.counter = 0;
@@ -859,13 +855,13 @@ static void run_match(void) {
       idle_frames(20);
       time_bonus();
       stage++;
-      mz_delay();
+      plat_delay();
       break;
     case 1:
       idle_frames(5);
       break;
     default:
-      mz_delay();
+      plat_delay();
       if (lose_lives() == 0) {
         idle_frames(5);
         return;                       /* game over */
@@ -894,7 +890,7 @@ void game_main(void)
 void main(void)
 #endif
 {
-  mz_timer_init();
+  plat_init();
   net_detect();
   clear_buffers();
   hi_score = 0;

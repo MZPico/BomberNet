@@ -2,21 +2,61 @@
  * Sharp MZ-700 (and MZ-800 in MZ-700 mode) hardware layer, inline Z80 asm.
  * Same environment as the MZPico Manager (z88dk sccz80, +mz target).
  *
- *   mz_keys        direct 8255 keyboard matrix scan (several keys at once)
- *   mz_tone        monitor MSTA (0044h) / MSTP (0047h) with RATIO at 11A1h
+ *   plat_keys_a        direct 8255 keyboard matrix scan (several keys at once)
+ *   plat_tone        monitor MSTA (0044h) / MSTP (0047h) with RATIO at 11A1h
  *   flush_screen   diff draw_buf against shadow_vram, translate changed cells
  *                  through game_table / title_table into VRAM D000h / D800h
  *   composite_map  copy non-space map_layer cells over draw_buf
  */
 #include <stdint.h>
 #include "game.h"
-#include "data.h"
+#include "tables.h"
+
+/* MZ-only helpers of this file */
+uint8_t mz_joy800(uint8_t n);                 /* raw read of port F0h/F1h as a key mask */
+void mz_joy1x03_measure(void);                /* at the VBLK edge: fill joy_state[] for both sticks */
+void mz_wait_vblank(void);                    /* wait for the next VBLK falling edge (8255 PC7) */
+void mz_frame_sync(uint16_t ticks);           /* wait until ticks passed since the last sync */
+void mz_set_attr(uint8_t x, uint8_t y, uint8_t attr);   /* direct write to the attribute plane */
+
+uint8_t joy_state[2];                         /* MZ-1X03: key masks measured in the frame sync */
+
+/* menu texts */
+const char *const plat_joy_names[PLAT_JOY_TYPES] = {"NONE   ", "MZ-800 ", "MZ-1X03"};
+const char *const plat_input_names[6] = {
+  "", "CURSOR AND SPACE", "WASD AND E      ", "JOYSTICK 1      ", "JOYSTICK 2      ", "",
+};
+const char *const plat_kbd_a_alt_name = "CURSOR AND CR   ";
+
+/* VRAM attribute of each player's colour: green, yellow, white, blue */
+static const uint8_t player_attrs[MAX_PLAYERS] = {0x40, 0x60, 0x70, 0x10};
+
+void plat_player_colour(uint8_t x, uint8_t y, uint8_t player) {
+  mz_set_attr(x, y, player_attrs[player]);
+}
+
+/* Frame limiter: 8253 counter 1 runs at 15611 Hz; the original game frame
+ * measured 58.6 ms (208k cycles) in play, i.e. 915 ticks. With an MZ-1X03
+ * the frame is aligned to every 3rd vblank (60 ms) because the stick pulses
+ * can only be timed from the VBLK edge. */
+#define FRAME_TICKS 915
+#define FRAME_TICKS_VBLK 880                  /* then wait for the vblank edge */
+
+void plat_frame_sync(void) {
+  if (joy_type == JOY_1X03) {
+    mz_frame_sync(FRAME_TICKS_VBLK);
+    mz_wait_vblank();
+    mz_joy1x03_measure();
+  } else {
+    mz_frame_sync(FRAME_TICKS);
+  }
+}
 
 /* Keyboard matrix (from the 1Z-013 key table, bit 7 first per row):
  *   strobe F6h: \ ^ - SPACE 0 9 . ,          -> SPACE = bit 4
  *   strobe F7h: INST DEL UP DOWN RIGHT LEFT ? /  -> UP bit5 DOWN bit4 RIGHT bit3 LEFT bit2
  * Lines read 0 when pressed. */
-uint8_t mz_keys(void) __naked {
+uint8_t plat_keys_a(void) __naked {
   __asm
     ld   a,0xf7
     ld   (0xe000),a
@@ -50,7 +90,7 @@ mk_3:
     or   0x08               ; KEY_LEFT
 mk_4:
     ld   c,a
-    ld   a,(_kbd_fire_cr)
+    ld   a,(_kbd_alt_fire)
     or   a
     jr   nz,mk_cr
     ld   a,0xf6             ; strobe row 6: SPACE = bit 4
@@ -89,7 +129,7 @@ mk_5:
 /* One key of the letter rows for typing a room code: 'A'..'Z', 8 for DEL,
  * 1Bh for BREAK, 0 when none. Rows: F4h A..H, F3h I..P, F2h Q..X (bit 7..0),
  * F1h Y (bit 7) Z (bit 6); F7h DEL = bit 6; F8h BREAK = bit 7. */
-uint8_t mz_key_letter(void) __naked {
+uint8_t plat_key_char(void) __naked {
   __asm
     ld   hl,mkl_tab
 mkl_row:
@@ -172,7 +212,7 @@ hr_done:
 /* Keyboard set B: strobe F2h row: Q R S T U V W X (bit 7..0) -> W bit1 = up,
  * S bit5 = down; strobe F4h row: A B C D E F G H -> A bit7 = left, D bit4 =
  * right, E bit3 = fire. */
-uint8_t mz_keys_b(void) __naked {
+uint8_t plat_keys_b(void) __naked {
   __asm
     ld   a,0xf2
     ld   (0xe000),a
@@ -285,7 +325,7 @@ j8_5:
   __endasm;
 }
 
-uint8_t mz_joy(uint8_t n) {
+uint8_t plat_joy(uint8_t n) {
   if (joy_type == JOY_800) return mz_joy800(n);
   if (joy_type == JOY_1X03) return joy_state[n & 1];
   return 0;
@@ -410,8 +450,8 @@ j13_sw:
   __endasm;
 }
 
-/* mz_tone(ratio, len): RATIO=ratio, MSTA, busy loop len*256, MSTP. */
-void mz_tone(uint16_t ratio, uint8_t len) __naked {
+/* plat_tone(ratio, len): RATIO=ratio, MSTA, busy loop len*256, MSTP. */
+void plat_tone(uint16_t ratio, uint8_t len) __naked {
   __asm
     push iy
     ld   iy,4
@@ -432,7 +472,7 @@ mt_loop:
   __endasm;
 }
 
-void mz_delay(void) __naked {
+void plat_delay(void) __naked {
   __asm
     ld   hl,0x5000
 md_loop:
@@ -450,7 +490,7 @@ md_loop:
  * 16-bit difference and does not depend on the reload value or on the mode
  * the monitor left it in. (The monitor's clock, fed from this counter, is
  * disturbed; a game does not need it.) */
-void mz_timer_init(void) __naked {
+void plat_init(void) __naked {
   __asm
     ld   a,0x74             ; counter 1, LSB+MSB, mode 2, binary
     ld   (0xe007),a

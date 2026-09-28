@@ -147,7 +147,7 @@ void draw_enemies(void) {
     if (tmr_enemy_die.counter != 0) continue;
     e->state++;
     if (e->state < 10) {
-      mz_tone(((uint16_t)e->state << 8) | 0x32, 10);
+      plat_tone(((uint16_t)e->state << 8) | 0x32, 10);
       continue;
     }
     e->state = ENEMY_FREE;

@@ -148,3 +148,12 @@ void clear_buffers(void) {
     shadow_vram[i] = 0xff;
   }
 }
+
+#ifndef PLAT_ASM_COMPOSITE
+/* the stage over the frame's drawing: non-space map cells win */
+void composite_map(void) {
+  uint16_t i;
+  for (i = 0; i < SCREEN_CELLS; i++)
+    if (map_layer[i] != C_SPACE) draw_buf[i] = map_layer[i];
+}
+#endif

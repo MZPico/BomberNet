@@ -67,7 +67,7 @@ void update_bombs(void) {
     b->timer = 0;
     if (++b->state == BOMB_END) { b->state = BOMB_FREE; continue; }
     if (b->state >= BOMB_EXPLODE && players_alive())
-      mz_tone(((uint16_t)b->state << 8) | 0x0a, 12);
+      plat_tone(((uint16_t)b->state << 8) | 0x0a, 12);
   }
 }
 

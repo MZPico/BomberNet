@@ -100,13 +100,11 @@ void players_death_colour(void) {
   uint8_t i;
   for (i = 0; i < MAX_PLAYERS; i++) {
     player_t *p = &players[i];
-    uint8_t a;
     if (!p->active || p->state < P_DYING || p->life_lost) continue;
-    a = player_attrs[i];
-    mz_set_attr(p->x, p->y, a);
-    mz_set_attr(p->x + 1, p->y, a);
-    mz_set_attr(p->x, p->y + 1, a);
-    mz_set_attr(p->x + 1, p->y + 1, a);
+    plat_player_colour(p->x, p->y, i);
+    plat_player_colour(p->x + 1, p->y, i);
+    plat_player_colour(p->x, p->y + 1, i);
+    plat_player_colour(p->x + 1, p->y + 1, i);
   }
 }
 
@@ -134,7 +132,7 @@ static void move_player(player_t *p) {
   p->x = x;
   p->y = y;
   /* hook for walking animation (the original lost the direction here) */
-  mz_tone(((uint16_t)((p->anim >> 1) + 2) << 8) | 0x0a, 14);
+  plat_tone(((uint16_t)((p->anim >> 1) + 2) << 8) | 0x0a, 14);
 }
 
 /* Every 2nd frame: toggle the animation frame; alive -> move; dying -> step
@@ -151,7 +149,7 @@ void players_anim_step(void) {
     if (++p->death_tick < 4) continue;
     p->death_tick = 0;
     p->state++;
-    mz_tone((uint16_t)p->state << 8, 32);
+    plat_tone((uint16_t)p->state << 8, 32);
   }
 }
 
@@ -170,7 +168,7 @@ void check_pickups(void) {
     if (!bonus_present) continue;
     if (bonus_y != p->y || bonus_x != p->x) continue;
     bonus_present = 0;
-    mz_tone(0x0100, 0x30);
+    plat_tone(0x0100, 0x30);
     p->score += ((rnd() & 0x3f) << 1) | 0x10;
   }
 }

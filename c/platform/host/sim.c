@@ -1,9 +1,9 @@
 /*
- * Host-side simulator: replaces mzio.c so the game logic can run on a PC.
+ * Host platform: the whole game on a PC, with a key bot, recording and
+ * replay, and a stub of the network card.
  *
- *   cd c && cc -O1 -g -fsanitize=address,undefined -DHOST -Dmain=game_main \
- *        -I. host/sim.c video.c data.c game.c map.c enemy.c bomb.c player.c bomber.c -o build/sim
- *   build/sim [frames] [seed]
+ *   tools/build_host.sh          (builds c/build/sim with ASan and UBSan)
+ *   c/build/sim [frames] [seed]
  *
  * A key bot presses SPACE on the title, then walks in random directions and
  * drops bombs. The screen is dumped as text at a few points and at the end.
@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include "game.h"
 #include "data.h"
+#include "tables.h"
 
 static unsigned long frames, budget = 20000, tones, vram_writes;
 
@@ -50,7 +51,7 @@ static uint8_t scn_keys(void) {
 /* ---- key bot ---- */
 static uint8_t bot_keys, bot_hold;
 
-uint8_t mz_keys(void) {
+uint8_t plat_keys_a(void) {
   if (scenario) return scn_keys();
   if (title_mode) return (frames & 1) ? KEY_SPACE : 0;   /* press/release SPACE */
   if (bot_hold == 0) {
@@ -64,17 +65,16 @@ uint8_t mz_keys(void) {
 }
 
 
-uint8_t mz_keys_b(void) { return (scenario || menu_net) ? 0 : (uint8_t)(rand() & 0x1f); }
-uint8_t mz_key_letter(void) { return 0; }
-void mz_tone(uint16_t ratio, uint8_t len) { (void)ratio; (void)len; tones++; }
-void mz_delay(void) {}
-uint8_t mz_joy(uint8_t n) { (void)n; return 0; }
-uint8_t mz_joy800(uint8_t n) { (void)n; return 0; }
-void mz_joy1x03_measure(void) {}
-void mz_wait_vblank(void) {}
-void frame_sync(void) {}
-void mz_timer_init(void) {}
-void mz_frame_sync(uint16_t t) { (void)t; }
+uint8_t plat_keys_b(void) { return (scenario || menu_net) ? 0 : (uint8_t)(rand() & 0x1f); }
+uint8_t plat_key_char(void) { return 0; }
+void plat_tone(uint16_t ratio, uint8_t len) { (void)ratio; (void)len; tones++; }
+void plat_delay(void) {}
+uint8_t plat_joy(uint8_t n) { (void)n; return 0; }
+void plat_frame_sync(void) {}
+void plat_init(void) {}
+const char *const plat_joy_names[PLAT_JOY_TYPES] = {"NONE   ", "MZ-800 ", "MZ-1X03"};
+const char *const plat_input_names[6] = {"", "CURSOR AND SPACE", "WASD AND E      ", "JOYSTICK 1      ", "JOYSTICK 2      ", ""};
+const char *const plat_kbd_a_alt_name = "CURSOR AND CR   ";
 
 static char glyph(uint8_t c) {
   if (c == C_SPACE) return ' ';
@@ -161,7 +161,10 @@ void flush_screen(void) {
   }
 }
 
-void mz_set_attr(uint8_t x, uint8_t y, uint8_t attr) { vattr[y * SCREEN_W + x] = attr; }
+void plat_player_colour(uint8_t x, uint8_t y, uint8_t player) {
+  static const uint8_t attrs[MAX_PLAYERS] = {0x40, 0x60, 0x70, 0x10};
+  vattr[y * SCREEN_W + x] = attrs[player];
+}
 #include "uc.h"
 /* ---- host stub of the MZPico NET device (SIM_NET=1): loop-back room ----
  * Implements the port-level contract of docs/net-protocol.md for one peer:
@@ -274,11 +277,6 @@ static void record_replay_step(void) {
   }
 }
 
-void composite_map(void) {
-  unsigned i;
-  for (i = 0; i < SCREEN_CELLS; i++)
-    if (map_layer[i] != C_SPACE) draw_buf[i] = map_layer[i];
-}
 
 void game_main(void);
 

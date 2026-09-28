@@ -129,7 +129,7 @@ each (one NETSEND per local slot; the relay keys inputs by socket + slot).
 
 ## Implementations
 
-- Z80 client: BomberNet `c/uc.c`, `c/net.c`.
+- Z80 client: BomberNet `c/common/netdev_card.c` over `c/platform/mz/uc_mz.c`; the interface the game sees is `c/core/netdev.h`.
 - Reference relay: BomberNet `relay/relay.py` (WebSocket `/net` on 8765 and
   JSON lines on TCP 8766 for the native emulator); production: Durable Object.
 - Device: mz800emu `wasm` branch, `hw-generic/unicard/unimgr_net.c`

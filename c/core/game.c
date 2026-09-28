@@ -3,7 +3,6 @@
 #include "game.h"
 
 const uint8_t player_digit_codes[MAX_PLAYERS] = {0xae, 0xaf, 0xbc, 0xbd};
-const uint8_t player_attrs[MAX_PLAYERS] = {0x40, 0x60, 0x70, 0x10};   /* green, yellow, white, blue */
 player_t players[MAX_PLAYERS];
 uint8_t player_count;
 uint8_t menu_players = 1;
@@ -11,8 +10,7 @@ uint8_t menu_local = 1;
 uint8_t menu_inputs[MAX_PLAYERS] = {INPUT_KBD_A, INPUT_KBD_B, INPUT_JOY1, INPUT_JOY2};
 uint8_t menu_mode = GAME_COOP, game_mode = GAME_COOP;
 uint8_t joy_type = JOY_NONE;
-uint8_t kbd_fire_cr;
-uint8_t joy_state[2];
+uint8_t kbd_alt_fire;
 uint16_t hi_score, time_left;
 uint8_t stage;
 uint8_t enemies_left, enemy_period;
@@ -41,7 +39,7 @@ uint8_t replay_keys[MAX_PLAYERS];
 void rng_seed(uint16_t seed) { rand_seed = seed ? seed : 1; }
 
 /* hh = rotl16(hh) ^ byte + 9E37h per byte. The byte loop is assembly on the
- * Z80 (hash_run in mzio.c, over hash_ptr/hash_n): the C version at ~200 T
+ * Z80 (hash_run in the platform layer, over hash_ptr/hash_n): the C version at ~200 T
  * per byte cost three frames per hash and showed as a hitch every 16 frames. */
 uint16_t hh;
 const uint8_t *hash_ptr;
@@ -49,10 +47,10 @@ uint16_t hash_n;
 static void h8(uint8_t b) { hh = (uint16_t)(((hh << 1) | (hh >> 15)) ^ b) + 0x9e37; }
 static void h16(uint16_t v) { h8((uint8_t)v); h8((uint8_t)(v >> 8)); }
 static void hbytes(const uint8_t *p, uint16_t n) {
-#ifdef HOST
-  while (n--) h8(*p++);
-#else
+#ifdef PLAT_ASM_HASH
   hash_ptr = p; hash_n = n; hash_run();
+#else
+  while (n--) h8(*p++);
 #endif
 }
 
@@ -136,21 +134,8 @@ void tick_timers(void) {
   tick_timer(&tmr_player_anim);
   tick_timer(&tmr_enemy_move);
   tick_timer(&tmr_time);
-  frame_sync();
+  plat_frame_sync();
   flush_screen();
   players_death_colour();
 }
 
-#ifndef HOST
-/* Frame limiter. With an MZ-1X03 the frame is aligned to every 3rd vblank
- * (60 ms) because the stick pulses can only be timed from the VBLK edge. */
-void frame_sync(void) {
-  if (joy_type == JOY_1X03) {
-    mz_frame_sync(FRAME_TICKS_VBLK);
-    mz_wait_vblank();
-    mz_joy1x03_measure();
-  } else {
-    mz_frame_sync(FRAME_TICKS);
-  }
-}
-#endif

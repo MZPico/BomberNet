@@ -5,7 +5,7 @@ keyboard, 2 on joysticks), network play between physical MZ-800 + MZPico and
 the online emulator on mzpico.com, and high scores on mzpico.com.
 
 Base: the C port in `c/` (z88dk, same environment as the MZPico Manager).
-Verification tools already in place: host simulator (`c/host/sim.c`) and
+Verification tools already in place: host simulator (`c/platform/host/sim.c`) and
 headless mz800emu driven by `tools/emu.py` (cycle benchmarks, screenshots,
 memory pokes, profiler).
 
@@ -228,7 +228,7 @@ Steps (each ends tested):
    Test: stub device in the host simulator and in the mz800emu Unicard
    emulation answering REVD/INFO/NETSTATUS.
    DONE 2026-09-10: `c/uc.{c,h}` (transport primitives from the manager),
-   `c/net.c` (REVD/INFO detection: NONE / UNICARD / MZPICO without NET /
+   `c/common/netdev_card.c` (REVD/INFO detection: NONE / UNICARD / MZPICO without NET /
    MZPICO NET, shown as "NET ..." on the title hint row; full client API for
    0xA0-0xA8). Host: `SIM_NET=1` enables a loop-back stub device in `sim.c`
    implementing the port-level contract (one room "TEST", all slots echo
