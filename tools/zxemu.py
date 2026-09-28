@@ -20,7 +20,15 @@ class ZX(zx.Spectrum):
     def __init__(self):
         super().__init__(headless=True)
         self.hit = False
+        self.ports = {}                            # low port byte -> value: joystick interfaces
+        self.set_on_input_callback(self._input)
         self.reset_and_wait()                      # ROM start-up: system variables, IM 1, IY
+
+    def _input(self, addr):
+        low = addr & 0xff
+        if low in self.ports: return self.ports[low]
+        if low & 1: return 0xff                    # no device on this port
+        return self._Spectrum__on_input(addr)      # keyboard and tape (port FEh)
 
     def on_breakpoint(self):
         self.hit = True                            # the quantum ends here, pc is at the address

@@ -75,6 +75,9 @@ class Emu:
         self.data('media_load_mzf', {'path': os.path.abspath(path)})
         self.data('set_register', {'reg': 'SP', 'value': 0x10F0})
         self.data('set_register', {'reg': 'PC', 'value': exec_addr})
+        # Tests never need real time. At normal speed the headless emulator
+        # waits for an audio sync that does not come, seconds per game frame.
+        self.call('set_speed', {'mode': 'max'}, check=False)
         return exec_addr
 
     def press(self, key):

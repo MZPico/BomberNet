@@ -22,9 +22,15 @@ uint8_t joy_state[2];                         /* MZ-1X03: key masks measured in 
 
 /* menu texts */
 const char *const plat_joy_names[PLAT_JOY_TYPES] = {"NONE   ", "MZ-800 ", "MZ-1X03"};
-const char *const plat_input_names[6] = {
+static const char *const input_names[6] = {
   "", "CURSOR AND SPACE", "WASD AND E      ", "JOYSTICK 1      ", "JOYSTICK 2      ", "",
 };
+const char *plat_input_name(uint8_t input) { return input_names[input]; }
+
+uint8_t plat_input_allowed(uint8_t input) {        /* the sticks need a joystick kind */
+  return input == INPUT_KBD_A || input == INPUT_KBD_B ||
+         (joy_type != JOY_NONE && (input == INPUT_JOY1 || input == INPUT_JOY2));
+}
 const char *const plat_kbd_a_alt_name = "CURSOR AND CR   ";
 
 /* VRAM attribute of each player's colour: green, yellow, white, blue */

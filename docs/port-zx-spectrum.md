@@ -159,11 +159,22 @@ What turned out differently from the plan:
   routine out of contended RAM brought it to 19 ms.
 - Link order matters on the 48K: the first 8 KB of the program are in
   contended RAM. Menus and lobby are linked first, the frame loop last.
-- The status line replaces the bottom wall row on screen instead of being
-  mixed into it; mixing looked cluttered.
+- The status line is written on the bottom wall: the row becomes a bar in the
+  wall's colour with black text, and each player's number stands on a tab in
+  the player's colour. Mixing text cells with wall cells looked
+  cluttered.
+- Joysticks: Kempston, Fuller and Cursor are selectable, the two Sinclair
+  sticks are always there as key sets. Which inputs a joystick kind allows is
+  now the platform's decision (`plat_input_allowed`).
+- Sound follows the MZ in pitch and length; the MZ blocks during a tone too,
+  so the frame budget is the same.
 - The ROM interrupt routine is kept (IM 1). It counts the TV frames for the
   frame limiter and costs a keyboard scan every 20 ms. An own handler would
   save about 1 ms per frame and is left for step 6 if needed.
+- The MZ emulator ran tests at real-time speed and waited for an audio sync
+  that never comes when headless: 7.5 s per game frame. `tools/emu.py` now
+  switches it to maximum speed: 0.08 s per game frame, a 500-frame replay in
+  about a minute.
 - The emulator used for tests is the Python package `zx` driven by
   `tools/zxemu.py`, not Fuse: it is scriptable, headless, and runs a
   500-frame replay in seconds. Fuse or real hardware remain for a final look.

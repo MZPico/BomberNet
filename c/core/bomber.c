@@ -195,10 +195,7 @@ static void update_fire_key(void) {
     if (menu_inputs[i] == INPUT_KBD_B) menu_fire_cr = 1;
 }
 
-static uint8_t input_allowed(uint8_t in) {
-  return in == INPUT_KBD_A || in == INPUT_KBD_B ||
-         (joy_type != JOY_NONE && (in == INPUT_JOY1 || in == INPUT_JOY2));
-}
+#define input_allowed(in) plat_input_allowed(in)
 
 static uint8_t input_used(uint8_t in, uint8_t except) {
   uint8_t i;
@@ -218,7 +215,9 @@ static void input_cycle(uint8_t i, int8_t dir) {
 
 /* keep the assignment valid after MODE/PLAYERS/JOYSTICK changes */
 static void menu_validate(void) {
-  uint8_t i, maxp = joy_type == JOY_NONE ? 2 : 4;
+  uint8_t i, maxp = 0;
+  for (i = INPUT_KBD_A; i <= INPUT_JOY2; i++)        /* as many local players as usable inputs */
+    if (input_allowed(i)) maxp++;
   if (menu_mode == GAME_DM && menu_players < 2) menu_players = 2;
   if (menu_net != NET_OFF) {
     if (menu_players < 2) menu_players = 2;               /* the room needs someone to join */
@@ -337,7 +336,7 @@ static void title_menu(void) {
   menu_row(row, "JOYSTICK", 0, plat_joy_names[joy_type], menu_item == row); row++;
   for (i = 0; i < local_count(); i++)
     menu_row(row + i, "PLAYER", C_PLAYER_DIGIT(i),
-             (menu_inputs[i] == INPUT_KBD_A && menu_fire_cr) ? plat_kbd_a_alt_name : plat_input_names[menu_inputs[i]],
+             (menu_inputs[i] == INPUT_KBD_A && menu_fire_cr) ? plat_kbd_a_alt_name : plat_input_name(menu_inputs[i]),
              menu_item == row + i);
 
   p = draw_at(3, TR(20));

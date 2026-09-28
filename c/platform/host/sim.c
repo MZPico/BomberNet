@@ -73,7 +73,12 @@ uint8_t plat_joy(uint8_t n) { (void)n; return 0; }
 void plat_frame_sync(void) {}
 void plat_init(void) {}
 const char *const plat_joy_names[PLAT_JOY_TYPES] = {"NONE   ", "MZ-800 ", "MZ-1X03"};
-const char *const plat_input_names[6] = {"", "CURSOR AND SPACE", "WASD AND E      ", "JOYSTICK 1      ", "JOYSTICK 2      ", ""};
+static const char *const input_names[6] = {"", "CURSOR AND SPACE", "WASD AND E      ", "JOYSTICK 1      ", "JOYSTICK 2      ", ""};
+const char *plat_input_name(uint8_t input) { return input_names[input]; }
+uint8_t plat_input_allowed(uint8_t input) {
+  return input == INPUT_KBD_A || input == INPUT_KBD_B ||
+         (joy_type != JOY_NONE && (input == INPUT_JOY1 || input == INPUT_JOY2));
+}
 const char *const plat_kbd_a_alt_name = "CURSOR AND CR   ";
 
 static char glyph(uint8_t c) {

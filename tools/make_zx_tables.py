@@ -9,7 +9,9 @@ Glyph bytes are left aligned (bits 7..2).
 
 Attribute byte of the tables: ink, paper and BRIGHT as on the Spectrum; bit 7
 is not FLASH but "figure": where two cells share an attribute square, a figure
-wins over scenery (see flush_screen in plat_zx.c).
+wins over scenery (see flush_screen in plat_zx.c). The coloured player digits
+of the status line are figures too: on the status bar their colour becomes
+the background of their square.
 """
 import os, re, sys
 
@@ -108,7 +110,7 @@ def glyph_for(code):
 # logical codes whose cell is a figure (players, enemies, bombs, fire, items, death frames)
 def is_figure(logical, title):
     if title: return False
-    return (0x8a <= logical <= 0x8d or 0x9a <= logical <= 0x9d or 0xa0 <= logical <= 0xbb or
+    return (0x8a <= logical <= 0x8d or 0x9a <= logical <= 0x9d or 0xa0 <= logical <= 0xbd or
             logical >= 0xc0 or 0x40 <= logical <= 0x7f or 0x0a <= logical <= 0x0f or 0x1a <= logical <= 0x1f and logical not in (0x1c, 0x1d))
 
 

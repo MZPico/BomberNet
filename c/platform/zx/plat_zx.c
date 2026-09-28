@@ -17,11 +17,35 @@
 #include "tables.h"
 
 /* menu texts */
-const char *const plat_joy_names[PLAT_JOY_TYPES] = {"NONE    ", "KEMPSTON"};
-const char *const plat_input_names[6] = {
-  "", "QAOP AND SPACE  ", "KEYS 6 TO 0     ", "KEMPSTON        ", "KEYS 1 TO 5     ", "",
-};
+/* Input sources. The two Sinclair sticks (Interface 2) are keys, so they
+ * are always there: 6 7 8 9 0 is key set B, 1 2 3 4 5 is INPUT_JOY2. The
+ * JOYSTICK row says what INPUT_JOY1 is: a Kempston or Fuller interface, or a
+ * Cursor stick. A Cursor stick is keys 5 to 8 and 0, which both Sinclair
+ * sets use as well, so it excludes them. */
+const char *const plat_joy_names[PLAT_JOY_TYPES] = {"NONE    ", "KEMPSTON", "FULLER  ", "CURSOR  "};
 const char *const plat_kbd_a_alt_name = "QAOP AND M      ";
+
+const char *plat_input_name(uint8_t input) {
+  switch (input) {
+  case INPUT_KBD_A: return "QAOP AND SPACE  ";
+  case INPUT_KBD_B: return "SINCLAIR 6 TO 0 ";
+  case INPUT_JOY2:  return "SINCLAIR 1 TO 5 ";
+  case INPUT_JOY1:
+    return joy_type == JOY_KEMPSTON ? "KEMPSTON        " :
+           joy_type == JOY_FULLER   ? "FULLER          " : "CURSOR 5 TO 8   ";
+  }
+  return "";
+}
+
+uint8_t plat_input_allowed(uint8_t input) {
+  switch (input) {
+  case INPUT_KBD_A: return 1;
+  case INPUT_KBD_B:
+  case INPUT_JOY2:  return joy_type != JOY_CURSOR;
+  case INPUT_JOY1:  return joy_type != JOY_NONE;
+  }
+  return 0;
+}
 
 #define SCR_LEFT 1              /* first attribute column of the field (8 pixels in) */
 
@@ -29,6 +53,7 @@ const char *const plat_kbd_a_alt_name = "QAOP AND M      ";
 static const uint8_t player_attrs[MAX_PLAYERS] = {0x44, 0x46, 0x47, 0x41};
 
 /* ---- ports ---- */
+uint8_t zx_bar_attr = 0x58;        /* status bar: black on the wall's colour, set in plat_init */
 uint8_t zx_groups;                /* groups redrawn since it was last cleared (measurements) */
 
 static uint8_t zx_in(uint16_t port) __z88dk_fastcall __naked {
@@ -74,8 +99,8 @@ uint8_t plat_keys_b(void) {               /* 6 left, 7 right, 8 down, 9 up, 0 fi
 
 uint8_t plat_joy(uint8_t n) {
   uint8_t r, k = 0;
-  if (joy_type != JOY_KEMPSTON) return 0;
-  if (n) {                                /* Sinclair port 2: 1 left, 2 right, 3 down, 4 up, 5 fire */
+  if (n) {                                /* Sinclair stick 2: 1 left, 2 right, 3 down, 4 up, 5 fire */
+    if (joy_type == JOY_CURSOR) return 0;
     r = zx_in(0xf7fe);
     if (!(r & 0x01)) k |= KEY_LEFT;
     if (!(r & 0x02)) k |= KEY_RIGHT;
@@ -84,15 +109,36 @@ uint8_t plat_joy(uint8_t n) {
     if (!(r & 0x10)) k |= KEY_SPACE;
     return k;
   }
-  r = zx_in(0x001f);                      /* Kempston, 1 = active */
-  /* no interface: the port floats. A real one keeps bits 5..7 low and
-   * cannot report left with right or up with down. */
-  if ((r & 0xe0) || (r & 0x03) == 0x03 || (r & 0x0c) == 0x0c) return 0;
-  if (r & 0x01) k |= KEY_RIGHT;
-  if (r & 0x02) k |= KEY_LEFT;
-  if (r & 0x04) k |= KEY_DOWN;
-  if (r & 0x08) k |= KEY_UP;
-  if (r & 0x10) k |= KEY_SPACE;
+  switch (joy_type) {
+  case JOY_KEMPSTON:                      /* port 1Fh, 1 = active: right, left, down, up, fire */
+    r = zx_in(0x001f);
+    /* no interface: the port floats. A real one keeps bits 5..7 low and
+     * cannot report left with right or up with down. */
+    if ((r & 0xe0) || (r & 0x03) == 0x03 || (r & 0x0c) == 0x0c) return 0;
+    if (r & 0x01) k |= KEY_RIGHT;
+    if (r & 0x02) k |= KEY_LEFT;
+    if (r & 0x04) k |= KEY_DOWN;
+    if (r & 0x08) k |= KEY_UP;
+    if (r & 0x10) k |= KEY_SPACE;
+    break;
+  case JOY_FULLER:                        /* port 7Fh, 0 = active: up, down, left, right, bit 7 fire */
+    r = zx_in(0x007f);
+    if ((r & 0x03) == 0 || (r & 0x0c) == 0) return 0;      /* opposite directions: not a stick */
+    if (!(r & 0x01)) k |= KEY_UP;
+    if (!(r & 0x02)) k |= KEY_DOWN;
+    if (!(r & 0x04)) k |= KEY_LEFT;
+    if (!(r & 0x08)) k |= KEY_RIGHT;
+    if (!(r & 0x80)) k |= KEY_SPACE;
+    break;
+  case JOY_CURSOR:                        /* 5 left, 6 down, 7 up, 8 right, 0 fire */
+    if (!(zx_in(0xf7fe) & 0x10)) k |= KEY_LEFT;
+    r = zx_in(0xeffe);
+    if (!(r & 0x10)) k |= KEY_DOWN;
+    if (!(r & 0x08)) k |= KEY_UP;
+    if (!(r & 0x04)) k |= KEY_RIGHT;
+    if (!(r & 0x01)) k |= KEY_SPACE;
+    break;
+  }
   return k;
 }
 
@@ -127,29 +173,34 @@ void plat_delay(void) {
   while (*FRAMES_LO == t) ;
 }
 
-/* ---- sound: a short blip on the beeper, pitch from the MZ divider ---- */
+/* ---- sound: the MZ's tones on the beeper ----
+ * The MZ starts its tone generator with a divider ("ratio") of the 8253 clock,
+ * 1.1084 MHz on the MZ-800, waits in a loop of len * 256 DJNZ (len * 3340
+ * T-states) and stops it. The game stands still meanwhile, there as here.
+ *   frequency   = 1108400 / ratio
+ *   half period = 3500000 / (2 * frequency) = ratio * 1.579 T-states
+ *   toggles     = len * 3340 / half period  = len * 2115 / ratio
+ * The wait loop below takes 26 T-states per count. */
 static uint16_t tone_half, tone_count;
 
 static void beep(void) __naked {
   __asm
-    ld   de,(_tone_count)
-    ld   a,0                ; border stays black
+    ld   hl,(_tone_count)
+    ld   e,0                ; port value: border black, speaker bit 4
 bp_loop:
+    ld   a,e
     xor  0x10
+    ld   e,a
     out  (0xfe),a
     ld   bc,(_tone_half)
 bp_wait:
     dec  bc
-    ld   h,a
     ld   a,b
     or   c
-    ld   a,h
     jr   nz,bp_wait
-    dec  de
-    ld   h,a
-    ld   a,d
-    or   e
+    dec  hl
     ld   a,h
+    or   l
     jr   nz,bp_loop
     xor  a
     out  (0xfe),a
@@ -158,17 +209,17 @@ bp_wait:
 }
 
 void plat_tone(uint16_t ratio, uint8_t len) {
-  uint16_t half = ratio >> 4;                      /* about 34 T per count */
-  uint16_t budget = (uint16_t)len << 4;            /* total counts: len 14 -> about 2 ms */
-  if (half < 4) half = 4;
-  tone_half = half;
-  tone_count = budget / half;
+  uint16_t half;
+  if (ratio < 0x0100) ratio = 0x0100;
+  half = (ratio >> 4) - (ratio >> 9);              /* ratio * 1.579 / 26 */
+  tone_half = half > 3 ? half - 2 : 1;             /* less the T-states around the wait */
+  tone_count = ((uint16_t)len * 529) / (ratio >> 2);
   if (tone_count < 2) tone_count = 2;
   beep();
 }
 
 /* ---- screen ---- */
-void plat_init(void) __naked {
+static void zx_clear(void) __naked {
   __asm
     xor  a
     out  (0xfe),a           ; black border
@@ -184,6 +235,12 @@ void plat_init(void) __naked {
     ldir
     ret
   __endasm;
+}
+
+void plat_init(void) {
+  zx_clear();
+  /* paper = the ink of the wall with its brightness, ink black */
+  zx_bar_attr = (uint8_t)((zx_game_tab[2 * C_WALL + 1] & 0x40) | ((zx_game_tab[2 * C_WALL + 1] & 0x07) << 3));
 }
 
 /* after the flush: the attribute squares under a cell in the player's colour
@@ -205,8 +262,11 @@ void plat_player_colour(uint8_t x, uint8_t y, uint8_t player) {
 void flush_screen(void) __naked {
   __asm
     push ix
-    ; the status line (row 24), when there is one, takes the place of the
-    ; bottom wall (row 23) on the screen
+    ; the status line (row 24), when there is one, is written on the bottom
+    ; wall (row 23): the row becomes a bar in the wall's colour with the text
+    ; on it
+    xor  a
+    ld   (fz_bar),a
     ld   hl,_draw_buf+960
     ld   b,40
     ld   a,0x20
@@ -217,6 +277,8 @@ fz_any:
     djnz fz_any
     jr   fz_scan
 fz_status:
+    ld   a,1
+    ld   (fz_bar),a
     ld   hl,_draw_buf+960
     ld   de,_draw_buf+920
     ld   bc,40
@@ -299,6 +361,12 @@ fz_chg0:                    ; HL = shadow, DE = draw buffer, at the start of the
     ld   a,24
     sub  c                  ; row
     ld   l,a
+    sub  23
+    ld   a,0
+    jr   nz,fz_not23
+    inc  a
+fz_not23:
+    ld   (fz_row23),a
     ld   h,0
     add  hl,hl
     push hl
@@ -443,6 +511,46 @@ fz_line:
     ld   e,(ix+5)
     call fz_pick            ; square 2: cell 3, else cell 2
     ld   (hl),a
+    ld   a,(fz_bar)         ; the status bar: the wall's colour behind black
+    or   a                  ; text, the player's colour behind a player's digit
+    ret  z
+    ld   a,(fz_row23)
+    or   a
+    ret  z
+    ld   ix,fz_info
+    ld   hl,(fz_attr)
+    ld   c,(ix+1)           ; square 0: cells 0 and 1
+    ld   e,(ix+3)
+    call fz_bartab
+    ld   (hl),a
+    inc  hl
+    ld   c,(ix+3)           ; square 1: cells 1 and 2
+    ld   e,(ix+5)
+    call fz_bartab
+    ld   (hl),a
+    inc  hl
+    ld   c,(ix+7)           ; square 2: cells 3 and 2
+    ld   e,(ix+5)
+    call fz_bartab
+    ld   (hl),a
+    ret
+
+; C, E = attributes of the two cells of a square -> A = attribute on the bar
+fz_bartab:
+    ld   a,c
+    bit  7,a
+    jr   nz,fz_bartab1
+    ld   a,e
+    bit  7,a
+    jr   nz,fz_bartab1
+    ld   a,(_zx_bar_attr)
+    ret
+fz_bartab1:                  ; ink of the digit becomes the paper, text is black
+    and  0x07
+    rlca
+    rlca
+    rlca
+    or   0x40
     ret
 
 ; B,C = glyph and attribute of the main cell, D,E = of the other -> A = attribute
@@ -473,6 +581,8 @@ fz_scr:  defw 0
 fz_attr: defw 0
 fz_sp:   defw 0
 fz_g3:   defb 0
+fz_bar:  defb 0
+fz_row23: defb 0
 fz_info: defs 8
 fz_work: defs 32
 fz_rowtab:                  ; address of pixel line 0, byte 1 of each character row

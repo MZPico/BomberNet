@@ -25,11 +25,15 @@ uint8_t plat_keys_b(void);      /* key set B */
 uint8_t plat_key_char(void);    /* text entry: 'A'..'Z', 8 = delete, 0x1b = cancel, 0 = none */
 uint8_t plat_joy(uint8_t n);    /* joystick 0/1 as a key mask, kind from joy_type */
 
-/* menu texts that name the machine's keys and joystick kinds */
+/* The four input sources of the menu (INPUT_KBD_A, INPUT_KBD_B, INPUT_JOY1,
+ * INPUT_JOY2) and the JOYSTICK row, which picks the kind of stick. What the
+ * sources are, which of them can be used with the chosen kind, and what they
+ * are called is the machine's business. */
 #define JOY_NONE 0              /* joy_type 0; 1..PLAT_JOY_TYPES-1 are the platform's kinds */
 extern uint8_t joy_type;
 extern const char *const plat_joy_names[PLAT_JOY_TYPES];
-extern const char *const plat_input_names[6];      /* by INPUT_* */
+uint8_t plat_input_allowed(uint8_t input);         /* usable with the current joy_type */
+const char *plat_input_name(uint8_t input);        /* 16 characters, with the current joy_type */
 extern const char *const plat_kbd_a_alt_name;      /* key set A with the alternative fire key */
 
 /* ---- time and sound ---- */
