@@ -156,6 +156,11 @@ static void idle_frames(uint8_t n) {
   while (n--) frame_no_input();
 }
 
+/* The title has a blank row under the logo; a machine with 24 text rows
+ * does without it, and everything below moves up by one. */
+#define TITLE_UP (SCREEN_H - PLAT_ROWS)
+#define TR(r) ((r) - TITLE_UP)
+
 /* ---- title screen ---- */
 static void title_init(void) {
   uint8_t i;
@@ -166,7 +171,7 @@ static void title_init(void) {
   for (i = 0; i < 4; i++) {
     enemies[i].state = ENEMY_ALIVE;
     enemies[i].x = demo_x[i];
-    enemies[i].y = 7;
+    enemies[i].y = TR(7);
     enemies[i].type = i;
   }
   clear_bombs();
@@ -260,7 +265,7 @@ static void menu_change(int8_t dir) {
 
 #define MENU_X 3
 #define MENU_W 34
-#define MENU_Y 10
+#define MENU_Y TR(10)
 #define MENU_H 10           /* frame rows 10..19: up to 4 fixed rows + 4 player rows */
 
 static void draw_title_box(void) {
@@ -335,21 +340,21 @@ static void title_menu(void) {
              (menu_inputs[i] == INPUT_KBD_A && menu_fire_cr) ? plat_kbd_a_alt_name : plat_input_names[menu_inputs[i]],
              menu_item == row + i);
 
-  p = draw_at(3, 20);
+  p = draw_at(3, TR(20));
   p[0] = T_ARR_UP; p[1] = T_ARR_DOWN; title_text(p + 3, "SELECT");
   p[11] = T_ARR_LEFT; p[12] = T_ARR_RIGHT; title_text(p + 14, "CHANGE");
-  title_text(draw_at(5, 21), "HI-SCORE");
-  print_num5(draw_at(14, 21), hi_score);
-  title_text(draw_at(22, 21), "SCORE");
-  print_num5(draw_at(28, 21), players[0].score);
+  title_text(draw_at(5, TR(21)), "HI-SCORE");
+  print_num5(draw_at(14, TR(21)), hi_score);
+  title_text(draw_at(22, TR(21)), "SCORE");
+  print_num5(draw_at(28, TR(21)), players[0].score);
   title_ticks++;
-  if (title_ticks & 0x10) title_text_hl(draw_at(8, 22), "PUSH SPACE TO START GAME");
-  p = draw_at(2, 23);
+  if (title_ticks & 0x10) title_text_hl(draw_at(8, TR(22)), "PUSH SPACE TO START GAME");
+  p = draw_at(2, TR(23));
   title_text(p, "COPYRIGHT  C  2026  MZPICO");
   p[10] = 0x17; p[12] = 0x18;               /* the original's "(" ")" glyphs */
   {                                         /* version at the right end of the line */
     const char *v = GAME_VERSION;
-    p = draw_at(38 - (uint8_t)strlen(v) - 1, 23);
+    p = draw_at(38 - (uint8_t)strlen(v) - 1, TR(23));
     *p++ = 'V';
     while (*v) { *p++ = *v == '.' ? 0x19 : (uint8_t)(*v - '0'); v++; }   /* 19h = '.' in the title table */
   }
@@ -639,10 +644,10 @@ static void title_frame(void) {
   tick_timers();
   title_menu();
   for (i = 0; i < 240; i++) draw_buf[i] = title_logo[i];
-  print_string(draw_at(2, 24), str_copyright);
-  print_string(draw_at(4, 7), str_legend_row7);
-  print_string(draw_at(5, 8), str_legend_row8);
-  put_tile(draw_at(2, 7), C_PLAYER_B);
+  print_string(draw_at(2, TR(24)), str_copyright);
+  print_string(draw_at(4, TR(7)), str_legend_row7);
+  print_string(draw_at(5, TR(8)), str_legend_row8);
+  put_tile(draw_at(2, TR(7)), C_PLAYER_B);
   draw_enemies();
   if (tmr_player_anim.counter == 0) {
     bomb_anim ^= 2;

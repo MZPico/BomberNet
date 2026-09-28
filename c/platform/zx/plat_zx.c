@@ -1,0 +1,483 @@
+/*
+ * ZX Spectrum 48K platform layer (z88dk sccz80, +zx target).
+ *
+ * Screen: a logical cell is 6 x 8 pixels, so the 40 x 24 field is 240 x 192
+ * pixels, centred by 8 pixels (one attribute column) on each side. Four cells
+ * make three bytes, so the screen is handled in groups of four cells: a group
+ * is redrawn as a whole when one of its cells changed, which needs no masking.
+ * The attribute squares (8 pixels) do not line up with the cells (6 pixels);
+ * each of the three squares of a group takes the colour of one of the two
+ * cells it covers: a figure before scenery, anything before a blank.
+ *
+ * The ROM interrupt routine stays in charge (IM 1): it counts the TV frames
+ * the frame limiter needs. It uses IY, so nothing here touches IY.
+ */
+#include <stdint.h>
+#include "game.h"
+#include "tables.h"
+
+/* menu texts */
+const char *const plat_joy_names[PLAT_JOY_TYPES] = {"NONE    ", "KEMPSTON"};
+const char *const plat_input_names[6] = {
+  "", "QAOP AND SPACE  ", "KEYS 6 TO 0     ", "KEMPSTON        ", "KEYS 1 TO 5     ", "",
+};
+const char *const plat_kbd_a_alt_name = "QAOP AND M      ";
+
+#define SCR_LEFT 1              /* first attribute column of the field (8 pixels in) */
+
+/* attribute of each player's colour: green, yellow, white, blue (BRIGHT) */
+static const uint8_t player_attrs[MAX_PLAYERS] = {0x44, 0x46, 0x47, 0x41};
+
+/* ---- ports ---- */
+uint8_t zx_groups;                /* groups redrawn since it was last cleared (measurements) */
+
+static uint8_t zx_in(uint16_t port) __z88dk_fastcall __naked {
+  __asm
+    ld   b,h
+    ld   c,l
+    in   a,(c)
+    ld   l,a
+    ld   h,0
+    ret
+  __endasm;
+}
+
+/* Keyboard half-rows, bit 0..4 (0 = pressed):
+ *   FEFEh CAPS Z X C V      FDFEh A S D F G      FBFEh Q W E R T
+ *   F7FEh 1 2 3 4 5         EFFEh 0 9 8 7 6      DFFEh P O I U Y
+ *   BFFEh ENTER L K J H     7FFEh SPACE SYM M N B */
+uint8_t plat_keys_a(void) {               /* Q up, A down, O left, P right, SPACE (or M) */
+  uint8_t k = 0, r;
+  if (!(zx_in(0xfbfe) & 0x01)) k |= KEY_UP;
+  if (!(zx_in(0xfdfe) & 0x01)) k |= KEY_DOWN;
+  r = zx_in(0xdffe);
+  if (!(r & 0x02)) k |= KEY_LEFT;
+  if (!(r & 0x01)) k |= KEY_RIGHT;
+  r = zx_in(0x7ffe);
+  if (!(r & (kbd_alt_fire ? 0x04 : 0x01))) k |= KEY_SPACE;
+  return k;
+}
+
+static uint8_t sinclair(uint8_t r) {      /* bits: fire, up, down, right, left */
+  uint8_t k = 0;
+  if (!(r & 0x01)) k |= KEY_SPACE;
+  if (!(r & 0x02)) k |= KEY_UP;
+  if (!(r & 0x04)) k |= KEY_DOWN;
+  if (!(r & 0x08)) k |= KEY_RIGHT;
+  if (!(r & 0x10)) k |= KEY_LEFT;
+  return k;
+}
+
+uint8_t plat_keys_b(void) {               /* 6 left, 7 right, 8 down, 9 up, 0 fire */
+  return sinclair(zx_in(0xeffe));
+}
+
+uint8_t plat_joy(uint8_t n) {
+  uint8_t r, k = 0;
+  if (joy_type != JOY_KEMPSTON) return 0;
+  if (n) {                                /* Sinclair port 2: 1 left, 2 right, 3 down, 4 up, 5 fire */
+    r = zx_in(0xf7fe);
+    if (!(r & 0x01)) k |= KEY_LEFT;
+    if (!(r & 0x02)) k |= KEY_RIGHT;
+    if (!(r & 0x04)) k |= KEY_DOWN;
+    if (!(r & 0x08)) k |= KEY_UP;
+    if (!(r & 0x10)) k |= KEY_SPACE;
+    return k;
+  }
+  r = zx_in(0x001f);                      /* Kempston, 1 = active */
+  /* no interface: the port floats. A real one keeps bits 5..7 low and
+   * cannot report left with right or up with down. */
+  if ((r & 0xe0) || (r & 0x03) == 0x03 || (r & 0x0c) == 0x0c) return 0;
+  if (r & 0x01) k |= KEY_RIGHT;
+  if (r & 0x02) k |= KEY_LEFT;
+  if (r & 0x04) k |= KEY_DOWN;
+  if (r & 0x08) k |= KEY_UP;
+  if (r & 0x10) k |= KEY_SPACE;
+  return k;
+}
+
+/* text entry: letters, 0 = delete, CAPS SHIFT + SPACE (BREAK) = cancel */
+uint8_t plat_key_char(void) {
+  static const char rows[8][5] = {
+    {0, 'Z', 'X', 'C', 'V'}, {'A', 'S', 'D', 'F', 'G'}, {'Q', 'W', 'E', 'R', 'T'}, {0, 0, 0, 0, 0},
+    {8, 0, 0, 0, 0}, {'P', 'O', 'I', 'U', 'Y'}, {0, 'L', 'K', 'J', 'H'}, {0, 0, 'M', 'N', 'B'},
+  };
+  static const uint16_t ports[8] = {0xfefe, 0xfdfe, 0xfbfe, 0xf7fe, 0xeffe, 0xdffe, 0xbffe, 0x7ffe};
+  uint8_t row, bit, r;
+  if (!(zx_in(0xfefe) & 0x01) && !(zx_in(0x7ffe) & 0x01)) return 0x1b;
+  for (row = 0; row < 8; row++) {
+    r = zx_in(ports[row]);
+    for (bit = 0; bit < 5; bit++)
+      if (!(r & (1 << bit)) && rows[row][bit]) return (uint8_t)rows[row][bit];
+  }
+  return 0;
+}
+
+/* ---- time ---- */
+#define FRAMES_LO ((volatile uint8_t *)0x5c78)     /* ROM frame counter, +1 every 20 ms */
+static uint8_t last_tick;
+
+void plat_frame_sync(void) {                       /* a game frame is three TV frames */
+  while ((uint8_t)(*FRAMES_LO - last_tick) < 3) ;
+  last_tick = *FRAMES_LO;
+}
+
+void plat_delay(void) {
+  uint8_t t = *FRAMES_LO;
+  while (*FRAMES_LO == t) ;
+}
+
+/* ---- sound: a short blip on the beeper, pitch from the MZ divider ---- */
+static uint16_t tone_half, tone_count;
+
+static void beep(void) __naked {
+  __asm
+    ld   de,(_tone_count)
+    ld   a,0                ; border stays black
+bp_loop:
+    xor  0x10
+    out  (0xfe),a
+    ld   bc,(_tone_half)
+bp_wait:
+    dec  bc
+    ld   h,a
+    ld   a,b
+    or   c
+    ld   a,h
+    jr   nz,bp_wait
+    dec  de
+    ld   h,a
+    ld   a,d
+    or   e
+    ld   a,h
+    jr   nz,bp_loop
+    xor  a
+    out  (0xfe),a
+    ret
+  __endasm;
+}
+
+void plat_tone(uint16_t ratio, uint8_t len) {
+  uint16_t half = ratio >> 4;                      /* about 34 T per count */
+  uint16_t budget = (uint16_t)len << 4;            /* total counts: len 14 -> about 2 ms */
+  if (half < 4) half = 4;
+  tone_half = half;
+  tone_count = budget / half;
+  if (tone_count < 2) tone_count = 2;
+  beep();
+}
+
+/* ---- screen ---- */
+void plat_init(void) __naked {
+  __asm
+    xor  a
+    out  (0xfe),a           ; black border
+    ld   hl,0x4000
+    ld   de,0x4001
+    ld   bc,0x17ff
+    ld   (hl),0
+    ldir                    ; pixels off
+    ld   hl,0x5800
+    ld   de,0x5801
+    ld   bc,0x02ff
+    ld   (hl),0x47          ; bright white on black
+    ldir
+    ret
+  __endasm;
+}
+
+/* after the flush: the attribute squares under a cell in the player's colour
+ * (the death frames are green in the table) */
+void plat_player_colour(uint8_t x, uint8_t y, uint8_t player) {
+  uint16_t px = (uint16_t)x * 6;
+  uint8_t a0 = (uint8_t)(px >> 3), a1 = (uint8_t)((px + 5) >> 3);
+  uint8_t *p;
+  if (y >= PLAT_ROWS) return;
+  p = (uint8_t *)0x5800 + (uint16_t)y * 32 + SCR_LEFT + a0;
+  p[0] = player_attrs[player];
+  if (a1 != a0) p[1] = player_attrs[player];
+}
+
+/* flush_screen: draw_buf -> screen, groups of four cells; clears draw_buf.
+ * Only a group or two change per frame, so the scan is what counts: it keeps
+ * its pointers in registers and works out screen addresses only for a group
+ * that is redrawn. */
+void flush_screen(void) __naked {
+  __asm
+    push ix
+    ; the status line (row 24), when there is one, takes the place of the
+    ; bottom wall (row 23) on the screen
+    ld   hl,_draw_buf+960
+    ld   b,40
+    ld   a,0x20
+fz_any:
+    cp   (hl)
+    jr   nz,fz_status
+    inc  hl
+    djnz fz_any
+    jr   fz_scan
+fz_status:
+    ld   hl,_draw_buf+960
+    ld   de,_draw_buf+920
+    ld   bc,40
+    ldir
+
+fz_scan:
+    ld   hl,_zx_game_tab
+    ld   a,(_title_mode)
+    or   a
+    jr   z,fz_t
+    ld   hl,_zx_title_tab
+fz_t:
+    ld   (fz_tab),hl
+    ld   de,_draw_buf
+    ld   hl,_shadow_vram
+    ld   c,24               ; rows left
+fz_row:
+    ld   b,10               ; groups left
+fz_grp:
+    ld   a,(de)
+    cp   (hl)
+    jr   nz,fz_chg0
+    inc  hl
+    inc  de
+    ld   a,(de)
+    cp   (hl)
+    jr   nz,fz_chg1
+    inc  hl
+    inc  de
+    ld   a,(de)
+    cp   (hl)
+    jr   nz,fz_chg2
+    inc  hl
+    inc  de
+    ld   a,(de)
+    cp   (hl)
+    jr   nz,fz_chg3
+    inc  hl
+    inc  de
+fz_next:
+    djnz fz_grp
+    dec  c
+    jr   nz,fz_row
+
+    di                      ; the draw buffer starts every frame empty:
+    ld   (fz_sp),sp         ; filled through the stack pointer, 2 ms
+    ld   sp,_draw_buf+1000
+    ld   hl,0x2020
+    ld   b,125
+fz_clr:
+    push hl
+    push hl
+    push hl
+    push hl
+    djnz fz_clr
+    ld   sp,(fz_sp)
+    ei
+    pop  ix
+    ret
+
+fz_chg3:
+    dec  hl
+    dec  de
+fz_chg2:
+    dec  hl
+    dec  de
+fz_chg1:
+    dec  hl
+    dec  de
+fz_chg0:                    ; HL = shadow, DE = draw buffer, at the start of the group
+    push bc
+    ld   (fz_src),de
+    ld   (fz_shd),hl
+    ld   a,10
+    sub  b
+    ld   b,a
+    add  a,a
+    add  a,b
+    ld   (fz_g3),a          ; 3 * group: byte and attribute column in the row
+    ld   a,24
+    sub  c                  ; row
+    ld   l,a
+    ld   h,0
+    add  hl,hl
+    push hl
+    ld   de,fz_rowtab
+    add  hl,de
+    ld   e,(hl)
+    inc  hl
+    ld   d,(hl)
+    ld   a,(fz_g3)
+    add  a,e
+    ld   e,a
+    ld   (fz_scr),de
+    pop  hl                 ; row * 2
+    add  hl,hl
+    add  hl,hl
+    add  hl,hl
+    add  hl,hl              ; row * 32
+    ld   a,(fz_g3)
+    inc  a                  ; the field starts at attribute column 1
+    add  a,l
+    ld   l,a
+    ld   a,h
+    adc  a,0x58
+    ld   h,a
+    ld   (fz_attr),hl
+    call fz_group
+    ld   hl,(fz_shd)
+    ld   de,(fz_src)
+    ld   bc,4
+    add  hl,bc
+    ex   de,hl
+    add  hl,bc
+    ex   de,hl
+    pop  bc
+    jr   fz_next
+
+; one group: four cells at (fz_src) -> shadow, 3 bytes x 8 lines, 3 attributes
+fz_group:
+    ld   hl,_zx_groups
+    inc  (hl)
+    ld   hl,(fz_src)
+    ld   de,(fz_shd)
+    ld   bc,4
+    ldir
+    ld   hl,(fz_src)
+    ld   de,fz_work
+    ld   ix,fz_info
+    ld   b,4
+fz_res:
+    push bc
+    ld   a,(hl)
+    inc  hl
+    push hl
+    ld   l,a
+    ld   h,0
+    add  hl,hl
+    ld   bc,(fz_tab)
+    add  hl,bc
+    ld   a,(hl)             ; glyph number
+    inc  hl
+    ld   c,(hl)             ; attribute, bit 7 = figure
+    ld   (ix+0),a
+    ld   (ix+1),c
+    inc  ix
+    inc  ix
+    ld   l,a
+    ld   h,0
+    add  hl,hl
+    add  hl,hl
+    add  hl,hl
+    ld   bc,_zx_glyphs
+    add  hl,bc
+    ld   bc,8
+    ldir
+    pop  hl
+    pop  bc
+    djnz fz_res
+
+    ld   hl,(fz_scr)
+    ld   ix,fz_work
+    ld   b,8
+fz_line:
+    ld   a,(ix+8)           ; byte 0 = cell 0, two pixels of cell 1
+    rlca
+    rlca
+    and  0x03
+    or   (ix+0)
+    ld   (hl),a
+    inc  l
+    ld   a,(ix+16)          ; byte 1 = four pixels of cell 1, four of cell 2
+    rrca
+    rrca
+    rrca
+    rrca
+    and  0x0f
+    ld   c,a
+    ld   a,(ix+8)
+    add  a,a
+    add  a,a
+    and  0xf0
+    or   c
+    ld   (hl),a
+    inc  l
+    ld   a,(ix+24)          ; byte 2 = two pixels of cell 2, cell 3
+    rrca
+    rrca
+    and  0x3f
+    ld   c,a
+    ld   a,(ix+16)
+    rlca
+    rlca
+    rlca
+    rlca
+    and  0xc0
+    or   c
+    ld   (hl),a
+    dec  l
+    dec  l
+    inc  h                  ; next pixel line of the character row
+    inc  ix
+    djnz fz_line
+
+    ld   ix,fz_info         ; attributes: squares 0, 1, 2
+    ld   hl,(fz_attr)
+    ld   b,(ix+0)
+    ld   c,(ix+1)
+    ld   d,(ix+2)
+    ld   e,(ix+3)
+    call fz_pick            ; square 0: cell 0, else cell 1
+    ld   (hl),a
+    inc  hl
+    ld   b,(ix+2)
+    ld   c,(ix+3)
+    ld   d,(ix+4)
+    ld   e,(ix+5)
+    call fz_pick            ; square 1: cell 1, else cell 2
+    ld   (hl),a
+    inc  hl
+    ld   b,(ix+6)
+    ld   c,(ix+7)
+    ld   d,(ix+4)
+    ld   e,(ix+5)
+    call fz_pick            ; square 2: cell 3, else cell 2
+    ld   (hl),a
+    ret
+
+; B,C = glyph and attribute of the main cell, D,E = of the other -> A = attribute
+fz_pick:
+    ld   a,b
+    or   a
+    jr   z,fz_other         ; main is blank
+    ld   a,d
+    or   a
+    jr   z,fz_main          ; other is blank
+    bit  7,e
+    jr   z,fz_main          ; other is scenery
+    bit  7,c
+    jr   nz,fz_main         ; both figures
+fz_other:
+    ld   a,e
+    and  0x7f
+    ret
+fz_main:
+    ld   a,c
+    and  0x7f
+    ret
+
+fz_tab:  defw 0
+fz_src:  defw 0
+fz_shd:  defw 0
+fz_scr:  defw 0
+fz_attr: defw 0
+fz_sp:   defw 0
+fz_g3:   defb 0
+fz_info: defs 8
+fz_work: defs 32
+fz_rowtab:                  ; address of pixel line 0, byte 1 of each character row
+    defw 0x4001, 0x4021, 0x4041, 0x4061, 0x4081, 0x40a1, 0x40c1, 0x40e1
+    defw 0x4801, 0x4821, 0x4841, 0x4861, 0x4881, 0x48a1, 0x48c1, 0x48e1
+    defw 0x5001, 0x5021, 0x5041, 0x5061, 0x5081, 0x50a1, 0x50c1, 0x50e1
+  __endasm;
+}

@@ -1,6 +1,7 @@
 # BomberNet on the ZX Spectrum 48K: feasibility and plan
 
-Status: analysis, 2026-09-28. Nothing here is implemented yet.
+Status 2026-09-29: steps 0 to 3 are done. The game plays locally on the Spectrum
+build at the MZ's speed and simulates identically; network is next (step 4).
 
 Rule that shapes everything: every port simulates the MZ field, 40 x 24 logical
 cells plus a status line, so that any machine can play any other over the relay.
@@ -128,8 +129,8 @@ That keeps the existing bridge and relay untouched.
 |---|---|---|---|
 | 0 | MZ: lobby shows the delay in real milliseconds (60 per frame) | 0.1.1, done | 1 hour |
 | 1 | Core and platform split, status-line hook, network device interface; MZ build verified by replay and lockstep tests | Same game, portable tree; done | 3 days |
-| 2 | ZX platform, local play: z88dk build to `.tap`, 6 x 8 cell drawing, 79 glyphs redrawn, attribute rule, keyboard and Kempston, frame sync, beeper | Playable local game in Fuse, 1-4 players | 8 days |
-| 3 | Determinism across platforms: scripted Spectrum emulator run replaying an MZ recording, hashes compared | Proof that both machines simulate identically | 2 days |
+| 2 | ZX platform, local play: z88dk build to `.tap`, 6 x 8 cell drawing, 79 glyphs redrawn, attribute rule, keyboard and Kempston, frame sync, beeper | Playable local game, 1-4 players; done (tested in a scripted emulator, tape file loads through the ROM loader) | 8 days |
+| 3 | Determinism across platforms: scripted Spectrum emulator run replaying an MZ recording, hashes compared | Proof that both machines simulate identically; done: 4 recordings, 1,796 frames, no mismatch | 2 days |
 | 4 | Software network device and WebSocket client on Spectranet sockets; against the reference relay, then production | Spectrum against Spectrum in Fuse | 6 days |
 | 5 | Cross-platform match: MZ emulator against Spectrum emulator, automated | The goal of the port | 2 days |
 | 6 | Fit and speed on 48K: memory map, contended RAM placement, assembly for the hot loops | Holds 60 ms frames on a 48K | 4 days |
@@ -139,6 +140,33 @@ That keeps the existing bridge and relay untouched.
 
 Steps 0 to 6 are about five weeks of work and need no hardware. Step 7 is the
 first point where a purchase or a volunteer is needed.
+
+## Measured after step 2
+
+| Item | Estimate | Measured |
+|---|---|---|
+| Program with buffers, no network code | 35.5 KB | 33.3 KB (24000 to 57298), about 8 KB free |
+| Logic per frame, busy 4-player game | 28-33 ms | 25.7 ms average, 33 ms worst |
+| Screen routine | 24 ms | 18.7 ms fixed plus 1.5 ms per redrawn group; 21 ms average |
+| Groups redrawn per frame | up to 80 cells | 1.5 on average, 6 at most |
+| Frame | 55-60 ms | about 46 ms, every game frame is exactly three TV frames |
+
+What turned out differently from the plan:
+
+- Almost nothing changes on screen from one frame to the next, so the cost of
+  the screen routine is the comparison of the 960 cells, not the drawing. The
+  first version took 48 ms; keeping the pointers in registers and moving the
+  routine out of contended RAM brought it to 19 ms.
+- Link order matters on the 48K: the first 8 KB of the program are in
+  contended RAM. Menus and lobby are linked first, the frame loop last.
+- The status line replaces the bottom wall row on screen instead of being
+  mixed into it; mixing looked cluttered.
+- The ROM interrupt routine is kept (IM 1). It counts the TV frames for the
+  frame limiter and costs a keyboard scan every 20 ms. An own handler would
+  save about 1 ms per frame and is left for step 6 if needed.
+- The emulator used for tests is the Python package `zx` driven by
+  `tools/zxemu.py`, not Fuse: it is scriptable, headless, and runs a
+  500-frame replay in seconds. Fuse or real hardware remain for a final look.
 
 ## 6. Risks
 
