@@ -126,7 +126,7 @@ That keeps the existing bridge and relay untouched.
 
 | Step | Work | Result | Effort |
 |---|---|---|---|
-| 0 | MZ: lobby shows the delay in real milliseconds (60 per frame) | 0.1.1 | 1 hour |
+| 0 | MZ: lobby shows the delay in real milliseconds (60 per frame) | 0.1.1, done | 1 hour |
 | 1 | Core and platform split, status-line hook, network device interface; MZ build verified by replay and lockstep tests | Same game, portable tree | 3 days |
 | 2 | ZX platform, local play: z88dk build to `.tap`, 6 x 8 cell drawing, 79 glyphs redrawn, attribute rule, keyboard and Kempston, frame sync, beeper | Playable local game in Fuse, 1-4 players | 8 days |
 | 3 | Determinism across platforms: scripted Spectrum emulator run replaying an MZ recording, hashes compared | Proof that both machines simulate identically | 2 days |

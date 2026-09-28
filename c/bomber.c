@@ -604,11 +604,12 @@ static uint8_t net_lobby(void) {
     } else if (L.host ? L.samples[0] == 0 : !L.got_delay) {
       strcpy(lobby_extra, L.host ? "MEASURING THE LINK" : "HOST MEASURES THE LINK");
     } else {
-      strcpy(lobby_extra, "LINK 000MS   READY 0 OF 0");
-      r = net_delay * 20; lobby_extra[5] = '0' + r / 100; lobby_extra[6] = '0' + (r / 10) % 10;
-      lobby_extra[19] = '0' + bit_count(st.ready_mask); lobby_extra[24] = '0' + st.members;
+      uint16_t ms = (uint16_t)net_delay * FRAME_MS;       /* a game frame is three TV frames */
+      strcpy(lobby_extra, "DELAY 000MS   READY 0 OF 0");
+      lobby_extra[6] = '0' + (uint8_t)(ms / 100); lobby_extra[7] = '0' + (uint8_t)((ms / 10) % 10);
+      lobby_extra[20] = '0' + bit_count(st.ready_mask); lobby_extra[25] = '0' + st.members;
     }
-    if (lobby_extra[0] != 'L') {              /* animated dots while waiting */
+    if (lobby_extra[0] != 'D') {              /* animated dots while waiting */
       uint8_t d = (L.n >> 3) & 3, k = (uint8_t)strlen(lobby_extra);
       for (r = 0; r < 3; r++) lobby_extra[k + r] = r < d ? '.' : ' ';
       lobby_extra[k + 3] = 0;

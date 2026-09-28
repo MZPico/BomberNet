@@ -1,6 +1,6 @@
 # BomberNet — Bomberman for Sharp MZ-700/800 (disassembly, C port, multiplayer)
 
-Version 0.1.0 (tag `v0.1.0`, shown at the bottom of the title screen).
+Version 0.1.1 (tag `v0.1.1`, shown at the bottom of the title screen).
 
 Sharp MZ-700 machine-code tape image (attribute 01, name ` F1200`), Z80,
 load and exec address `1200h`, body `2010h` bytes (`1200h`–`320Fh`).
@@ -242,7 +242,7 @@ LOCAL row says how many of them sit at that machine (1..3, with their own input 
 so any mix of local and network players works. Mode and total come from the host; the
 lobby shows SEATS taken and seats the players in slot order (host's first). Everybody
 presses SPACE to ready up, the host's READY goes out once every seat is taken;
-the match is lockstep with an input delay measured in the lobby (host pings, ceil(rtt/2)+1 frames, 2..8, shown as DELAY in ms), hashes are compared every 16
+the match is lockstep with an input delay measured in the lobby (host pings, ceil(rtt/2)+1 frames of 60 ms, 2..8, shown as DELAY in ms), hashes are compared every 16
 frames and a desync or a dropped peer ends the match with a message. The reference
 relay is `relay/relay.py` (WebSocket 8765, JSON lines TCP 8766); `tools/nettest.py`
 and `tools/lockstep_test.py` run two headless emulators through it. Protocol:
