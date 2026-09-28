@@ -228,7 +228,7 @@ recordings made on the PC replay on both machines with identical state hashes.
 
 | | |
 |---|---|
-| Screen | cells of 6 x 8 pixels, 40 x 24 of them in 240 x 192; the status line is written on the bottom wall: black text on a bar in the wall's colour, each player's number on a tab in the player's colour |
+| Screen | cells of 6 x 8 pixels, 40 x 24 of them in 240 x 192; the status line is written on the bottom wall: black text on a bar in the wall's colour, each player's number in the player's colour |
 | Colour | attribute squares (8 pixels) and cells (6 pixels) do not line up: where two cells share a square, a figure wins over scenery |
 | Keys and sticks | Q A O P and SPACE (M when two players share the keyboard); Sinclair stick 1 = keys 6 7 8 9 0; Sinclair stick 2 = keys 1 2 3 4 5; and the stick chosen in the JOYSTICK row: KEMPSTON (port 1Fh), FULLER (port 7Fh) or CURSOR (Protek/AGF, keys 5 to 8 and 0, which excludes the two Sinclair sets). Up to 3 players without an interface, 4 with Kempston or Fuller |
 | Sound | the MZ's tones on the beeper: same pitch (within 1 %) and same length; the game waits while a tone plays, as on the MZ |

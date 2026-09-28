@@ -10,8 +10,8 @@ Glyph bytes are left aligned (bits 7..2).
 Attribute byte of the tables: ink, paper and BRIGHT as on the Spectrum; bit 7
 is not FLASH but "figure": where two cells share an attribute square, a figure
 wins over scenery (see flush_screen in plat_zx.c). The coloured player digits
-of the status line are figures too: on the status bar their colour becomes
-the background of their square.
+of the status line are figures too: on the status bar they keep their colour
+while the rest of the text is black.
 """
 import os, re, sys
 

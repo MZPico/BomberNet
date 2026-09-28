@@ -160,8 +160,8 @@ What turned out differently from the plan:
 - Link order matters on the 48K: the first 8 KB of the program are in
   contended RAM. Menus and lobby are linked first, the frame loop last.
 - The status line is written on the bottom wall: the row becomes a bar in the
-  wall's colour with black text, and each player's number stands on a tab in
-  the player's colour. Mixing text cells with wall cells looked
+  wall's colour with black text, and each player's number is in the player's
+  colour. Mixing text cells with wall cells looked
   cluttered.
 - Joysticks: Kempston, Fuller and Cursor are selectable, the two Sinclair
   sticks are always there as key sets. Which inputs a joystick kind allows is

@@ -511,8 +511,8 @@ fz_line:
     ld   e,(ix+5)
     call fz_pick            ; square 2: cell 3, else cell 2
     ld   (hl),a
-    ld   a,(fz_bar)         ; the status bar: the wall's colour behind black
-    or   a                  ; text, the player's colour behind a player's digit
+    ld   a,(fz_bar)         ; the status bar: black text on the wall's colour,
+    or   a                  ; a player's digit in the player's colour
     ret  z
     ld   a,(fz_row23)
     or   a
@@ -545,12 +545,12 @@ fz_bartab:
     jr   nz,fz_bartab1
     ld   a,(_zx_bar_attr)
     ret
-fz_bartab1:                  ; ink of the digit becomes the paper, text is black
+fz_bartab1:                  ; the digit keeps its ink, on the bar's colour
     and  0x07
-    rlca
-    rlca
-    rlca
-    or   0x40
+    ld   b,a
+    ld   a,(_zx_bar_attr)
+    and  0xf8
+    or   b
     ret
 
 ; B,C = glyph and attribute of the main cell, D,E = of the other -> A = attribute
