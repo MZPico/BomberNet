@@ -83,7 +83,7 @@ static void draw_hud_icons(void) {
   uint8_t *p = draw_at(25, HUD_ROW);
   if (player_count > 1) return;
   p[0] = C_LIVES_ICON; p[1] = C_COLON; p[2] = players[0].lives;
-  p[5] = C_ENEMY_ICON; p[6] = C_COLON; p[7] = enemies_left;
+  p[4] = C_ENEMY_ICON; p[5] = C_COLON; p[6] = enemies_left;   /* columns 29-31: a blank before STG */
 }
 
 /* Every 20 frames: time -= 10. At zero the bricks and items vanish. */

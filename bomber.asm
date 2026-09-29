@@ -1967,7 +1967,7 @@ put_pillar:
 	ret                         ; 20DE
 
 ; ---- draw_hud_icons @ 20DF
-; Row 24 col 25: lives icon and count; col 30: enemy icon and enemies_left.
+; Row 24 col 25: lives icon and count; col 29: enemy icon and enemies_left.
 draw_hud_icons:
 	ld bc,24*256+25             ; 20DF  row 24 col 25
 	call draw_addr              ; 20E2
