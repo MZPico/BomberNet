@@ -32,6 +32,12 @@ int main(int argc, char **argv) {
   if (is_host) {
     if ((r = net_create(0x0604, 2, settings, 2, code, &slot))) return fail("create", r);
     printf("CODE %s slot %u\n", code, slot); fflush(stdout);
+    if (getenv("SOFTNET_IDLE")) {                   /* keep the room open: the relay pings meanwhile */
+      int s, secs = atoi(getenv("SOFTNET_IDLE"));
+      for (s = 0; s < secs * 50; s++) { net_status(&st); plat_delay(); }
+      printf("after %d s idle: state %u\n", secs, st.state); fflush(stdout);
+      if (st.state != NETST_INROOM) return fail("idle", st.state);
+    }
   } else {
     if (argc < 4) return fail("usage", 0);
     if ((r = net_join(0x0604, argv[3], &slot, &slots, settings, &len))) return fail("join", r);
