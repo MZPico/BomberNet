@@ -138,6 +138,9 @@ each (one NETSEND per local slot; the relay keys inputs by socket + slot).
   the page's WebSocket. Verified 2026-09-11: two headless instances through
   the local relay via port I/O (`tools/nettest.py`).
 - Firmware: pending (phase 5 step 5).
+- ZX Spectrum (BomberNet `c/common/netdev_soft.c`): the device runs on the
+  machine itself over a WebSocket client and the Spectranet socket calls;
+  talks to the same relay as the MZPico.
 
 ## Open points
 

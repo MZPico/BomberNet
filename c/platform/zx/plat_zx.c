@@ -52,6 +52,16 @@ uint8_t plat_input_allowed(uint8_t input) {
 /* attribute of each player's colour: green, yellow, white, blue (BRIGHT) */
 static const uint8_t player_attrs[MAX_PLAYERS] = {0x44, 0x46, 0x47, 0x41};
 
+/* The game never prints through the C library; the start-up code would link
+ * its console driver anyway (1 KB), so it is redirected to nothing. */
+void zx_no_console_stub(void) __naked {
+  __asm
+    PUBLIC zx_no_console
+zx_no_console:
+    ret
+  __endasm;
+}
+
 /* ---- ports ---- */
 uint8_t zx_bar_attr = 0x58;        /* status bar: black on the wall's colour, set in plat_init */
 uint8_t zx_groups;                /* groups redrawn since it was last cleared (measurements) */

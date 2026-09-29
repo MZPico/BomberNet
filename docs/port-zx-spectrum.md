@@ -1,7 +1,8 @@
 # BomberNet on the ZX Spectrum 48K: feasibility and plan
 
-Status 2026-09-29: steps 0 to 3 are done. The game plays locally on the Spectrum
-build at the MZ's speed and simulates identically; network is next (step 4).
+Status 2026-09-29: steps 0 to 4 are done. The game plays locally and over the
+network (Spectranet) on the Spectrum build, at the MZ's speed, simulating
+identically. Cross-platform matches against the MZ are next (step 5).
 
 Rule that shapes everything: every port simulates the MZ field, 40 x 24 logical
 cells plus a status line, so that any machine can play any other over the relay.
@@ -131,7 +132,7 @@ That keeps the existing bridge and relay untouched.
 | 1 | Core and platform split, status-line hook, network device interface; MZ build verified by replay and lockstep tests | Same game, portable tree; done | 3 days |
 | 2 | ZX platform, local play: z88dk build to `.tap`, 6 x 8 cell drawing, 79 glyphs redrawn, attribute rule, keyboard and Kempston, frame sync, beeper | Playable local game, 1-4 players; done (tested in a scripted emulator, tape file loads through the ROM loader) | 8 days |
 | 3 | Determinism across platforms: scripted Spectrum emulator run replaying an MZ recording, hashes compared | Proof that both machines simulate identically; done: 4 recordings, 1,796 frames, no mismatch | 2 days |
-| 4 | Software network device and WebSocket client on Spectranet sockets; against the reference relay, then production | Spectrum against Spectrum in Fuse | 6 days |
+| 4 | Software network device and WebSocket client on Spectranet sockets; against the reference relay, then production | Spectrum against Spectrum; done: in a scripted emulator with the Spectranet emulated at its programming interface, local relay and production, 2 and 3 seats | 6 days |
 | 5 | Cross-platform match: MZ emulator against Spectrum emulator, automated | The goal of the port | 2 days |
 | 6 | Fit and speed on 48K: memory map, contended RAM placement, assembly for the hot loops | Holds 60 ms frames on a 48K | 4 days |
 | 7 | Real hardware: Spectranext on a 48K | Validated release | needs a unit and a tester |
@@ -178,6 +179,40 @@ What turned out differently from the plan:
 - The emulator used for tests is the Python package `zx` driven by
   `tools/zxemu.py`, not Fuse: it is scriptable, headless, and runs a
   500-frame replay in seconds. Fuse or real hardware remain for a final look.
+
+## Measured after step 4
+
+| Item | Result |
+|---|---|
+| Program with network code and buffers | ends at 64,436; stack peak about 330 bytes; about 760 bytes free |
+| Send one input line (build, frame, socket call) | about 1.8 ms |
+| Receive and store one input line | about 2.7 ms |
+| 4 devices, worst case | about 10 ms of network work per frame on top of about 46 ms |
+
+What turned out differently from the plan:
+
+- sccz80 made the network code about 8 KB, not 5, and the program ran past
+  64 KB. The C library's console driver, linked by the start-up code but
+  never used, is redirected to nothing (1 KB); the input window is 16 frames
+  (a peer is at most 8 ahead); the WebSocket frame header is written in
+  front of the line instead of copying the line into a frame buffer.
+- Per character work in C is slow on the Z80: the first version spent 31 ms
+  per frame on one input line each way. The WebSocket payload is now copied
+  in one block, and the input line is read and written by two assembly
+  routines; the generic JSON reader remains for the lobby lines.
+- Client frames use the mask key 0, so the payload needs no XOR.
+- The reference relay writes `"a": 1` and Cloudflare writes `"a":1`; the
+  reader skips spaces after keys.
+- The server's keep-alive pings carry binary payload: the pong echoes it by
+  its length, not by strlen.
+- Test infrastructure: the emulator package keeps one keyboard for all
+  machines in a process (fixed in `tools/zxemu.py`), and two machines that
+  wait for each other over the network must be stepped side by side, never
+  run one at a time.
+- Not verified on hardware: the Spectranet calls follow the register
+  conventions of its ROM sources and are exercised against an emulation of
+  that interface, not a real card. Worth checking in FuseX (Spectranext's
+  emulator) or on a unit before a release.
 
 ## 6. Risks
 

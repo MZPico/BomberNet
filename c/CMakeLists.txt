@@ -22,9 +22,10 @@ if(PLATFORM STREQUAL "mz")
 elseif(PLATFORM STREQUAL "zx")
     # ZX Spectrum 48K: code from 24000 so that it fits under 65536, stack in the UDG area.
     set(TARGET_FLAGS +zx -lndos -create-app -zorg=24000 -pragma-define:REGISTER_SP=65535
-                     -pragma-define:CLIB_EXIT_STACK_SIZE=0)
-    set(PLAT_SOURCES "${PLAT_DIR}/plat_zx.c" "${PLAT_DIR}/tables.c"
-                     "${COMMON_DIR}/netdev_none.c" "${COMMON_DIR}/z80_loops.c")
+                     -pragma-define:CLIB_EXIT_STACK_SIZE=0 -pragma-define:CRT_ENABLE_STDIO=0
+                     -pragma-define:CLIB_OPEN_MAX=0 -pragma-redirect:fputc_cons=zx_no_console)
+    set(PLAT_SOURCES "${PLAT_DIR}/plat_zx.c" "${PLAT_DIR}/tables.c" "${PLAT_DIR}/tcp_spectranet.c"
+                     "${COMMON_DIR}/netdev_soft.c" "${COMMON_DIR}/ws.c" "${COMMON_DIR}/z80_loops.c")
     set(APP_SUFFIX tap)
     set(OUT_SUFFIX tap)
 else()
