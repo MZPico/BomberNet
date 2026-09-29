@@ -2,7 +2,8 @@
 
 Status 2026-09-29: steps 0 to 6 are done. The game plays locally and over the
 network (Spectranet) on the Spectrum build, at the MZ's speed, and an MZ-800
-and a Spectrum play in the same match. What remains needs hardware (step 7).
+and a Spectrum play in the same match. What remains needs hardware or
+an emulator with a Spectranet (step 7); browser play is not planned (step 8).
 
 Rule that shapes everything: every port simulates the MZ field, 40 x 24 logical
 cells plus a status line, so that any machine can play any other over the relay.
@@ -102,13 +103,14 @@ the better programming model and the better test tools. B is added later as a
 second transport for the Next; only the lowest layer (open, send line, receive
 line) differs, about 1 KB of code.
 
-### Browser play
+### Browser play: not planned
 
-A browser cannot open raw TCP, so an emulated Spectranet cannot reach the relay
-directly. For the play page the same approach as on the MZ is used instead: the
-emulator gets a small card-style device on two I/O ports, and the page bridges
-it to the relay's WebSocket. The Spectrum program detects which one is present.
-That keeps the existing bridge and relay untouched.
+Decided 2026-09-29: the Spectrum version is for physical machines with a
+Spectranet or Spectranext, and for desktop emulators that emulate one
+(FuseX, Fuse). Online play in the browser stays with the original game on
+the emulated MZ-800 on mzpico.com; a second browser version would add
+nothing for players. A Spectrum and a browser player still meet in the same
+rooms, since both use the same relay.
 
 ## 4. Architecture changes in the core
 
@@ -136,7 +138,7 @@ That keeps the existing bridge and relay untouched.
 | 5 | Cross-platform match: MZ emulator against Spectrum emulator, automated | The goal of the port; done: either machine hosts, 2 and 3 seats, 300 frames with equal hashes | 2 days |
 | 6 | Fit and speed on 48K: memory map, contended RAM placement, assembly for the hot loops | Holds 60 ms frames on a 48K; done: title at game pace, stage starts 400 -> 260 ms, 890 bytes spare | 4 days |
 | 7 | Real hardware: Spectranext on a 48K | Validated release | needs a unit and a tester |
-| 8 | Browser play: Spectrum emulator with the card-style device on the play page | Spectrum title on the site | 5 days |
+| 8 | ~~Browser play: Spectrum emulator with the card-style device on the play page~~ | Dropped: browser play stays with the emulated MZ-800 | - |
 | 9 | ESP modem transport for the Next | Next owners without a card | 4 days |
 
 Steps 0 to 6 are about five weeks of work and need no hardware. Step 7 is the
