@@ -242,7 +242,7 @@ fast as on the MZ; the game itself is not affected.
 | Title frame | 6 TV frames (120 ms) | 3 TV frames (60 ms), as the game |
 | First title frame after entering it | 20 + 19 TV frames | 4 + 13 TV frames |
 | First frame of a stage or deathmatch round | 20 TV frames (400 ms) | 11 TV frames (220 to 260 ms) |
-| Program end, stack spare | 64,436, about 760 bytes | 64,311, about 890 bytes |
+| Program end, stack spare | 64,436, about 760 bytes | 64,306, about 890 bytes |
 
 What was done:
 

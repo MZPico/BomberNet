@@ -239,7 +239,7 @@ made on the PC replay on both machines with identical state hashes.
 | Keys and sticks | Q A O P and SPACE (M when two players share the keyboard); Sinclair stick 1 = keys 6 7 8 9 0; Sinclair stick 2 = keys 1 2 3 4 5; and the stick chosen in the JOYSTICK row: KEMPSTON (port 1Fh), FULLER (port 7Fh) or CURSOR (Protek/AGF, keys 5 to 8 and 0, which excludes the two Sinclair sets). Up to 3 players without an interface, 4 with Kempston or Fuller |
 | Sound | the MZ's tones on the beeper: same pitch (within 1 %) and same length; the game waits while a tone plays, as on the MZ |
 | Network | the network device runs on the Spectrum itself (`c/common/netdev_soft.c`, the MZPico firmware's logic in C) with a small WebSocket client (`c/common/ws.c`) over the Spectranet socket calls (`c/platform/zx/tcp_spectranet.c`); relay `ws://api.mzpico.com/net`. Per frame about 2 ms to send and 3 ms per line received; the input line is read and written in Z80 assembly |
-| Memory | loads at 24000, the program with buffers ends at 64,311; the stack peaks about 330 bytes deep and leaves some 890 bytes free |
+| Memory | loads at 24000, the program with buffers ends at 64,306; the stack peaks about 330 bytes deep and leaves some 890 bytes free |
 | Frame | three TV frames (60 ms), counted by the ROM interrupt; about 46 ms of it used in a busy 4-player game, the title at the same pace. A whole new screen (stage or round start) takes about 260 ms: after a clear the display is wiped in one pass, and repeated groups of cells are copied from a cache instead of drawn again |
 
 | file | content |
