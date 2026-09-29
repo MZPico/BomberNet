@@ -283,7 +283,7 @@ and the other join, and compares state hashes while both run in real time.
 | Match | Result |
 |---|---|
 | Local relay, 5 runs of 830 to 1,040 frames | 34 to 50 hashed frames equal per run, no abort |
-| Production (api.mzpico.com resolved by the Spectranet's own DNS) | equal hashes, no abort, input delay 4 to 6 frames (240 to 360 ms) |
+| Production (api.mzpico.com resolved by the Spectranet's own DNS) | equal hashes, no abort |
 | Speed, both machines | 16.1 to 16.5 frames per second: the full 60 ms frame, the emulators at real time |
 
 Found on the way:
@@ -301,6 +301,12 @@ Found on the way:
   driver gives FuseX a private home whose flash has no configuration, so it
   stops in the launcher menu, and starts the game from there
   (`make_fusex_home`, `boot_program` in `tools/fusex.py`).
+- Test pitfall, not a game fault: a key press answered at a breakpoint
+  stops the machine at each keyboard call and stretches its lobby frames.
+  Pressed while the host measures the link, it made the host choose input
+  delays of 4 to 6 frames; with the lobby left alone FuseX against FuseX
+  chooses 2. `tools/netbench.py` (network timing) keeps its measurements
+  clear of key presses.
 - Test pitfall, not a game fault: a fire key held until the match starts
   drops a bomb in frame 1; in deathmatch the player dies at frame 92 and the
   round-over message waits for fire while the frames keep being exchanged.

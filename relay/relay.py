@@ -11,6 +11,10 @@ are 4 letters from a 24-letter alphabet (no I/O) and are namespaced per
 """
 import asyncio, json, os, random, time
 TRACE = os.environ.get("RELAY_TRACE") == "1"
+# RELAY_TIMING=<file>: one JSON line per message received (monotonic time in
+# seconds, room, slot, op, frame, data), for tools/netbench.py. Messages are
+# forwarded as soon as they arrive, so this is also when they go out.
+TIMING = open(os.environ["RELAY_TIMING"], "a", buffering=1) if os.environ.get("RELAY_TIMING") else None
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
 app = FastAPI(title="MZPico NET relay")
@@ -145,6 +149,10 @@ async def session(ws: Conn):
                 await err(ws, E_PARAM, "bad json")
                 continue
             op = msg.get("op")
+            if TIMING:
+                TIMING.write(json.dumps({"t": round(time.monotonic(), 6), "room": room.code if room else None,
+                                         "slot": me.slot if me else None, "op": op, "frame": msg.get("frame"),
+                                         "data": msg.get("data") if op == "msg" else None}) + "\n")
             if TRACE and op not in ("input", "hash"): print(f"[{time.strftime('%H:%M:%S')}] slot={me.slot if me else None} {msg}", flush=True)
             elif TRACE and op == "input" and int(msg.get("frame", -1)) < 12: print(f"[{time.strftime('%H:%M:%S')}] slot={me.slot if me else None} {msg}", flush=True)
 

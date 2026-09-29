@@ -9,7 +9,7 @@ firmware, which is the point of testing here.
 FuseX builds on Linux with its SDL interface (see docs/port-zx-spectrum.md);
 it runs on a virtual X display (Xvfb :97, FUSEX_DISPLAY to change).
 FUSEX=<path to fuse> selects the binary, FUSEX_HOME a private home."""
-import os, re, socket, subprocess, time
+import os, re, socket, subprocess, threading, time
 
 FUSEX = os.environ.get('FUSEX', os.path.expanduser('~/src/fusex/fuse'))
 REG = {'af': 0, 'bc': 1, 'de': 2, 'hl': 3, 'sp': 4, 'pc': 5, 'ix': 6, 'iy': 7}
@@ -176,11 +176,17 @@ class FuseX:
 
     def return_from_call(self, hl=None):
         """At the first instruction of a routine: return from it at once,
-        with HL as its result (the routine is not run)."""
-        r = self.regs()
-        if hl is not None: self.set_reg('hl', hl)
-        self.set_reg('pc', self.read16(r['sp']))
-        self.set_reg('sp', (r['sp'] + 2) & 0xffff)
+        with HL as its result (the routine is not run). Three round trips:
+        the machine stands still meanwhile, so fewer is better."""
+        h = self.cmd('g')
+        word = lambda i: int(h[i * 4 + 2:i * 4 + 4] + h[i * 4:i * 4 + 2], 16)
+        put = lambda h, i, v: h[:i * 4] + '%02x%02x' % (v & 0xff, (v >> 8) & 0xff) + h[i * 4 + 4:]
+        sp = word(REG['sp'])
+        if hl is not None: h = put(h, REG['hl'], hl)
+        h = put(h, REG['pc'], self.read16(sp))
+        h = put(h, REG['sp'], (sp + 2) & 0xffff)
+        r = self.cmd('G' + h)
+        if r != 'OK': raise RuntimeError('set registers: ' + r)
 
     def boot_program(self, binary, org=24000, stub=0x5b00):
         """Replace what runs (the Spectranext launcher menu, which holds no
@@ -226,3 +232,35 @@ def make_fusex_home(home):
     d[16 + 0x1f000:16 + 0x1f002] = b'\x00\x00'         # configuration size 0 (after the 16-byte file header)
     open(dst, 'wb').write(d)
     return home
+
+
+def forward(to_host, to_port):
+    """A TCP forwarder from a free port on 127.0.0.1 to to_host:to_port; returns its port.
+
+    Both emulated Spectranets choose the same local port and FuseX binds it
+    on the host, so two connections to one relay address would repeat the
+    same address pair and the second connect fails. Real machines have their
+    own IP addresses; here the second machine reaches the relay by another port."""
+    srv = socket.create_server(('127.0.0.1', 0))
+
+    def pipe(src, dst, upgrade=False):
+        try:
+            if upgrade:                                       # the HTTP upgrade names the relay, not 127.0.0.1
+                req = b''
+                while b'\r\n\r\n' not in req and (d := src.recv(4096)): req += d
+                dst.sendall(req.replace(b'Host: 127.0.0.1\r\n', b'Host: %s\r\n' % to_host.encode()))
+            while (d := src.recv(4096)): dst.sendall(d)
+        except OSError: pass
+        for x in (src, dst):
+            try: x.shutdown(socket.SHUT_RDWR)
+            except OSError: pass
+
+    def serve():
+        while True:
+            c, _ = srv.accept()
+            r = socket.create_connection((to_host, to_port))
+            for x in (c, r): x.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            threading.Thread(target=pipe, args=(c, r, True), daemon=True).start()
+            threading.Thread(target=pipe, args=(r, c), daemon=True).start()
+    threading.Thread(target=serve, daemon=True).start()
+    return srv.getsockname()[1]

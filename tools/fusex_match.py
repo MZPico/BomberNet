@@ -12,9 +12,9 @@ Both run in real time by themselves; the driver only supplies key presses
                                        B goes through a local forwarder
 Needs Xvfb on :97 (Xvfb :97 &), the local relay, FuseX (FUSEX=path).
 """
-import os, socket, sys, threading, time
+import os, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from fusex import FuseX, make_fusex_home
+from fusex import FuseX, make_fusex_home, forward
 from zxemu import sym_from_map, screen_png
 
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 80
@@ -34,38 +34,6 @@ def start():
     fx = FuseX('build/zx/bomber.tap', spectranet=True)
     fx.attach(); fx.cont()
     return fx
-
-
-def forward(to_host, to_port):
-    """A TCP forwarder from a free port on 127.0.0.1 to to_host:to_port; returns its port.
-
-    Both emulated Spectranets choose the same local port and FuseX binds it
-    on the host, so two connections to one relay address would repeat the
-    same address pair and the second connect fails. Real machines have their
-    own IP addresses; here the second machine reaches the relay by another port."""
-    srv = socket.create_server(('127.0.0.1', 0))
-
-    def pipe(src, dst, upgrade=False):
-        try:
-            if upgrade:                                       # the HTTP upgrade names the relay, not 127.0.0.1
-                req = b''
-                while b'\r\n\r\n' not in req and (d := src.recv(4096)): req += d
-                dst.sendall(req.replace(b'Host: 127.0.0.1\r\n', b'Host: %s\r\n' % to_host.encode()))
-            while (d := src.recv(4096)): dst.sendall(d)
-        except OSError: pass
-        for x in (src, dst):
-            try: x.shutdown(socket.SHUT_RDWR)
-            except OSError: pass
-
-    def serve():
-        while True:
-            c, _ = srv.accept()
-            r = socket.create_connection((to_host, to_port))
-            for x in (c, r): x.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            threading.Thread(target=pipe, args=(c, r, True), daemon=True).start()
-            threading.Thread(target=pipe, args=(r, c), daemon=True).start()
-    threading.Thread(target=serve, daemon=True).start()
-    return srv.getsockname()[1]
 
 
 def boot(fx, port=None):
@@ -158,9 +126,12 @@ if not until(lambda: peek(b, lambda: b.read8(NS)) == 1, 30):
     sys.exit(f'B did not join: title_mode {b.read8(TM)} state {b.read8(S("_s_state"))} code {b.read(NC, 4)} '
              f'last error {b.read8(S("_s_err"))} ws_open {b.read8(S("_ws_open_now"))}\n'
              + b.cmd('qRcmd,' + b'spectranet-info'.hex()))
-print(f'B joined; {time.time() - t0:.0f} s', flush=True)
+print(f'B joined; {time.time() - t0:.0f} s; at {time.time():.3f}', flush=True)
 time.sleep(4)                                                 # lobby: delay measured, seat table
-tap(b); time.sleep(0.5); tap(a)                               # ready, the host last
+# ready, the host last. A key press stops the machine at every keyboard call,
+# which stretches its lobby frames; the host's delay comes from its last four
+# pings, so B's press must be over some pings before A readies.
+tap(b); time.sleep(4); tap(a)
 if not until(lambda: peek(a, lambda: a.read8(TM)) == 0 and peek(b, lambda: b.read8(TM)) == 0, 30):
     sys.exit(f'did not start: title_mode A {peek(a, lambda: a.read8(TM))} B {peek(b, lambda: b.read8(TM))}')
 print(f'in game; delay A {peek(a, lambda: a.read8(S("_net_delay")))} B {peek(b, lambda: b.read8(S("_net_delay")))}', flush=True)
