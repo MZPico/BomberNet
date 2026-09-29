@@ -48,7 +48,12 @@ static uint8_t ip[4];
 
 /* The Spectranet control register (033Bh) mirrors the border colour in its
  * low 3 bits; without the interface the port reads the floating bus. The
- * border is black all the time, so it is set to cyan for the test only. */
+ * border is black all the time, so it is set to cyan for the test only.
+ * A Spectranet with its disable switch on answers the port too, but its
+ * firmware never started and its traps (IXCALL) are off: a call would run
+ * the Spectrum ROM instead. So the interface is paged in by the control
+ * register (bit 0) and the API jump table the firmware sets up at start
+ * (3E00h: SOCKET .. GETHOSTBYNAME, 14 JP instructions) is checked. */
 static uint8_t detect(void) __naked {
   __asm
     ei
@@ -63,8 +68,28 @@ static uint8_t detect(void) __naked {
     out  (0xfe),a
     ld   a,l
     sub  5
+    jr   nz,dt_no
+    di
+    ld   a,1
+    out  (c),a              ; page the Spectranet in
+    ld   hl,0x3e00
+    ld   e,14
+dt_tbl:
+    ld   a,(hl)
+    cp   0xc3               ; JP
+    jr   nz,dt_out          ; Z clear: no working firmware
+    inc  hl
+    inc  hl
+    inc  hl
+    dec  e
+    jr   nz,dt_tbl          ; Z set after the last entry
+dt_out:
+    ld   a,0                ; (the flags stay)
+    out  (c),a              ; and out again
+    ei
     ld   l,1
     jr   z,dt_yes
+dt_no:
     ld   l,0
 dt_yes:
     ld   h,0

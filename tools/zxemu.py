@@ -40,7 +40,11 @@ class ZX(zx.Spectrum):
         self.sn_calls = 0
         self.set_on_input_callback(self._input)
         self.reset_and_wait()                      # ROM start-up: system variables, IM 1, IY
-        if spectranet: self.set_breakpoint(self.IXCALL)
+        if spectranet:
+            self.set_breakpoint(self.IXCALL)
+            # the API jump table the game checks with the interface paged in
+            # (no paging here: it is written over the ROM's copy of the font)
+            for i in range(14): self.poke(0x3e00 + 3 * i, b'\xc3')
 
     def _input(self, addr):
         if self.spectranet and (addr & 0xffff) == 0x033b:
