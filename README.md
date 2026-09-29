@@ -224,7 +224,11 @@ mkdir -p build/zx && cd build/zx && cmake -DPLATFORM=zx ../../c && make   # -> b
 
 1 to 4 players locally, and network play with a Spectranet or its WiFi
 successor Spectranext: HOST and JOIN as on the MZ, through the same relay on
-mzpico.com, rooms and lobby included. Without the interface the NETWORK row
+mzpico.com, rooms and lobby included. A Spectrum and an MZ play in the same
+room: the relay does not care which machine is on the other end, and both
+simulate the same field frame for frame.
+
+![MZ-800 and ZX Spectrum in one match](docs/img/cross-mz-zx.png) Without the interface the NETWORK row
 is greyed out. Same field, same rules, same speed as on the MZ: recordings
 made on the PC replay on both machines with identical state hashes.
 
@@ -249,6 +253,7 @@ made on the PC replay on both machines with identical state hashes.
 | `tools/zxemu.py` | headless Spectrum for tests (Python package `zx`): load, run to an address, keys, memory, screenshot |
 | `tools/replay_zx.py` | replays a PC recording on the Spectrum build and compares the state hashes |
 | `tools/lockstep_zx.py` | two emulated Spectrums with a Spectranet play a network match through the local relay or production (`RELAY=real`) and compare hashes; the Spectranet is emulated at its programming interface with real sockets |
+| `tools/crossplay.py` | an MZ-800 (mz800emu, MZPico card, TCP to the relay) and a ZX Spectrum (Spectranet, WebSocket) in one match through the local relay; either can host, seats as in the other tests; compares state hashes |
 | `tools/softnet_test.sh` | the same network device built on the PC (`c/platform/host/tcp_posix.c`): two processes create and join a room and exchange 200 frames of inputs |
 
 What changed on purpose:

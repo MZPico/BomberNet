@@ -30,6 +30,7 @@ class ZX(zx.Spectrum):
     def __init__(self, spectranet=False, relay=('127.0.0.1', 8765)):
         kb = Keyboard()
         kb._state = [0xff] * 8                     # the package keeps it in the class: one per machine here
+        self.kb = kb
         super().__init__(headless=True, keyboard=kb)
         self.hit = False
         self.ports = {}                            # low port byte -> value: joystick interfaces

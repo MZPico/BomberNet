@@ -1,8 +1,8 @@
 # BomberNet on the ZX Spectrum 48K: feasibility and plan
 
-Status 2026-09-29: steps 0 to 4 are done. The game plays locally and over the
-network (Spectranet) on the Spectrum build, at the MZ's speed, simulating
-identically. Cross-platform matches against the MZ are next (step 5).
+Status 2026-09-29: steps 0 to 5 are done. The game plays locally and over the
+network (Spectranet) on the Spectrum build, at the MZ's speed, and an MZ-800
+and a Spectrum play in the same match. Next: fit and speed (step 6).
 
 Rule that shapes everything: every port simulates the MZ field, 40 x 24 logical
 cells plus a status line, so that any machine can play any other over the relay.
@@ -133,7 +133,7 @@ That keeps the existing bridge and relay untouched.
 | 2 | ZX platform, local play: z88dk build to `.tap`, 6 x 8 cell drawing, 79 glyphs redrawn, attribute rule, keyboard and Kempston, frame sync, beeper | Playable local game, 1-4 players; done (tested in a scripted emulator, tape file loads through the ROM loader) | 8 days |
 | 3 | Determinism across platforms: scripted Spectrum emulator run replaying an MZ recording, hashes compared | Proof that both machines simulate identically; done: 4 recordings, 1,796 frames, no mismatch | 2 days |
 | 4 | Software network device and WebSocket client on Spectranet sockets; against the reference relay, then production | Spectrum against Spectrum; done: in a scripted emulator with the Spectranet emulated at its programming interface, local relay and production, 2 and 3 seats | 6 days |
-| 5 | Cross-platform match: MZ emulator against Spectrum emulator, automated | The goal of the port | 2 days |
+| 5 | Cross-platform match: MZ emulator against Spectrum emulator, automated | The goal of the port; done: either machine hosts, 2 and 3 seats, 300 frames with equal hashes | 2 days |
 | 6 | Fit and speed on 48K: memory map, contended RAM placement, assembly for the hot loops | Holds 60 ms frames on a 48K | 4 days |
 | 7 | Real hardware: Spectranext on a 48K | Validated release | needs a unit and a tester |
 | 8 | Browser play: Spectrum emulator with the card-style device on the play page | Spectrum title on the site | 5 days |
@@ -213,6 +213,27 @@ What turned out differently from the plan:
   conventions of its ROM sources and are exercised against an emulation of
   that interface, not a real card. Worth checking in FuseX (Spectranext's
   emulator) or on a unit before a release.
+
+## Measured after step 5
+
+`tools/crossplay.py` runs mz800emu (MZPico card emulated, JSON lines over TCP
+to the relay) and the Spectrum (Spectranet emulated, WebSocket) against the
+same local relay, one TV frame each in turn.
+
+| Match | Result |
+|---|---|
+| MZ hosts, Spectrum joins, 300 frames | 18 hashed frames equal, no abort |
+| Spectrum hosts, MZ joins | equal hashes, no abort |
+| Spectrum hosts with 2 local players, MZ joins with 1 | equal hashes, no abort |
+| End of a match | the 1000-byte fields of both machines are identical |
+
+Both lobbies measured an input delay of 2 frames (120 ms) against the local
+relay.
+
+Found on the way, for step 6: the Spectrum's title screen runs at 6 TV
+frames per frame (120 ms), twice a game frame, and its first two frames take
+about 20 TV frames each while the whole screen is drawn. Menus react half as
+fast as on the MZ; the game itself is not affected.
 
 ## 6. Risks
 
