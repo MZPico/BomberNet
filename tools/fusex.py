@@ -16,7 +16,7 @@ REG = {'af': 0, 'bc': 1, 'de': 2, 'hl': 3, 'sp': 4, 'pc': 5, 'ix': 6, 'iy': 7}
 
 
 class FuseX:
-    def __init__(self, tape, port=None, spectranet=True, video='xvfb', log=None):
+    def __init__(self, tape, port=None, spectranet=True, video='xvfb', log=None, extra=()):
         # stdout line-buffered: the port FuseX actually uses is read from it
         if port is None:                            # a free port
             with socket.socket() as t:
@@ -36,6 +36,7 @@ class FuseX:
                '--gdbserver-enable', '--gdbserver-port', str(port),
                '--tape', os.path.abspath(tape), '--auto-load', '--traps']
         if spectranet: cmd.insert(3, '--spectranet')
+        cmd[3:3] = list(extra)                      # more FuseX options, e.g. --fuller
         self.log = open(log or f'/tmp/fusex_{port}.log', 'w')
         self.p = subprocess.Popen(cmd, env=env, stdout=self.log, stderr=subprocess.STDOUT,
                                   cwd=os.path.dirname(FUSEX))

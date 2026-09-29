@@ -108,6 +108,13 @@ uint8_t plat_keys_b(void) {               /* 6 left, 7 right, 8 down, 9 up, 0 fi
   return sinclair(zx_in(0xeffe));
 }
 
+/* Kempston (1Fh) and Fuller (7Fh) are read in the top border, see
+ * plat_frame_sync: without an interface the port floats and returns what the
+ * ULA fetches from the screen, random fire and directions. In the border
+ * nothing is fetched and a floating port reads FFh: the Kempston check below
+ * rejects it, and to the Fuller it is a stick at rest. */
+static uint8_t joy_kempston, joy_fuller = 0xff;
+
 uint8_t plat_joy(uint8_t n) {
   uint8_t r, k = 0;
   if (n) {                                /* Sinclair stick 2: 1 left, 2 right, 3 down, 4 up, 5 fire */
@@ -122,7 +129,7 @@ uint8_t plat_joy(uint8_t n) {
   }
   switch (joy_type) {
   case JOY_KEMPSTON:                      /* port 1Fh, 1 = active: right, left, down, up, fire */
-    r = zx_in(0x001f);
+    r = joy_kempston;
     /* no interface: the port floats. A real one keeps bits 5..7 low and
      * cannot report left with right or up with down. */
     if ((r & 0xe0) || (r & 0x03) == 0x03 || (r & 0x0c) == 0x0c) return 0;
@@ -133,7 +140,7 @@ uint8_t plat_joy(uint8_t n) {
     if (r & 0x10) k |= KEY_SPACE;
     break;
   case JOY_FULLER:                        /* port 7Fh, 0 = active: up, down, left, right, bit 7 fire */
-    r = zx_in(0x007f);
+    r = joy_fuller;
     if ((r & 0x03) == 0 || (r & 0x0c) == 0) return 0;      /* opposite directions: not a stick */
     if (!(r & 0x01)) k |= KEY_UP;
     if (!(r & 0x02)) k |= KEY_DOWN;
@@ -175,8 +182,13 @@ uint8_t plat_key_char(void) {
 static uint8_t last_tick;
 
 void plat_frame_sync(void) {                       /* a game frame is three TV frames */
+  uint8_t late = (uint8_t)(*FRAMES_LO - last_tick) >= 3;
   while ((uint8_t)(*FRAMES_LO - last_tick) < 3) ;
   last_tick = *FRAMES_LO;
+  /* A new TV frame has just begun: the beam is in the top border (64 lines,
+   * 14,000 T-states) and the joystick ports can be read. After a frame that
+   * ran long the beam may be anywhere: the last readings stay. */
+  if (!late) { joy_kempston = zx_in(0x001f); joy_fuller = zx_in(0x007f); }
 }
 
 void plat_delay(void) {
