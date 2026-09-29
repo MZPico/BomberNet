@@ -34,12 +34,18 @@ const key = async (name, hold = 200) => {
   await fire('keydown'); await sleep(hold); await fire('keyup'); await sleep(300);
 };
 const panel = () => ev("document.getElementById('netpanel')?.textContent ?? ''");
+const shot = async (name) => {                       // SHOT=<prefix>: screenshots for debugging
+  if (!process.env.SHOT) return;
+  const r = await send('Page.captureScreenshot', { format: 'png' });
+  (await import('node:fs')).writeFileSync(`${process.env.SHOT}-${name}.png`, Buffer.from(r.result.data, 'base64'));
+};
 
 await send('Page.enable'); await send('Runtime.enable');
 await sleep(2500);
 await ev("document.getElementById('play-start')?.click()");
 for (let i = 0; i < 60; i++) { if (await ev('!!window.__mzReady')) break; await sleep(1000); }
 await sleep(4000);                                   // title up, network detected
+await shot('title');
 // title menu: MODE, NETWORK, ...: NETWORK -> JOIN, fire: the code screen
 await key('Down'); await key('Right'); await key('Right'); await key('Space');
 await sleep(1500);
@@ -48,8 +54,10 @@ for (let p = 0; p < 4; p++) {                        // UP/DOWN cycle a letter; 
   for (let i = 0; i < (up ? n : 24 - n); i++) { await key(up ? 'Up' : 'Down', 220); await sleep(200); }
   if (p < 3) await key('Right', 220);
 }
+await shot('code');
 await key('Space');
 for (let i = 0; i < 30; i++) { await sleep(500); if (/2 players|members 2|2\/2/.test(await panel())) break; }
+await shot('joined');
 say('JOINED'); console.log('panel:', await panel());
 await sleep(Number(lobbyS) * 1000);
 await key('Space'); say('READY');
