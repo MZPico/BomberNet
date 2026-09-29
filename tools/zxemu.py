@@ -156,25 +156,29 @@ class ZX(zx.Spectrum):
 
     def screenshot(self, path, scale=2):
         """PNG of the 256 x 192 screen from display memory (not the emulator's frame)."""
-        mem = self.read(0x4000, 6912)
-        pal = [(0, 0, 0), (0, 0, 205), (205, 0, 0), (205, 0, 205), (0, 205, 0), (0, 205, 205), (205, 205, 0), (205, 205, 205)]
-        bri = [(0, 0, 0), (0, 0, 255), (255, 0, 0), (255, 0, 255), (0, 255, 0), (0, 255, 255), (255, 255, 0), (255, 255, 255)]
-        rows = []
-        for y in range(192):
-            base = ((y & 0xc0) << 5) | ((y & 0x07) << 8) | ((y & 0x38) << 2)
-            line = bytearray()
-            for cx in range(32):
-                b = mem[base + cx]; a = mem[6144 + (y >> 3) * 32 + cx]
-                p = bri if a & 0x40 else pal
-                ink, paper = p[a & 7], p[(a >> 3) & 7]
-                for bit in range(8):
-                    line += bytes(ink if (b << bit) & 0x80 else paper) * scale
-            rows += [bytes(line)] * scale
-        w, h = 256 * scale, 192 * scale
-        raw = b''.join(b'\x00' + r for r in rows)
-        def chunk(t, d): return struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
-        open(path, 'wb').write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)) +
-                               chunk(b'IDAT', zlib.compress(raw, 9)) + chunk(b'IEND', b''))
+        screen_png(self.read(0x4000, 6912), path, scale)
+
+
+def screen_png(mem, path, scale=2):
+    """PNG from the 6912 bytes of a Spectrum's display memory."""
+    pal = [(0, 0, 0), (0, 0, 205), (205, 0, 0), (205, 0, 205), (0, 205, 0), (0, 205, 205), (205, 205, 0), (205, 205, 205)]
+    bri = [(0, 0, 0), (0, 0, 255), (255, 0, 0), (255, 0, 255), (0, 255, 0), (0, 255, 255), (255, 255, 0), (255, 255, 255)]
+    rows = []
+    for y in range(192):
+        base = ((y & 0xc0) << 5) | ((y & 0x07) << 8) | ((y & 0x38) << 2)
+        line = bytearray()
+        for cx in range(32):
+            b = mem[base + cx]; a = mem[6144 + (y >> 3) * 32 + cx]
+            p = bri if a & 0x40 else pal
+            ink, paper = p[a & 7], p[(a >> 3) & 7]
+            for bit in range(8):
+                line += bytes(ink if (b << bit) & 0x80 else paper) * scale
+        rows += [bytes(line)] * scale
+    w, h = 256 * scale, 192 * scale
+    raw = b''.join(b'\x00' + r for r in rows)
+    def chunk(t, d): return struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
+    open(path, 'wb').write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', w, h, 8, 2, 0, 0, 0)) +
+                           chunk(b'IDAT', zlib.compress(raw, 9)) + chunk(b'IEND', b''))
 
 
 def run_together(machines, addr, count=1, on_hit=None, max_seconds=60.0):

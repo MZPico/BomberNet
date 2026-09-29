@@ -137,7 +137,7 @@ rooms, since both use the same relay.
 | 4 | Software network device and WebSocket client on Spectranet sockets; against the reference relay, then production | Spectrum against Spectrum; done: in a scripted emulator with the Spectranet emulated at its programming interface, local relay and production, 2 and 3 seats | 6 days |
 | 5 | Cross-platform match: MZ emulator against Spectrum emulator, automated | The goal of the port; done: either machine hosts, 2 and 3 seats, 300 frames with equal hashes | 2 days |
 | 6 | Fit and speed on 48K: memory map, contended RAM placement, assembly for the hot loops | Holds 60 ms frames on a 48K; done: title at game pace, stage starts 400 -> 260 ms, 890 bytes spare | 4 days |
-| 7 | Real hardware: Spectranext on a 48K | Validated release | needs a unit and a tester |
+| 7 | Real firmware, then real hardware: FuseX (Spectranext's emulator: real Spectranet ROM, emulated W5100), then a Spectranext on a 48K | FuseX done: two FuseX against each other, local relay and production, equal hashes at full speed; hardware needs a unit and a tester | 2 days + hardware |
 | 8 | ~~Browser play: Spectrum emulator with the card-style device on the play page~~ | Dropped: browser play stays with the emulated MZ-800 | - |
 | 9 | ESP modem transport for the Next | Next owners without a card | 4 days |
 
@@ -270,6 +270,74 @@ Not done, not needed so far: an own interrupt routine instead of the ROM's
 (about 1 ms per frame), a faster glyph renderer (the rest of the 260 ms).
 Busy frames can reach 60 ms and more, but only while a sound plays: sounds
 block the game, as they do on the MZ.
+
+## Measured in FuseX (step 7, first part)
+
+Steps 4 and 5 ran against an emulation of the Spectranet's programming
+interface. FuseX (github.com/speccytools/fusex, the Spectranext fork of Fuse)
+runs the real Spectranet ROM on an emulated W5100 whose sockets are host
+sockets, so the game's calls go through the card's own firmware.
+`tools/fusex_match.py` starts two FuseX, loads the game into each, has one host
+and the other join, and compares state hashes while both run in real time.
+
+| Match | Result |
+|---|---|
+| Local relay, 5 runs of 830 to 1,040 frames | 34 to 50 hashed frames equal per run, no abort |
+| Production (api.mzpico.com resolved by the Spectranet's own DNS) | equal hashes, no abort, input delay 4 to 6 frames (240 to 360 ms) |
+| Speed, both machines | 16.1 to 16.5 frames per second: the full 60 ms frame, the emulators at real time |
+
+Found on the way:
+
+- The socket calls, their register conventions, DNS and the WebSocket client
+  work unchanged on the real firmware.
+- Two emulated Spectranets on one PC choose the same local port, and FuseX
+  binds it on the host: the second connection to the same relay address
+  repeats the first one's address pair and CONNECT fails (A = FBh). Real
+  machines have their own addresses. The driver sends the second machine
+  through a small TCP forwarder on another port (for production it also
+  rewrites the Host line of the upgrade request).
+- The Spectranext boots into its Resource Index, a network program, when a
+  boot mount is set; its sockets stay open when a program is poked in. The
+  driver gives FuseX a private home whose flash has no configuration, so it
+  stops in the launcher menu, and starts the game from there
+  (`make_fusex_home`, `boot_program` in `tools/fusex.py`).
+- Test pitfall, not a game fault: a fire key held until the match starts
+  drops a bomb in frame 1; in deathmatch the player dies at frame 92 and the
+  round-over message waits for fire while the frames keep being exchanged.
+  The driver presses keys only while the menus run.
+
+Building FuseX on Linux (SDL interface):
+
+    git clone --recurse-submodules https://github.com/speccytools/fusex && cd fusex/3rdparty
+    D=$PWD/dist; mkdir -p $D/lib $D/include/mbedtls
+    (cd mbedtls/src && make CFLAGS="-O2 -fPIC" lib &&
+     cp -rp include/mbedtls/* $D/include/mbedtls/ && cp library/libmbed*.a $D/lib/)
+    sed -i 's/^libssh2: mbedtls /libssh2: /' Makefile && make libssh2
+    (cd libspectrum && ./configure --without-libaudiofile --without-libgcrypt \
+       --without-zlib --without-bzip2 --prefix=$D && make && make install)
+    cd .. && export PKG_CONFIG_PATH=$PWD/3rdparty/dist/lib/pkgconfig
+    ./autogen.sh && ./configure --with-sdl && make
+
+The 3rdparty Makefile's own mbedtls step did not build here, so mbedtls is
+built by hand (position independent, for libssh2) and the libssh2 target no
+longer depends on it. libspectrum is built by hand as well: the Makefile
+builds it with `--with-fake-glib`, and FuseX needs the real GLib. The `fuse` binary
+finds libspectrum in `3rdparty/dist/lib` (`tools/fusex.py` sets the library
+path). Two faults in its GDB server matter for scripted tests:
+
+- The network thread waits on a condition variable for the emulation to
+  start and can miss the wake-up; the server then never accepts. Patched
+  locally to poll (`debugger/gdbserver.c`, `network_thread`).
+- The P packet (set one register) always fails; `tools/fusex.py` writes all
+  registers with G instead. An interrupt (^C) sent right after a continue
+  can be lost; the driver repeats it.
+
+`tools/fusex_match.py` needs a virtual display (`Xvfb :97 &`) and, for the
+local relay, `uvicorn --app-dir relay relay:app --port 8765`. `RELAY=real`
+plays through production; `TRACE_NET=1` prints the last Spectranet calls with
+their results.
+
+Still to do for step 7: a real Spectranext (or Spectranet) on a 48K.
 
 ## 6. Risks
 
