@@ -1,5 +1,6 @@
 /* Screen layers and cell helpers (portable C). */
 #include <stdint.h>
+#include <string.h>
 #include "game.h"
 
 uint8_t draw_buf[SCREEN_CELLS];
@@ -47,9 +48,11 @@ uint8_t is_2x2_clear(const uint8_t *p) {
   return p[SCREEN_W + 1];
 }
 
+#ifndef PLAT_ASM_TEXT
 void print_string(uint8_t *p, const char *s) {
   while (*s) *p++ = (uint8_t)*s++;
 }
+#endif
 
 /* digits are logical codes 0..9; no division (sccz80 calls a slow helper) */
 void print_num2(uint8_t *p, uint8_t v) {
@@ -74,11 +77,12 @@ void print_num5(uint8_t *p, uint16_t v) {
 }
 
 /* game-mode glyph for each letter A..Z (0 = not available) */
-static const uint8_t hud_letters[26] = {
+const uint8_t hud_letters[26] = {          /* public: common/z80_loops.c reads it */
   0x95, 0x15, 0x11, 0x97, 0x14, 0xbe, 0x31, 0x98, 0x99, 0x00, 0x8f, 0x93, 0x94,
   0x17, 0x12, 0x92, 0x00, 0x13, 0x10, 0x30, 0x18, 0x9e, 0x8e, 0x9f, 0x96, 0x00,
 };
 
+#ifndef PLAT_ASM_TEXT
 void hud_text(uint8_t *p, const char *s) {
   while (*s) {
     uint8_t c = (uint8_t)*s++;
@@ -88,6 +92,7 @@ void hud_text(uint8_t *p, const char *s) {
     *p++ = c;
   }
 }
+#endif
 
 void print_num4(uint8_t *p, uint16_t v) {
   uint8_t i;
@@ -104,6 +109,7 @@ void print_num4(uint8_t *p, uint16_t v) {
 
 /* title mode: letters and space are direct, digits are codes 0..9, '-' is
  * 40h; anything else would hit the logo graphics, so it becomes a space */
+#ifndef PLAT_ASM_TEXT
 void title_text(uint8_t *p, const char *s) {
   while (*s) {
     uint8_t c = (uint8_t)*s++;
@@ -113,16 +119,20 @@ void title_text(uint8_t *p, const char *s) {
     *p++ = c;
   }
 }
+#endif
 
 /* yellow text in title mode: letters 60h-79h, digits 7Ah-7Fh / 25h-28h, dash 29h */
 /* greyed-out menu text (blue): letters only */
+#ifndef PLAT_ASM_TEXT
 void title_text_dim(uint8_t *p, const char *s) {
   while (*s) {
     uint8_t c = (uint8_t)*s++;
     *p++ = (c >= 'A' && c <= 'Z') ? (uint8_t)(0xe0 + (c - 'A')) : C_SPACE;
   }
 }
+#endif
 
+#ifndef PLAT_ASM_TEXT
 void title_text_hl(uint8_t *p, const char *s) {
   while (*s) {
     uint8_t c = (uint8_t)*s++;
@@ -134,6 +144,7 @@ void title_text_hl(uint8_t *p, const char *s) {
     *p++ = c;
   }
 }
+#endif
 
 void clear_map(void) {
   uint16_t i;
@@ -141,12 +152,12 @@ void clear_map(void) {
 }
 
 /* draw buffer to spaces, shadow to 0xff so the next flush repaints everything */
+uint8_t screen_cleared;       /* set here: the next flush repaints everything (a platform may shortcut) */
+
 void clear_buffers(void) {
-  uint16_t i;
-  for (i = 0; i < SCREEN_CELLS; i++) {
-    draw_buf[i] = C_SPACE;
-    shadow_vram[i] = 0xff;
-  }
+  memset(draw_buf, C_SPACE, SCREEN_CELLS);
+  memset(shadow_vram, 0xff, SCREEN_CELLS);
+  screen_cleared = 1;
 }
 
 #ifndef PLAT_ASM_COMPOSITE

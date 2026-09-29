@@ -1,8 +1,8 @@
 # BomberNet on the ZX Spectrum 48K: feasibility and plan
 
-Status 2026-09-29: steps 0 to 5 are done. The game plays locally and over the
+Status 2026-09-29: steps 0 to 6 are done. The game plays locally and over the
 network (Spectranet) on the Spectrum build, at the MZ's speed, and an MZ-800
-and a Spectrum play in the same match. Next: fit and speed (step 6).
+and a Spectrum play in the same match. What remains needs hardware (step 7).
 
 Rule that shapes everything: every port simulates the MZ field, 40 x 24 logical
 cells plus a status line, so that any machine can play any other over the relay.
@@ -134,7 +134,7 @@ That keeps the existing bridge and relay untouched.
 | 3 | Determinism across platforms: scripted Spectrum emulator run replaying an MZ recording, hashes compared | Proof that both machines simulate identically; done: 4 recordings, 1,796 frames, no mismatch | 2 days |
 | 4 | Software network device and WebSocket client on Spectranet sockets; against the reference relay, then production | Spectrum against Spectrum; done: in a scripted emulator with the Spectranet emulated at its programming interface, local relay and production, 2 and 3 seats | 6 days |
 | 5 | Cross-platform match: MZ emulator against Spectrum emulator, automated | The goal of the port; done: either machine hosts, 2 and 3 seats, 300 frames with equal hashes | 2 days |
-| 6 | Fit and speed on 48K: memory map, contended RAM placement, assembly for the hot loops | Holds 60 ms frames on a 48K | 4 days |
+| 6 | Fit and speed on 48K: memory map, contended RAM placement, assembly for the hot loops | Holds 60 ms frames on a 48K; done: title at game pace, stage starts 400 -> 260 ms, 890 bytes spare | 4 days |
 | 7 | Real hardware: Spectranext on a 48K | Validated release | needs a unit and a tester |
 | 8 | Browser play: Spectrum emulator with the card-style device on the play page | Spectrum title on the site | 5 days |
 | 9 | ESP modem transport for the Next | Next owners without a card | 4 days |
@@ -234,6 +234,40 @@ Found on the way, for step 6: the Spectrum's title screen runs at 6 TV
 frames per frame (120 ms), twice a game frame, and its first two frames take
 about 20 TV frames each while the whole screen is drawn. Menus react half as
 fast as on the MZ; the game itself is not affected.
+
+## Measured after step 6
+
+| Item | Before | After |
+|---|---|---|
+| Title frame | 6 TV frames (120 ms) | 3 TV frames (60 ms), as the game |
+| First title frame after entering it | 20 + 19 TV frames | 4 + 13 TV frames |
+| First frame of a stage or deathmatch round | 20 TV frames (400 ms) | 11 TV frames (220 to 260 ms) |
+| Program end, stack spare | 64,436, about 760 bytes | 64,311, about 890 bytes |
+
+What was done:
+
+- The title spent its time in C loops that fill the menu box, copy the logo
+  and convert text character by character. Block fills and copies
+  (memset/memcpy) and the five text routines in Z80 assembly
+  (`common/z80_loops.c`, also used by the MZ) fixed it and made the program
+  smaller.
+- After `clear_buffers` the Spectrum wipes its display in one pass (pixels
+  and attributes pushed through the stack pointer) and marks the cells as
+  blank, so only non-blank cells are drawn.
+- A playfield has about 20 distinct groups of four cells. Groups drawn in
+  the current flush are cached (32 entries by a hash of the four cells, a
+  generation byte instead of clearing); a repeat is a copy of 24 pixel bytes
+  and 3 attributes. On a real field 178 of 230 groups hit the cache.
+- The status row is never cached: its colours differ from the same cells
+  elsewhere.
+- Checked: title, game and status line screens identical to the previous
+  build after the same frames, on the Spectrum and on the MZ; all replays
+  and the three network pairings pass.
+
+Not done, not needed so far: an own interrupt routine instead of the ROM's
+(about 1 ms per frame), a faster glyph renderer (the rest of the 260 ms).
+Busy frames can reach 60 ms and more, but only while a sound plays: sounds
+block the game, as they do on the MZ.
 
 ## 6. Risks
 

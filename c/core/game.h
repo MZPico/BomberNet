@@ -178,6 +178,7 @@ void title_text_dim(uint8_t *p, const char *s);   /* greyed-out (blue) */ /* sam
 #define T_ARR_LEFT  0x24
 void clear_map(void);
 void clear_buffers(void);
+extern uint8_t screen_cleared;       /* 1 after clear_buffers until a platform's flush takes note */
 
 /* ---- input.c ---- */
 void input_poll(void);                        /* sample every active player's source into .keys */

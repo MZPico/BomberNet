@@ -64,6 +64,7 @@ zx_no_console:
 
 /* ---- ports ---- */
 uint8_t zx_bar_attr = 0x58;        /* status bar: black on the wall's colour, set in plat_init */
+uint8_t zx_gcache[256];             /* rendered-group cache of flush_screen: 32 x (generation, 4 cells, address, spare) */
 uint8_t zx_groups;                /* groups redrawn since it was last cleared (measurements) */
 
 static uint8_t zx_in(uint16_t port) __z88dk_fastcall __naked {
@@ -302,6 +303,71 @@ fz_scan:
     ld   hl,_zx_title_tab
 fz_t:
     ld   (fz_tab),hl
+
+    ; After clear_buffers every cell is to be drawn. Most are blank: wipe the
+    ; display in one pass instead, in the colour of a blank cell, and draw
+    ; only what is not blank (the status row is always drawn: its bar colour).
+    ld   a,(_screen_cleared)
+    or   a
+    jr   z,fz_scan2
+    xor  a
+    ld   (_screen_cleared),a
+    ld   de,0x40                ; 2 * space: the attribute of a blank cell
+    add  hl,de
+    inc  hl
+    ld   a,(hl)
+    and  0x7f
+    ld   (fz_blank),a
+    di
+    ld   (fz_sp),sp
+    ld   sp,0x5800              ; pixels off, pushed from the top down
+    ld   hl,0
+    ld   b,0                    ; 256 x 12 pushes = 6144 bytes
+fz_wipe:
+    push hl
+    push hl
+    push hl
+    push hl
+    push hl
+    push hl
+    push hl
+    push hl
+    push hl
+    push hl
+    push hl
+    push hl
+    djnz fz_wipe
+    ld   sp,0x5b00              ; attributes: 768 bytes
+    ld   a,(fz_blank)
+    ld   h,a
+    ld   l,a
+    ld   b,64
+fz_wipa:
+    push hl
+    push hl
+    push hl
+    push hl
+    push hl
+    push hl
+    djnz fz_wipa
+    ld   sp,(fz_sp)
+    ei
+    ld   hl,_shadow_vram        ; the display now shows blanks
+    ld   de,_shadow_vram+1
+    ld   bc,919
+    ld   (hl),0x20
+    ldir                        ; rows 0..22; row 23 stays unknown, it is redrawn
+fz_scan2:
+    ld   hl,fz_gen              ; a new generation: the cache is empty
+    inc  (hl)
+    jr   nz,fz_gok
+    inc  (hl)                   ; generation 0 is never used: clear on wrap-around
+    ld   hl,_zx_gcache
+    ld   de,_zx_gcache+1
+    ld   bc,255
+    ld   (hl),0
+    ldir
+fz_gok:
     ld   de,_draw_buf
     ld   hl,_shadow_vram
     ld   c,24               ; rows left
@@ -329,9 +395,10 @@ fz_grp:
     inc  hl
     inc  de
 fz_next:
-    djnz fz_grp
+    dec  b
+    jp   nz,fz_grp
     dec  c
-    jr   nz,fz_row
+    jp   nz,fz_row
 
     di                      ; the draw buffer starts every frame empty:
     ld   (fz_sp),sp         ; filled through the stack pointer, 2 ms
@@ -370,6 +437,7 @@ fz_chg0:                    ; HL = shadow, DE = draw buffer, at the start of the
     ld   (fz_g3),a          ; 3 * group: byte and attribute column in the row
     ld   a,24
     sub  c                  ; row
+    ld   (fz_crow),a
     ld   l,a
     sub  23
     ld   a,0
@@ -411,7 +479,7 @@ fz_not23:
     add  hl,bc
     ex   de,hl
     pop  bc
-    jr   fz_next
+    jp   fz_next
 
 ; one group: four cells at (fz_src) -> shadow, 3 bytes x 8 lines, 3 attributes
 fz_group:
@@ -421,6 +489,99 @@ fz_group:
     ld   de,(fz_shd)
     ld   bc,4
     ldir
+    ; A playfield has some 20 distinct groups of four cells and repeats them
+    ; everywhere. Groups already drawn in this flush are cached by their four
+    ; cells (32 entries: generation, 4 cells, screen address); a repeat is a
+    ; copy of 24 bytes and 3 attributes. The status row is never cached: its
+    ; colours differ from the same cells elsewhere.
+    ld   a,(fz_crow)
+    cp   23
+    jp   z,fz_draw
+    ld   hl,(fz_src)            ; hash: c0 ^ c1 ^ c2 rotated 5 ^ c3 rotated 1, 5 bits
+    ld   a,(hl)                 ; (chosen on real playfields: fewest collisions)
+    inc  hl
+    xor  (hl)
+    inc  hl
+    ld   c,(hl)
+    rrc  c
+    rrc  c
+    rrc  c
+    xor  c
+    inc  hl
+    ld   c,(hl)
+    rlc  c
+    xor  c
+    and  31
+    ld   l,a
+    ld   h,0
+    add  hl,hl
+    add  hl,hl
+    add  hl,hl
+    ld   de,_zx_gcache
+    add  hl,de
+    ld   (fz_ent),hl
+    ld   a,(fz_gen)
+    cp   (hl)
+    jr   nz,fz_miss
+    inc  hl
+    ld   de,(fz_src)
+    ld   b,4
+fz_hcmp:
+    ld   a,(de)
+    cp   (hl)
+    jr   nz,fz_miss
+    inc  hl
+    inc  de
+    djnz fz_hcmp
+    ld   e,(hl)                 ; hit: HL = entry + 5, the screen address of the first copy
+    inc  hl
+    ld   d,(hl)
+    ex   de,hl                  ; HL = source, DE = destination
+    ld   de,(fz_scr)
+    push hl
+    ld   a,8
+fz_cpy:
+    ldi
+    ldi
+    ldi
+    dec  l
+    dec  l
+    dec  l
+    inc  h
+    dec  e
+    dec  e
+    dec  e
+    inc  d
+    dec  a
+    jr   nz,fz_cpy
+    pop  hl                     ; attributes: 58h + third, same low byte
+    ld   a,h
+    rrca
+    rrca
+    rrca
+    and  3
+    or   0x58
+    ld   h,a
+    ld   de,(fz_attr)
+    ldi
+    ldi
+    ldi
+    ret
+fz_miss:                        ; remember where this one is drawn
+    ld   hl,(fz_ent)
+    ld   a,(fz_gen)
+    ld   (hl),a
+    inc  hl
+    ex   de,hl
+    ld   hl,(fz_src)
+    ld   bc,4
+    ldir
+    ex   de,hl
+    ld   de,(fz_scr)
+    ld   (hl),e
+    inc  hl
+    ld   (hl),d
+fz_draw:
     ld   hl,(fz_src)
     ld   de,fz_work
     ld   ix,fz_info
@@ -590,6 +751,10 @@ fz_shd:  defw 0
 fz_scr:  defw 0
 fz_attr: defw 0
 fz_sp:   defw 0
+fz_blank: defb 0
+fz_crow: defb 0
+fz_gen:  defb 0
+fz_ent:  defw 0
 fz_g3:   defb 0
 fz_bar:  defb 0
 fz_row23: defb 0

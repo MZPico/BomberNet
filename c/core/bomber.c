@@ -268,12 +268,12 @@ static void menu_change(int8_t dir) {
 #define MENU_H 10           /* frame rows 10..19: up to 4 fixed rows + 4 player rows */
 
 static void draw_title_box(void) {
-  uint8_t r, c;
-  for (r = 0; r < MENU_H; r++) {
-    uint8_t *p = draw_at(MENU_X, MENU_Y + r);
-    uint8_t edge = (r == 0 || r == MENU_H - 1);
-    for (c = 0; c < MENU_W; c++) p[c] = edge ? T_BOX_H : C_SPACE;
-    if (!edge) { p[0] = T_BOX_V; p[MENU_W - 1] = T_BOX_V; }
+  uint8_t r;
+  uint8_t *p = draw_at(MENU_X, MENU_Y);
+  for (r = 0; r < MENU_H; r++, p += SCREEN_W) {       /* block fills: this runs every title frame */
+    if (r == 0 || r == MENU_H - 1) { memset(p, T_BOX_H, MENU_W); continue; }
+    memset(p + 1, C_SPACE, MENU_W - 2);
+    p[0] = T_BOX_V; p[MENU_W - 1] = T_BOX_V;
   }
   *draw_at(MENU_X, MENU_Y) = T_BOX_TL;
   *draw_at(MENU_X + MENU_W - 1, MENU_Y) = T_BOX_TR;
@@ -369,10 +369,7 @@ static char lobby_extra[32];        /* optional 4th lobby row (link state); "" =
 static void lobby_box(const char *l1, const char *l2, const char *l3) {
   uint8_t r;
   draw_title_box();
-  for (r = 1; r < MENU_H - 1; r++) {
-    uint8_t *p = draw_at(MENU_X + 1, MENU_Y + r), c;
-    for (c = 0; c < MENU_W - 2; c++) p[c] = C_SPACE;
-  }
+  for (r = 1; r < MENU_H - 1; r++) memset(draw_at(MENU_X + 1, MENU_Y + r), C_SPACE, MENU_W - 2);
   title_text(draw_at(MENU_X + (MENU_W - (uint8_t)strlen(l1)) / 2, MENU_Y + 2), l1);
   title_text_hl(draw_at(MENU_X + (MENU_W - (uint8_t)strlen(l2)) / 2, MENU_Y + 4), l2);
   if (lobby_extra[0]) {               /* lobby: link state on its own row, hint one lower */
@@ -642,7 +639,7 @@ static void title_frame(void) {
   uint8_t i;
   tick_timers();
   title_menu();
-  for (i = 0; i < 240; i++) draw_buf[i] = title_logo[i];
+  memcpy(draw_buf, title_logo, 240);
   print_string(draw_at(2, TR(24)), str_copyright);
   print_string(draw_at(4, TR(7)), str_legend_row7);
   print_string(draw_at(5, TR(8)), str_legend_row8);

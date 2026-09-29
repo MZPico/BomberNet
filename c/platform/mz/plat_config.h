@@ -7,4 +7,5 @@
 #define JOY_1X03 2              /* MZ-700 (and MZ-1500) analogue MZ-1X03 on E008h, timed at VBLK */
 #define PLAT_ASM_COMPOSITE 1    /* composite_map and hash_run are assembly (plat_mz.c) */
 #define PLAT_ASM_HASH 1
+#define PLAT_ASM_TEXT 1         /* print_string, hud_text, title_text* in common/z80_loops.c */
 #endif

@@ -8,4 +8,5 @@
 #define JOY_CURSOR   3          /* Cursor / Protek / AGF: keys 5 6 7 8 and 0 */
 #define PLAT_ASM_COMPOSITE 1    /* common/z80_loops.c */
 #define PLAT_ASM_HASH 1
+#define PLAT_ASM_TEXT 1         /* print_string, hud_text, title_text* in common/z80_loops.c */
 #endif
