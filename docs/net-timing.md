@@ -91,5 +91,5 @@ On the local relay (no internet) every pairing chooses the minimum delay, 2.
 
 - The minimum delay stays 2 (120 ms), as in 0.1.1.
 - Mixed versions still play (the delay is announced by the host), but 0.1.1
-  measures in its slow lobby frames: 0.2.0 should replace the play page's
-  0.1.1 when it is released.
+  measures in its slow lobby frames. 0.2.0 replaced 0.1.1 on the play page
+  on 29 September 2026.

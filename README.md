@@ -1,6 +1,10 @@
 # BomberNet — Bomberman for Sharp MZ-700/800 (disassembly, C port, multiplayer)
 
-Version 0.1.1 (tag `v0.1.1`, shown at the bottom of the title screen).
+Version 0.2.0 (tag `v0.2.0`, shown at the bottom of the title screen).
+Release builds: `bombernet.mzf` (Sharp MZ-700/800, also on mzpico.com) and
+`bombernet.tap` (ZX Spectrum 48K, network play with a Spectranet or Spectranext).
+0.2.0 brings the Spectrum version, MZ against Spectrum in one network room,
+and smoother network play (one frame less input delay; `docs/net-timing.md`).
 
 Sharp MZ-700 machine-code tape image (attribute 01, name ` F1200`), Z80,
 load and exec address `1200h`, body `2010h` bytes (`1200h`–`320Fh`).

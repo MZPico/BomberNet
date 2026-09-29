@@ -208,7 +208,7 @@ extern uint16_t hash_n;
  * Lockstep: every input_poll is one step; the local player's keys are sent
  * for step N+NET_DELAY and the step's input vector is awaited from the
  * device, then copied into players[].keys like a replay. */
-#define GAME_VERSION "0.1.1"    /* shown on the title; git tag v0.1.1 */
+#define GAME_VERSION "0.2.0"    /* shown on the title; git tag v0.2.0 */
 #define FRAME_MS 60             /* one game frame on every platform: three 50 Hz TV frames */
 #define BUILD_ID  0x0604          /* bump on any change of the simulation or protocol */
 #define NET_OFF   0
