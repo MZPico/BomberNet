@@ -447,8 +447,12 @@ static uint8_t lobby_enter_code(void) {
 }
 
 /* Lobby messages (NETMSG, byte 0 = kind).
- *  - The host pings every 10 frames, joiners echo, and the round trip in
- *    frames sets the input delay: ceil(rtt / 2) + 1, clamped.
+ *  - The host pings every 10 frames, joiners echo, and the longest round
+ *    trip of the last four, in frames, sets the input delay: ceil(rtt / 2),
+ *    clamped. In a match each side's input has d frames to reach the other,
+ *    so the two directions have 2d frames together; a lobby sample already
+ *    counts up to a frame of polling at either end, which is the margin
+ *    (measurements: docs/net-timing.md).
  *  - Every joiner says HELLO with its local player count (on entry and every
  *    50 frames); the host seats players in slot order (its own first) and
  *    announces the TABLE (total, seats, one byte per player: slot * 4 +
@@ -467,7 +471,7 @@ static void lobby_apply_rtt(uint8_t *samples, uint8_t rtt) {
   for (i = 3; i > 0; i--) samples[i] = samples[i - 1];
   samples[0] = rtt;
   for (i = 0; i < 4; i++) if (samples[i] > m) m = samples[i];
-  d = (uint8_t)((m + 1) / 2 + 1);
+  d = (uint8_t)((m + 1) / 2);
   if (d < NET_DELAY_MIN) d = NET_DELAY_MIN;
   if (d > NET_DELAY_MAX) d = NET_DELAY_MAX;
   net_delay = d;

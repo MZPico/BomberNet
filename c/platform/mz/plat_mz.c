@@ -43,8 +43,13 @@ void plat_player_colour(uint8_t x, uint8_t y, uint8_t player) {
 /* Frame limiter: 8253 counter 1 runs at 15611 Hz; the original game frame
  * measured 58.6 ms (208k cycles) in play, i.e. 915 ticks. With an MZ-1X03
  * the frame is aligned to every 3rd vblank (60 ms) because the stick pulses
- * can only be timed from the VBLK edge. */
+ * can only be timed from the VBLK edge.
+ * In a network match every machine keeps the Spectrum's pace, three PAL TV
+ * frames (59.9 ms, 935 ticks): in lockstep a faster machine catches up with
+ * the slower one and then plays without any margin, so each late packet
+ * would stall it. Same-length frames keep the margin on both sides. */
 #define FRAME_TICKS 915
+#define FRAME_TICKS_NET 935
 #define FRAME_TICKS_VBLK 880                  /* then wait for the vblank edge */
 
 void plat_frame_sync(void) {
@@ -53,7 +58,7 @@ void plat_frame_sync(void) {
     mz_wait_vblank();
     mz_joy1x03_measure();
   } else {
-    mz_frame_sync(FRAME_TICKS);
+    mz_frame_sync(net_active ? FRAME_TICKS_NET : FRAME_TICKS);
   }
 }
 
