@@ -39,7 +39,9 @@ t0 = time.time()
 a, b = inst(), inst()
 BSS_END = S('__BSS_END_tail')
 STACK_TOP = 0xC000
-for c in (a, b): c.poke(BSS_END, bytes([0xa5]) * (STACK_TOP - 0x100 - BSS_END))   # stack watermark (below the stack in use)
+for c in (a, b):
+    c.poke(BSS_END, bytes([0xa5]) * (STACK_TOP - 0x100 - BSS_END))   # stack watermark (below the stack in use)
+    c.firmware_stubs()                                               # inside that range: put them back
 frames(4, a, b)
 print('network device: A', a.read8(ND), 'B', b.read8(ND), flush=True)
 a.poke(MM, [1]); a.poke(MP, [PLAYERS]); a.poke(MN, [1]); a.poke(ML, [LOCAL_A])
@@ -79,6 +81,6 @@ print(f'done: {N} steps, {len(common)} hashed frames compared, {len(mism)} misma
 a.screenshot('build/cpc_net_A.png'); b.screenshot('build/cpc_net_B.png')
 for name, c in (('A', a), ('B', b)):
     m = c.read(BSS_END, STACK_TOP - 0x100 - BSS_END)
-    used_from = next((BSS_END + i for i, v in enumerate(m) if v != 0xa5), STACK_TOP - 0x100)
+    used_from = next((BSS_END + i for i, v in enumerate(m) if v != 0xa5 and BSS_END + i not in (0xBCCB, 0xBD16)), STACK_TOP - 0x100)
     print(f'{name}: lowest stack use {used_from:04x}, {used_from - BSS_END} bytes above the program left unused')
 sys.exit(1 if mism or any(aborts) or not common else 0)

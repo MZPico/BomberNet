@@ -10,6 +10,7 @@
  * glyph line becomes a Mode 1 byte through the scheme's lookup table.
  */
 #include <stdint.h>
+#include <string.h>
 #include "game.h"
 #include "tables.h"
 
@@ -238,7 +239,20 @@ tk_pal:
   __endasm;
 }
 
+/* the variables (BSS) live in the firmware's RAM from A700h: cleared once
+ * the firmware cannot run any more (interrupts off, then our own handler) */
+extern uint8_t _BSS_head[], _BSS_END_tail[];   /* the linker's __BSS_head, __BSS_END_tail */
+
+static void di_now(void) __naked {
+  __asm
+    di
+    ret
+  __endasm;
+}
+
 void plat_init(void) {
+  di_now();
+  memset(_BSS_head, 0, (uint16_t)(_BSS_END_tail - _BSS_head));
   takeover();
   ay(7, 0x3e);                            /* mixer: tone A only */
   ay(8, 0);

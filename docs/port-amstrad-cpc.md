@@ -110,7 +110,7 @@ Estimate 41–43 KB of the 48 KB, to be measured in step 2.
 | 3 | Determinism: PC recordings replayed on the CPC build, hashes compared | same simulation as MZ and Spectrum; done: 8 recordings, 4,268 frames, no mismatch | 1 day |
 | 4 | `tcp_m4.c` under the existing software network device; local relay, then production | CPC against CPC; done: local relay and production, 2 and 3 seats, 300 frames with equal hashes | 3 days |
 | 5 | Cross-play: CPC with MZ, Spectrum and the browser player in one room | the goal; done: CPC against MZ and Spectrum, either hosting, 300 frames with equal hashes | 1 day |
-| 6 | Fit and speed: memory map, assembly where frames run long | holds 60 ms frames on a 464 | 2 days |
+| 6 | Fit and speed: memory map, assembly where frames run long | holds 60 ms frames on a 464; done: loads below A67Bh, frames within 60 ms by the estimate, to be confirmed on hardware | 2 days |
 | 7 | CPCemu with the M4 ROM; then a real CPC with an M4 (a tester from the community) | validated release | 1 day + hardware |
 
 About three weeks, less than the Spectrum: the core split, the
@@ -235,6 +235,38 @@ cpc. Through the local relay, 300 frames each:
 Every pairing chose an input delay of 2 frames. The browser player is the
 MZ-800 build in an emulator on the same relay; it is covered by the MZ
 pairings and checked against the production page in step 7.
+
+## Measured after step 6
+
+Memory map (a 464 has 64 KB; the screen takes C000h-FFFFh):
+
+| Range | What |
+|---|---|
+| 0400h-9F43h | the file: code, tables, data (39,748 bytes; AMSDOS loads up to A67Bh, 1.8 KB spare) |
+| A700h-B7B1h | the variables (BSS, 4,274 bytes): not in the file, in the firmware's RAM, cleared by `plat_init` once interrupts are off and before the firmware could run again |
+| about BE00h-BFFFh | the stack, where the firmware left it (about 330 bytes deep in a match) |
+| BCCBh, BD16h | `tools/cpcemu.py` only: the two firmware stubs for the start-up code |
+
+z88dk's classic CPC start-up does not map `CRT_ORG_BSS`; the build sets the
+internal `__crt_org_bss` and `CRT_INITIALIZE_BSS=0` directly.
+
+Frame work, 4 players, 200 frames (plain 4 MHz Z80; a real CPC about 20 %
+more):
+
+| | Median | 90th percentile | 99th percentile |
+|---|---|---|---|
+| tones on | 39.6 ms | 67.9 ms | 93.5 ms |
+| tones off | 39.5 ms | 44.1 ms | 74.5 ms |
+| network calls (send, receive) | about 5.5 ms more per frame | | |
+
+The long frames are the tones: the game stands still while one plays, as
+on the MZ and the Spectrum. Without them a busy 4-player frame with the
+network takes about 50 ms here, about 60 ms on a real CPC: at the limit,
+which the hardware check of step 7 settles. Sending the M4's data with
+OUTI saved 0.4 ms of the 2.8 ms a send costs.
+
+Possible later, if the hardware asks for it: the scan of the 1000 cells
+(about 9 ms), the network calls' C code (about 2 ms).
 
 ## 7. Risks
 

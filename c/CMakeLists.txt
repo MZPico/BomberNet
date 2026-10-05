@@ -31,8 +31,13 @@ elseif(PLATFORM STREQUAL "zx")
 elseif(PLATFORM STREQUAL "cpc")
     # Amstrad CPC 464/6128: an AMSDOS binary; the game takes the machine over
     # in plat_init (own interrupt handler, firmware not called again).
-    set(CPC_ORG 0x1200)
-    set(TARGET_FLAGS +cpc -create-app -zorg=${CPC_ORG} -pragma-define:CRT_DISABLELOADER=1 -pragma-define:CRT_DISABLE_FIRMWARE_ISR=1
+    # Code and data are loaded from 0400h and must end below A67Bh (AMSDOS's
+    # top of memory with a disc drive). The variables (BSS) are not in the
+    # file: they live in the firmware's RAM from A700h, zeroed by the game
+    # once it has taken the machine over (plat_init).
+    set(CPC_ORG 0x0400)
+    set(TARGET_FLAGS +cpc -create-app -zorg=${CPC_ORG} -pragma-define:__crt_org_bss=0xA700 -pragma-define:CRT_INITIALIZE_BSS=0
+                     -pragma-define:CRT_DISABLELOADER=1 -pragma-define:CRT_DISABLE_FIRMWARE_ISR=1
                      -pragma-define:CRT_ENABLE_STDIO=0 -pragma-define:CLIB_OPEN_MAX=0
                      -pragma-define:CLIB_EXIT_STACK_SIZE=0 -pragma-redirect:fputc_cons=cpc_no_console)
     set(PLAT_SOURCES "${PLAT_DIR}/plat_cpc.c" "${PLAT_DIR}/tables.c" "${PLAT_DIR}/tcp_m4.c"

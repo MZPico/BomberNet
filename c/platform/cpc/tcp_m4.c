@@ -67,17 +67,15 @@ mo_h:
     dec  d
     jr   nz,mo_h
     ld   hl,(_m4_data)
-    ld   de,(_m4_dlen)
-mo_d:
-    ld   a,d
-    or   e
+    ld   a,(_m4_dlen)       ; at most 250 bytes (tcp_send splits longer ones)
+    or   a
     jr   z,mo_ack
-    ld   b,0xfe
-    ld   a,(hl)
-    out  (c),a
-    inc  hl
-    dec  de
-    jr   mo_d
+    ld   d,a
+mo_d:
+    inc  b                  ; OUTI: 36 T-states a byte with the loop
+    outi
+    dec  d
+    jr   nz,mo_d
 mo_ack:
     ld   bc,0xfc00
     out  (c),c
