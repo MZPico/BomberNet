@@ -22,9 +22,12 @@ the first byte < 0x20; WORD little-endian; the 4-byte status record (bit 0
 BUSY, bit 1 CMD_OUTPUT, bit 6 IN_PROGRESS, bit 7 ERROR; byte 2 = error code
 on ERROR); output read from 0x51 after CMD_OUTPUT; STORNO cancels.
 
-Detection: REVD subtype byte = 0x4D ('M'), then INFO (0x95) feature bit
-`NET` (bit 3 of the feature byte, proposed). Without both, a program must
-run offline.
+Detection: a valid REVD answer (any Unicard-compatible device), then INFO
+(0x95) with feature bit `NET` (bit 3 of the feature byte). The INFO status
+must read no ERROR, CMD_OUTPUT set, byte 1 = 0x95 and byte 2 = 16: older
+Unicard firmware answers an unknown command with ERROR and may leave a stale
+CMD_OUTPUT bit. The REVD subtype ('M' = MZPico) is informational only.
+Without the NET bit, a program must run offline.
 
 ## Model
 
@@ -137,10 +140,21 @@ each (one NETSEND per local slot; the relay keys inputs by socket + slot).
   `mz_wasm_net_push(line)`, `mz_wasm_net_pop()`, `mz_wasm_net_link(1|0)` for
   the page's WebSocket. Verified 2026-09-11: two headless instances through
   the local relay via port I/O (`tools/nettest.py`).
-- Firmware: pending (phase 5 step 5).
+- Firmware: MZPico firmware, `src/mz_devices/unicard_net.cpp`, over the
+  WebSocket of the production relay.
 - ZX Spectrum (BomberNet `c/common/netdev_soft.c`): the device runs on the
   machine itself over a WebSocket client and the Spectranet socket calls;
   talks to the same relay as the MZPico.
+- Unicard (MZ-800 Unicard firmware, STM32 + Ethernet): `emu_NET.c`, the same
+  device state over the JSON-lines TCP transport of `relay/relay.py` (run it
+  with `RELAY_TCP_HOST=0.0.0.0`); relay address in `/unicard/network.cfg`
+  (`NETRELAYADDR`, `NETRELAYPORT`, default 8766).
+  The Unicard reaches only this TCP transport, not the WebSocket-only
+  production relay on mzpico.com: it plays on a LAN or through a self-hosted
+  `relay.py`, not against the browser player, until a TCP-to-WebSocket bridge
+  or a WebSocket client in the STM32 firmware exists. Unicard support is
+  maintained on the firmware side against this document; the game has no
+  Unicard-specific path.
 
 ## Open points
 
