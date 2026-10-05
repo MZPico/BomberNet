@@ -35,11 +35,44 @@ static void place_bomb(uint8_t owner) {
   }
 }
 
+#ifdef ESP_FAST128
+void place_bombs(void) __naked {
+ __asm
+    push ix
+    ld ix,_players
+    ld bc,0x0400
+e15_place:
+    ld a,(ix+0)
+    or a
+    jr z,e15_place_next
+    ld a,(ix+5)
+    cp 6
+    jr nc,e15_place_next
+    bit 4,(ix+2)
+    jr z,e15_place_next
+    push bc
+    ld l,c
+    ld h,0
+    push hl
+    call _place_bomb
+    pop hl
+    pop bc
+e15_place_next:
+    ld de,16
+    add ix,de
+    inc c
+    djnz e15_place
+    pop ix
+    ret
+ __endasm;
+}
+#else
 void place_bombs(void) {
   uint8_t i;
   for (i = 0; i < MAX_PLAYERS; i++)
     if (players[i].active) place_bomb(i);
 }
+#endif
 
 /* Fire tiles carry no owner; credit goes to the closest exploding bomb. */
 uint8_t bomb_owner_near(uint8_t x, uint8_t y) {
@@ -55,6 +88,40 @@ uint8_t bomb_owner_near(uint8_t x, uint8_t y) {
 }
 
 /* states 1..4 advance every 7 frames, 5..13 every frame, 14 -> free */
+#ifdef ESP_FAST128
+static void update_bombs_full(void) {
+  uint8_t i;
+  bomb_anim ^= 2;
+  for (i = 0; i < BOMB_SLOTS; i++) {
+    bomb_t *b = &bombs[i];
+    if (b->state == BOMB_FREE) continue;
+    if (b->state < BOMB_EXPLODE) {
+      if (++b->timer != 7) continue;
+    }
+    b->timer = 0;
+    if (++b->state == BOMB_END) { b->state = BOMB_FREE; continue; }
+    if (b->state >= BOMB_EXPLODE && players_alive())
+      plat_tone(((uint16_t)b->state << 8) | 0x0a, 12);
+  }
+}
+void update_bombs(void) __naked {
+ __asm
+    ld hl,_bombs
+    ld de,5
+    ld b,8
+e15_bupdate:
+    ld a,(hl)
+    or a
+    jp nz,_update_bombs_full
+    add hl,de
+    djnz e15_bupdate
+    ld a,(_bomb_anim)
+    xor 2
+    ld (_bomb_anim),a
+    ret
+ __endasm;
+}
+#else
 void update_bombs(void) {
   uint8_t i;
   bomb_anim ^= 2;
@@ -70,6 +137,7 @@ void update_bombs(void) {
       plat_tone(((uint16_t)b->state << 8) | 0x0a, 12);
   }
 }
+#endif
 
 /* fire code for the arms of the explosion being drawn */
 static uint8_t fire_code;
@@ -124,6 +192,47 @@ static void put_bomb_char(bomb_t *b, uint8_t *m, uint8_t code) {
   *m = code;
 }
 
+#ifdef ESP_FAST128
+static void draw_bombs_full(void) {
+  uint8_t i;
+  for (i = 0; i < BOMB_SLOTS; i++) {
+    bomb_t *b = &bombs[i];
+    uint8_t *m, code;
+    if (b->state == BOMB_FREE) continue;
+    m = map_at(b->x, b->y);
+    if (b->state == BOMB_ERASE) { fill_2x2(m, C_SPACE); continue; }
+    if (b->state >= BOMB_EXPLODE) {
+      code = b->state * 2 + 0xd6;            /* 0xe0 .. 0xee centre */
+      put_tile(m, code);
+      code += 2;
+      fire_code = (code >= 0xf0) ? C_SPACE : code;
+      blast_arms(b);
+      continue;
+    }
+    /* ticking: frames 0x60,0x64,0x68,0x6c (+anim) in both layers */
+    code = (b->state - 1) * 4 + C_BOMB_TILE + bomb_anim;
+    put_bomb_char(b, m, code);
+    put_bomb_char(b, m + 1, code + 1);
+    put_bomb_char(b, m + SCREEN_W, code + 16);
+    put_bomb_char(b, m + SCREEN_W + 1, code + 17);
+    put_tile(draw_at(b->x, b->y), code);
+  }
+}
+void draw_bombs(void) __naked {
+ __asm
+    ld hl,_bombs
+    ld de,5
+    ld b,8
+e15_bdraw:
+    ld a,(hl)
+    or a
+    jp nz,_draw_bombs_full
+    add hl,de
+    djnz e15_bdraw
+    ret
+ __endasm;
+}
+#else
 void draw_bombs(void) {
   uint8_t i;
   for (i = 0; i < BOMB_SLOTS; i++) {
@@ -149,3 +258,4 @@ void draw_bombs(void) {
     put_tile(draw_at(b->x, b->y), code);
   }
 }
+#endif

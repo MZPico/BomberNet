@@ -64,7 +64,18 @@ zx_no_console:
 
 /* ---- ports ---- */
 uint8_t zx_bar_attr = 0x58;        /* status bar: black on the wall's colour, set in plat_init */
-uint8_t zx_gcache[256];             /* rendered-group cache of flush_screen: 32 x (generation, 4 cells, address, spare) */
+#ifdef ESP01_COMPACT48
+extern uint8_t zx_gcache[256];
+void zx_cache_address(void) __naked {
+  __asm
+    PUBLIC _zx_gcache
+    defc _zx_gcache = 23744
+  __endasm;
+}
+#else
+uint8_t zx_gcache[256];
+#endif
+/* rendered-group cache of flush_screen: 32 x (generation, 4 cells, address, spare) */
 uint8_t zx_groups;                /* groups redrawn since it was last cleared (measurements) */
 
 static uint8_t zx_in(uint16_t port) __z88dk_fastcall __naked {
@@ -181,10 +192,193 @@ uint8_t plat_key_char(void) {
 #define FRAMES_LO ((volatile uint8_t *)0x5c78)     /* ROM frame counter, +1 every 20 ms */
 static uint8_t last_tick;
 
+#ifdef ESP_FAST128
+extern void net_background(void);
+#endif
+#ifdef ESP_FAST128
+static uint8_t ay_active;
+static uint8_t ay_remaining[3];
+static void zx_ay(uint16_t rv) __z88dk_fastcall __naked {
+  __asm
+    ld e,h
+    ld a,l
+    ld bc,0xfffd
+    out (c),a
+    ld b,0xbf
+    out (c),e
+    ret
+  __endasm;
+}
+static void ay_tone(uint16_t ratio,uint8_t len) __naked {
+ __asm
+    pop af
+    pop de
+    pop hl
+    push hl
+    push de
+    push af
+    ld a,(_ay_active)
+    or a
+    jr nz,a10_ready
+    push hl
+    push de
+    ld hl,8
+    call _zx_ay
+    ld hl,9
+    call _zx_ay
+    ld hl,10
+    call _zx_ay
+    xor a
+    ld (_ay_remaining),a
+    ld (_ay_remaining+1),a
+    ld (_ay_remaining+2),a
+    pop de
+    pop hl
+a10_ready:
+    ld a,1
+    ld (_ay_active),a
+    ld b,0
+    ld a,e
+    cp 14
+    jr z,a10_channel
+    inc b
+    cp 12
+    jr z,a10_channel
+    inc b
+a10_channel:
+    push hl
+    ld hl,_ay_remaining
+    ld c,b
+    ld a,b
+    or a
+    jr z,a10_duration
+    inc hl
+    dec a
+    jr z,a10_duration
+    inc hl
+a10_duration:
+    ld a,e
+    cp 32
+    ld a,1
+    jr c,a10_save
+    ld a,e
+    cp 48
+    ld a,2
+    jr c,a10_save
+    ld a,3
+a10_save:
+    ld (hl),a
+    pop hl
+    ld a,c
+    add a,a
+    push af
+    ld c,l
+    ld a,h
+    and 15
+    add a,a
+    ld e,a
+    ld d,0
+    ld hl,a10_periods
+    add hl,de
+    ld e,(hl)
+    inc hl
+    ld d,(hl)
+    ex de,hl
+    ld a,c
+    cp 50
+    jr nz,a10_pitch
+    ld de,5
+    add hl,de
+a10_pitch:
+    pop af
+    ld b,a
+    ld d,h
+    ld h,l
+    ld l,b
+    push bc
+    call _zx_ay
+    pop bc
+    ld h,d
+    ld a,b
+    inc a
+    ld l,a
+    push bc
+    call _zx_ay
+    pop bc
+    ld a,b
+    rrca
+    add a,8
+    ld l,a
+    ld h,12
+    call _zx_ay
+    ld hl,0x3807
+    jp _zx_ay
+a10_periods:
+    defw 6,27,52,78,103,129,154,180,205,231,256,283,307,334,358,385
+ __endasm;
+}
+static void ay_update(void) __naked {
+ __asm
+
+    ld a,(_ay_active)
+    or a
+    ret z
+    ld a,(_net_active)
+    or a
+    jr nz,a10_running
+    ld hl,8
+    call _zx_ay
+    ld hl,9
+    call _zx_ay
+    ld hl,10
+    call _zx_ay
+    xor a
+    ld (_ay_active),a
+    ret
+a10_running:
+    ld de,_ay_remaining
+    ld b,3
+    ld l,8
+a10_decay:
+    ld a,(de)
+    or a
+    jr z,a10_next
+    dec a
+    ld (de),a
+    jr nz,a10_next
+    push bc
+    push de
+    push hl
+    ld h,0
+    call _zx_ay
+    pop hl
+    pop de
+    pop bc
+a10_next:
+    inc de
+    inc l
+    djnz a10_decay
+    ret
+ __endasm;
+}
+
+#endif
 void plat_frame_sync(void) {                       /* a game frame is three TV frames */
   uint8_t late = (uint8_t)(*FRAMES_LO - last_tick) >= 3;
-  while ((uint8_t)(*FRAMES_LO - last_tick) < 3) ;
+  while ((uint8_t)(*FRAMES_LO - last_tick) < 3) {
+#ifdef ESP_FAST128
+    if (net_active) net_background();
+#endif
+  }
+#ifdef ESP_FAST128
+  if (net_active && (uint8_t)(*FRAMES_LO-last_tick)<6) last_tick += 3;
+  else last_tick = *FRAMES_LO;
+#else
   last_tick = *FRAMES_LO;
+#endif
+#ifdef ESP_FAST128
+  ay_update();
+#endif
   /* A new TV frame has just begun: the beam is in the top border (64 lines,
    * 14,000 T-states) and the joystick ports can be read. After a frame that
    * ran long the beam may be anywhere: the last readings stay. */
@@ -234,6 +428,12 @@ bp_wait:
 void plat_tone(uint16_t ratio, uint8_t len) {
   uint16_t half;
   if (ratio < 0x0100) ratio = 0x0100;
+#ifdef ESP_FAST128
+  if (net_active) {
+    ay_tone(ratio,len);
+    return;
+  }
+#endif
   half = (ratio >> 4) - (ratio >> 9);              /* ratio * 1.579 / 26 */
   tone_half = half > 3 ? half - 2 : 1;             /* less the T-states around the wait */
   tone_count = ((uint16_t)len * 529) / (ratio >> 2);
@@ -417,6 +617,17 @@ fz_next:
     ld   sp,_draw_buf+1000
     ld   hl,0x2020
     ld   b,125
+#ifdef ESP_FAST128
+    ; composite_frame replaces all 960 playfield cells on the next frame.
+    ; Only HUD cells need clearing during a network match.
+    ld   a,(_net_active)
+    or   a
+    jr   z,fz_clr
+    ld   a,(_title_mode)
+    or   a
+    jr   nz,fz_clr
+    ld   b,5
+#endif
 fz_clr:
     push hl
     push hl
@@ -425,6 +636,7 @@ fz_clr:
     djnz fz_clr
     ld   sp,(fz_sp)
     ei
+    call fz_hud_colors
     pop  ix
     ret
 
@@ -672,6 +884,18 @@ fz_line:
     inc  ix
     djnz fz_line
 
+    ; The status row gets its final attributes once, in fz_hud_colors.
+    ; Never overwrite them with temporary scene/glyph colors during a flush.
+    ld a,(fz_bar)
+    or a
+    jr z,h16_scene_attrs
+    ld a,(_title_mode)
+    or a
+    jr nz,h16_scene_attrs
+    ld a,(fz_row23)
+    or a
+    ret nz
+h16_scene_attrs:
     ld   ix,fz_info         ; attributes: squares 0, 1, 2
     ld   hl,(fz_attr)
     ld   b,(ix+0)
@@ -728,7 +952,7 @@ fz_bartab:
     jr   nz,fz_bartab1
     ld   a,(_zx_bar_attr)
     ret
-fz_bartab1:                  ; the digit keeps its ink, on the bar's colour
+fz_bartab1:                  ; Preserve digit ink on the status bar.
     and  0x07
     ld   b,a
     ld   a,(_zx_bar_attr)
@@ -765,9 +989,77 @@ fz_attr: defw 0
 fz_sp:   defw 0
 fz_blank: defb 0
 fz_crow: defb 0
+#ifdef ESP01_COMPACT48
+fz_gen:  defb 255              ; clear relocated cache on the first flush
+#else
 fz_gen:  defb 0
+#endif
 fz_ent:  defw 0
 fz_g3:   defb 0
+fz_hud_colors:
+    ld a,(fz_bar)
+    or a
+    ret z
+    ld a,(_title_mode)
+    or a
+    ret nz
+    ld a,(_player_count)
+    cp 2
+    jr nc,h16_count
+    ld a,255
+h16_count:
+    inc a
+    ld c,a
+    ld de,h16_two
+    cp 3
+    jr z,h16_start
+    ld de,h16_compact
+    cp 4
+    jr nz,h16_start
+    ld de,h17_three
+h16_start:
+    ld hl,0x5ae1
+    ld b,30
+h16_loop:
+    ld a,(de)
+    inc de
+    cp c
+    jr nc,h16_black
+    or a
+    jr z,h16_black
+    push hl
+    push de
+    dec a
+    ld l,a
+    ld h,0
+    ld de,_player_attrs
+    add hl,de
+    ld a,(hl)
+    and 7
+    pop de
+    pop hl
+    jr h16_combine
+h16_black:
+    xor a
+h16_combine:
+    push bc
+    ld c,a
+    ld a,(_zx_bar_attr)
+    and 0xf8
+    or c
+    pop bc
+    cp (hl)
+    jr z,h16_next
+    ld (hl),a
+h16_next:
+    inc hl
+    djnz h16_loop
+    ret
+h16_two: defb 1,1,0,0,0,0,0,1,1,2,2,2,0,0,0,0,0,2,2,0,0,0,0,0,0,0,0,0,0,0
+h16_compact: defb 1,0,0,0,0,0,1,2,2,0,0,0,0,2,2,3,0,0,0,0,0,3,4,4,0,0,0,0,4,4
+
+h17_three: defb 1,0,0,0,0,0,1,2,2,0,0,0,0,2,2,3,0,0,0,0,0,3,0,0,0,0,0,0,0,0
+
 fz_bar:  defb 0
 fz_row23: defb 0
 fz_info: defs 8

@@ -36,7 +36,13 @@ uint8_t hash_period;
 uint8_t replay_active;
 uint8_t replay_keys[MAX_PLAYERS];
 
-void rng_seed(uint16_t seed) { rand_seed = seed ? seed : 1; }
+/* Canonical inactive hit coordinates at match seeding (included in hashes). */
+void rng_seed(uint16_t seed) {
+  rand_seed = seed ? seed : 1;
+#ifdef ESP_FAST128
+  hit_x = hit_y = 0;
+#endif
+}
 
 /* hh = rotl16(hh) ^ byte + 9E37h per byte. The byte loop is assembly on the
  * Z80 (hash_run in the platform layer, over hash_ptr/hash_n): the C version at ~200 T
@@ -44,7 +50,34 @@ void rng_seed(uint16_t seed) { rand_seed = seed ? seed : 1; }
 uint16_t hh;
 const uint8_t *hash_ptr;
 uint16_t hash_n;
+#ifdef ESP_FAST128
+static void h8(uint8_t b) __naked {
+ __asm
+    pop bc
+    pop hl
+    push hl
+    push bc
+    ld a,l
+    ld de,(_hh)
+    sla e
+    rl d
+    jr nc,h11_nocarry
+    inc e
+h11_nocarry:
+    xor e
+    add a,0x37
+    ld e,a
+    ld a,d
+    adc a,0x9e
+    ld d,a
+    ld (_hh),de
+    ret
+
+ __endasm;
+}
+#else
 static void h8(uint8_t b) { hh = (uint16_t)(((hh << 1) | (hh >> 15)) ^ b) + 0x9e37; }
+#endif
 static void h16(uint16_t v) { h8((uint8_t)v); h8((uint8_t)(v >> 8)); }
 static void hbytes(const uint8_t *p, uint16_t n) {
 #ifdef PLAT_ASM_HASH
@@ -68,7 +101,12 @@ static void hash_records(void) {
 }
 
 /* every frame after frame_no++ (hash_period != 0): the period's slice */
-void hash_frame_step(void) {
+#ifdef ESP_FAST128
+void hash_frame_step_general(void)
+#else
+void hash_frame_step(void)
+#endif
+{
   uint8_t k = frame_no % hash_period, r0, r1;
   if (hash_period < 2) { compute_state_hash(); return; }
   if (k == 0) {                       /* hash frame: records + accumulated map */
@@ -88,6 +126,74 @@ void hash_frame_step(void) {
     map_acc = hh;
   }
 }
+
+#ifdef ESP_FAST128
+/* Common 16-frame schedule, using exactly the original 25-row slices. */
+void hash_frame_step(void) __naked {
+ __asm
+    ld a,(_hash_period)
+    cp 16
+    jp nz,_hash_frame_step_general
+    ld a,(_frame_no)
+    and 15
+    jp z,_hash_frame_step_general
+    dec a
+    ld e,a
+    add a,a
+    add a,e
+    ld e,a
+    ld d,0
+    ld hl,hf_slices
+    add hl,de
+    ld e,(hl)
+    inc hl
+    ld d,(hl)
+    inc hl
+    ld a,(hl)
+    ld hl,0
+    ld l,a
+    ld (_hash_n),hl
+    ld (_hash_ptr),de
+    ld hl,(_map_acc)
+    ld (_hh),hl
+    call _hash_run
+    ld hl,(_hh)
+    ld (_map_acc),hl
+    ret
+hf_slices:
+    defw _map_layer+0
+    defb 40
+    defw _map_layer+40
+    defb 80
+    defw _map_layer+120
+    defb 80
+    defw _map_layer+200
+    defb 40
+    defw _map_layer+240
+    defb 80
+    defw _map_layer+320
+    defb 80
+    defw _map_layer+400
+    defb 40
+    defw _map_layer+440
+    defb 80
+    defw _map_layer+520
+    defb 80
+    defw _map_layer+600
+    defb 40
+    defw _map_layer+640
+    defb 80
+    defw _map_layer+720
+    defb 80
+    defw _map_layer+800
+    defb 40
+    defw _map_layer+840
+    defb 80
+    defw _map_layer+920
+    defb 80
+  __endasm;
+}
+#endif
 
 /* full hash of the state right now (match start, hash_period 1) */
 void compute_state_hash(void) {
@@ -121,10 +227,31 @@ uint8_t rnd(void) {
   return (uint8_t)v;
 }
 
+#ifdef ESP_FAST128
+void tick_timer(ftimer_t *t) __naked {
+ __asm
+    pop af
+    pop hl
+    push hl
+    push af
+    ld a,(hl)
+    inc a
+    inc hl
+    cp (hl)
+    jr c,t14_store
+    xor a
+t14_store:
+    dec hl
+    ld (hl),a
+    ret
+ __endasm;
+}
+#else
 void tick_timer(ftimer_t *t) {
   uint8_t c = t->counter + 1;
   t->counter = (c >= t->period) ? 0 : c;
 }
+#endif
 
 /* Advance all frame timers, then present the frame. */
 /* tmr_explode and tmr_enemy_die are ticked by their users only (as in the
@@ -135,7 +262,13 @@ void tick_timers(void) {
   tick_timer(&tmr_enemy_move);
   tick_timer(&tmr_time);
   plat_frame_sync();
+#ifdef ESP_FAST128
+  extern uint8_t esp_defer_present;
+  if (!net_active || !esp_defer_present) {
+#endif
   flush_screen();
   players_death_colour();
+#ifdef ESP_FAST128
+  }
+#endif
 }
-

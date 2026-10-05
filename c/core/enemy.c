@@ -90,6 +90,55 @@ static void enemy_chase(enemy_t *e) {
  * down; on expiry its type steps 3 -> 2 -> 1 -> 0 -> 3. Type 0 chases the
  * player; the others chase every 16th count, re-roll their direction every
  * 4th count, otherwise walk straight and re-roll once when blocked. */
+#ifdef ESP_FAST128
+static void enemy_ai_full(void) {
+  uint8_t i;
+  if (tmr_enemy_move.counter != 0) return;
+  enemy_anim ^= 2;
+  for (i = 0; i < ENEMY_SLOTS; i++) {
+    enemy_t *e = &enemies[i];
+    uint8_t n;
+    if (e->state != ENEMY_ALIVE) continue;
+    if (e->countdown == 0) {
+      e->type = (e->type == 0) ? 3 : e->type - 1;
+      e->countdown = enemy_period;
+    } else {
+      e->countdown--;
+    }
+    if (e->type == 0) { enemy_chase(e); continue; }
+    n = e->countdown & 0x0f;
+    if (n == 0) { enemy_chase(e); continue; }
+    if ((n & 3) == 0) {
+      e->dir = rnd() & 3;
+      if (enemy_probe(e) < 0x80) enemy_step(e);
+      continue;
+    }
+    if (enemy_probe(e) < 0x80) { enemy_step(e); continue; }
+    e->dir = rnd() & 3;
+    if (enemy_probe(e) < 0x80) enemy_step(e);
+  }
+}
+void enemy_ai(void) __naked {
+ __asm
+    ld a,(_tmr_enemy_move)
+    or a
+    ret nz
+    ld hl,_enemies
+    ld de,6
+    ld b,8
+e15_ai:
+    ld a,(hl)
+    cp 1
+    jp z,_enemy_ai_full
+    add hl,de
+    djnz e15_ai
+    ld a,(_enemy_anim)
+    xor 2
+    ld (_enemy_anim),a
+    ret
+ __endasm;
+}
+#else
 void enemy_ai(void) {
   uint8_t i;
   if (tmr_enemy_move.counter != 0) return;
@@ -117,6 +166,7 @@ void enemy_ai(void) {
     if (enemy_probe(e) < 0x80) enemy_step(e);
   }
 }
+#endif
 
 /* write one enemy char; fire under it starts the death animation */
 static void put_enemy_char(enemy_t *e, uint8_t *p, uint8_t code) {
@@ -124,6 +174,55 @@ static void put_enemy_char(enemy_t *e, uint8_t *p, uint8_t code) {
   *p = code;
 }
 
+#ifdef ESP_FAST128
+static void draw_enemies_full(void) {
+  uint8_t i;
+  for (i = 0; i < ENEMY_SLOTS; i++) {
+    enemy_t *e = &enemies[i];
+    uint8_t *p;
+    uint8_t code;
+    if (e->state == ENEMY_FREE) continue;
+    p = draw_at(e->x, e->y);
+    if (e->state == ENEMY_ALIVE) {
+      code = C_ENEMY_BASE + e->type * 4 + enemy_anim;
+      put_enemy_char(e, p, code);
+      put_enemy_char(e, p + 1, code + 1);
+      put_enemy_char(e, p + SCREEN_W, code + 16);
+      put_enemy_char(e, p + SCREEN_W + 1, code + 17);
+      continue;
+    }
+    /* dying: states 2..9 -> tiles 0x22..0x30, past the sheet -> blank */
+    code = e->state * 2 + 0x1e;
+    if (code >= 0x30) fill_2x2(p, C_SPACE); else put_tile(p, code);
+    tick_timer(&tmr_enemy_die);           /* ticked per dying enemy, as the original */
+    if (tmr_enemy_die.counter != 0) continue;
+    e->state++;
+    if (e->state < 10) {
+      plat_tone(((uint16_t)e->state << 8) | 0x32, 10);
+      continue;
+    }
+    e->state = ENEMY_FREE;
+    players[bomb_owner_near(e->x, e->y)].score += e->type * 4 + 2 + (rnd() & 3) + 1;
+    if (players_alive()) {
+      if (--enemies_left == 0) stage_cleared++;
+    }
+  }
+}
+void draw_enemies(void) __naked {
+ __asm
+    ld hl,_enemies
+    ld de,6
+    ld b,8
+e15_edraw:
+    ld a,(hl)
+    or a
+    jp nz,_draw_enemies_full
+    add hl,de
+    djnz e15_edraw
+    ret
+ __endasm;
+}
+#else
 void draw_enemies(void) {
   uint8_t i;
   for (i = 0; i < ENEMY_SLOTS; i++) {
@@ -157,3 +256,4 @@ void draw_enemies(void) {
     }
   }
 }
+#endif

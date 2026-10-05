@@ -27,19 +27,67 @@ uint8_t *map_at(uint8_t x, uint8_t y) {
 #endif
 
 /* 2x2 tile from a 16-wide tile sheet: code, code+1 / code+16, code+17 */
+#ifdef ESP_FAST128
+void put_tile(uint8_t *p, uint8_t code) __naked {
+ __asm
+    pop af
+    pop bc
+    pop hl
+    push hl
+    push bc
+    push af
+    ld a,c
+    ld (hl),a
+    inc hl
+    inc a
+    ld (hl),a
+    ld de,39
+    add hl,de
+    add a,15
+    ld (hl),a
+    inc hl
+    inc a
+    ld (hl),a
+    ret
+ __endasm;
+}
+#else
 void put_tile(uint8_t *p, uint8_t code) {
   p[0] = code;
   p[1] = code + 1;
   p[SCREEN_W] = code + 16;
   p[SCREEN_W + 1] = code + 17;
 }
+#endif
 
+#ifdef ESP_FAST128
+void fill_2x2(uint8_t *p, uint8_t code) __naked {
+ __asm
+    pop af
+    pop bc
+    pop hl
+    push hl
+    push bc
+    push af
+    ld (hl),c
+    inc hl
+    ld (hl),c
+    ld de,39
+    add hl,de
+    ld (hl),c
+    inc hl
+    ld (hl),c
+    ret
+ __endasm;
+}
+#else
 void fill_2x2(uint8_t *p, uint8_t code) {
   p[0] = code;
   p[1] = code;
   p[SCREEN_W] = code;
   p[SCREEN_W + 1] = code;
 }
+#endif
 
 uint8_t is_2x2_clear(const uint8_t *p) {
   if (p[0] != C_SPACE) return p[0];
@@ -64,6 +112,47 @@ void print_num2(uint8_t *p, uint8_t v) {
 
 static const uint16_t pow10[4] = {10000, 1000, 100, 10};
 
+#ifdef ESP_FAST128
+void print_num5(uint8_t *p,uint16_t v) __naked {
+ __asm
+    pop af
+    pop hl
+    pop de
+    push de
+    push hl
+    push af
+    ex de,hl
+    push ix
+    ld ix,_pow10
+    ld b,4
+p9_digit:
+    push bc
+    ld c,(ix+0)
+    ld b,(ix+1)
+    ex de,hl
+    xor a
+p9_sub:
+    inc a
+    or a
+    sbc hl,bc
+    jr nc,p9_sub
+    add hl,bc
+    dec a
+    ex de,hl
+    ld (hl),a
+    inc hl
+    inc ix
+    inc ix
+    pop bc
+    djnz p9_digit
+    ld (hl),e
+    inc hl
+    ld (hl),0
+    pop ix
+    ret
+ __endasm;
+}
+#else
 void print_num5(uint8_t *p, uint16_t v) {
   uint8_t i;
   for (i = 0; i < 4; i++) {
@@ -75,6 +164,8 @@ void print_num5(uint8_t *p, uint16_t v) {
   *p++ = (uint8_t)v;
   *p = 0;                       /* the original always shows a trailing 0 */
 }
+
+#endif
 
 /* game-mode glyph for each letter A..Z (0 = not available) */
 const uint8_t hud_letters[26] = {          /* public: common/z80_loops.c reads it */
@@ -94,6 +185,56 @@ void hud_text(uint8_t *p, const char *s) {
 }
 #endif
 
+#ifdef ESP_FAST128
+void print_num4(uint8_t *p,uint16_t v) __naked {
+ __asm
+    pop af
+    pop hl
+    pop de
+    push de
+    push hl
+    push af
+    ld bc,10000
+    or a
+    sbc hl,bc
+    jr c,p4_restore
+    ld hl,9999
+    jr p4_ready
+p4_restore:
+    add hl,bc
+p4_ready:
+    ex de,hl
+    push ix
+    ld ix,_pow10+2
+    ld b,3
+p4_digit:
+    push bc
+    ld c,(ix+0)
+    ld b,(ix+1)
+    ex de,hl
+    xor a
+p4_sub:
+    inc a
+    or a
+    sbc hl,bc
+    jr nc,p4_sub
+    add hl,bc
+    dec a
+    ex de,hl
+    ld (hl),a
+    inc hl
+    inc ix
+    inc ix
+    pop bc
+    djnz p4_digit
+    ld (hl),e
+    inc hl
+    ld (hl),0
+    pop ix
+    ret
+ __endasm;
+}
+#else
 void print_num4(uint8_t *p, uint16_t v) {
   uint8_t i;
   if (v > 9999) v = 9999;
@@ -106,6 +247,8 @@ void print_num4(uint8_t *p, uint16_t v) {
   *p++ = (uint8_t)v;
   *p = 0;
 }
+
+#endif
 
 /* title mode: letters and space are direct, digits are codes 0..9, '-' is
  * 40h; anything else would hit the logo graphics, so it becomes a space */
