@@ -254,6 +254,10 @@ class CPC:
             data = data[128:]
         org = ORG if org is None else org
         self.poke(org, data)
+        # The two firmware routines z88dk's start-up calls before it takes
+        # over: MC START PROGRAM (BD16h: jump to HL) and KL ROM WALK (BCCBh).
+        self.poke(0xBD16, bytes([0xE9]))
+        self.poke(0xBCCB, bytes([0xC9]))
         self.m.pc = entry if entry is not None else org
         self.m.sp = 0xC000
         return len(data)

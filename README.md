@@ -51,6 +51,7 @@ Z80 builds use z88dk (`sccz80`, `z88dk.zcc`, e.g. the snap package) and CMake;
 ```
 mkdir -p build/c  && cd build/c  && cmake ../../c && make                  # -> build/c/bomber.mzf
 mkdir -p build/zx && cd build/zx && cmake -DPLATFORM=zx ../../c && make    # -> build/zx/bomber.tap
+mkdir -p build/cpc && cd build/cpc && cmake -DPLATFORM=cpc ../../c && make  # -> build/cpc/bomber.cpc, bomber.dsk (in progress)
 tools/build_host.sh && c/build/sim 30000 2                                 # the game on a PC (key bot)
 ```
 
@@ -82,6 +83,7 @@ c/platform/   one directory per machine: mz, zx, host (the PC simulator)
 | `c/common/z80_loops.c` | core loops and text output in Z80 assembly, used by the MZ and the Spectrum |
 | `c/platform/mz/` | Sharp MZ-700/800: keyboard matrix, joysticks, tones through the monitor, 8253 frame limiter, screen flush through the display-code tables; `uc_mz.c` is the card transport on ports 50h/51h |
 | `c/platform/zx/` | ZX Spectrum 48K: keys and joysticks, frame sync on the ROM's frame counter, beeper, the 6 x 8 pixel screen routine in assembly; `tcp_spectranet.c` is `tcp.h` over the Spectranet socket calls |
+| `c/platform/cpc/` | Amstrad CPC (port in progress, `docs/port-amstrad-cpc.md`): Mode 1 in four inks, cells rendered in advance from the MZ characters (`tools/make_cpc_tables.py`), keyboard and joysticks through the PPI, AY tones |
 | `c/platform/host/` | the PC: `sim.c` (the whole game with a key bot, recording, replay and a stub network card), `tcp_posix.c` and `softnet_test.c` (the software network device on a PC) |
 | `c/platform/*/tables.c/.h` | generated: logical cell codes to the machine's characters and colours (`tools/make_zx_tables.py` for the Spectrum) |
 | `c/platform/*/plat_config.h` | the platform's constants: text rows, joystick kinds, which assembly versions exist |

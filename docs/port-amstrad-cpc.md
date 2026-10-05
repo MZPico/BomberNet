@@ -106,7 +106,7 @@ Estimate 41–43 KB of the 48 KB, to be measured in step 2.
 |---|---|---|---|
 | 0 | Feasibility: M4 interface, emulators, build, screen mode | this document | done |
 | 1 | `tools/cpcemu.py`: CPC subset on the `z80` core (64 KB, ROM paging, gate array mode and palette, PPI keyboard and VSYNC, interrupts, screenshot), M4 at its port interface with real sockets | scripted CPC for every later step; done | 2 days |
-| 2 | CPC platform, local play: `+cpc` build to `.dsk`, Mode 1 tables from the MZ character ROM with the dither schemes, 16-byte cell flush, keyboard, two joysticks, frame sync, AY tones | playable local game, 1 to 4 players | 5 days |
+| 2 | CPC platform, local play: `+cpc` build to `.dsk`, Mode 1 tables from the MZ character ROM with the dither schemes, 16-byte cell flush, keyboard, two joysticks, frame sync, AY tones | playable local game, 1 to 4 players; done (in `tools/cpcemu.py`) | 5 days |
 | 3 | Determinism: PC recordings replayed on the CPC build, hashes compared | same simulation as MZ and Spectrum | 1 day |
 | 4 | `tcp_m4.c` under the existing software network device; local relay, then production | CPC against CPC | 3 days |
 | 5 | Cross-play: CPC with MZ, Spectrum and the browser player in one room | the goal | 1 day |
@@ -139,6 +139,40 @@ CPCemu.
 Not modelled: CPC wait states (frame costs optimistic by about 20 %), the
 CRTC beyond the screen address, sound output (AY tone writes are recorded),
 the CPC firmware (the game does not use it).
+
+## Measured after step 2
+
+![title](img/cpc-title.png) ![coop, four players](img/cpc-coop.png) ![deathmatch, four players](img/cpc-deathmatch.png)
+
+| Item | Result |
+|---|---|
+| Program (`build/cpc/bomber.cpc`, no network yet) | 34.6 KB from 1200h; also `bomber.dsk` |
+| Tables (`tools/make_cpc_tables.py`) | 79 MZ glyphs, 9 colour schemes, 179 cells rendered in advance: 4.8 KB |
+| Frame work, 4 players (plain Z80 at 4 MHz) | median 38.9 ms, 90th percentile 53.9 ms; a real CPC about 20 % more: 47 and 65 ms |
+| Frame work, 1 player | median 35.3 ms |
+| Sound | each MZ tone becomes an AY channel A tone of the same pitch and length |
+
+How it is built:
+
+- The game starts through z88dk's CPC start-up (firmware still running,
+  bank loader and firmware interrupt chain switched off) and takes the
+  machine over in `plat_init`: an interrupt counter of its own at 38h
+  (300 per second; a game frame is 18), both ROMs paged out, Mode 1, the
+  palette, the CRTC's screen address.
+- Players 1 to 4 are yellow, cyan, yellow/cyan and yellow/red (orange); the
+  enemy types red, cyan/red, yellow/black and cyan/black. Blue MZ text (the
+  greyed NETWORK row) is red: a checkerboard does not read on letters.
+- `flush_screen` compares the 1000 cells in an unrolled loop (36 T-states an
+  unchanged cell, about 9 ms) and copies a changed cell from the cells
+  rendered in advance (about 600 T-states). Only the players' shared death
+  frames, recoloured per player, are drawn from glyph and lookup table.
+- Inputs: cursor keys and SPACE (COPY when two share the keyboard), W A S D
+  and E, the joystick port and a second stick on matrix line 6; JOYSTICK
+  CPC in the menu switches the sticks on. Text entry: letters, DEL, ESC.
+
+Left for step 6: the frames over 60 ms (the scan could halve), and the load
+address: from 1200h the program with network code would pass the end of the
+area AMSDOS can load into (A6FFh).
 
 ## 7. Risks
 

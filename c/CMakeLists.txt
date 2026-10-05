@@ -28,6 +28,17 @@ elseif(PLATFORM STREQUAL "zx")
                      "${COMMON_DIR}/netdev_soft.c" "${COMMON_DIR}/ws.c" "${COMMON_DIR}/z80_loops.c")
     set(APP_SUFFIX tap)
     set(OUT_SUFFIX tap)
+elseif(PLATFORM STREQUAL "cpc")
+    # Amstrad CPC 464/6128: an AMSDOS binary; the game takes the machine over
+    # in plat_init (own interrupt handler, firmware not called again).
+    set(CPC_ORG 0x1200)
+    set(TARGET_FLAGS +cpc -create-app -zorg=${CPC_ORG} -pragma-define:CRT_DISABLELOADER=1 -pragma-define:CRT_DISABLE_FIRMWARE_ISR=1
+                     -pragma-define:CRT_ENABLE_STDIO=0 -pragma-define:CLIB_OPEN_MAX=0
+                     -pragma-define:CLIB_EXIT_STACK_SIZE=0 -pragma-redirect:fputc_cons=cpc_no_console)
+    set(PLAT_SOURCES "${PLAT_DIR}/plat_cpc.c" "${PLAT_DIR}/tables.c"
+                     "${COMMON_DIR}/netdev_none.c" "${COMMON_DIR}/z80_loops.c")
+    set(APP_SUFFIX cpc)
+    set(OUT_SUFFIX cpc)
 else()
     message(FATAL_ERROR "unknown PLATFORM ${PLATFORM}")
 endif()
@@ -70,6 +81,20 @@ else()
         DEPENDS ${BOMBER_SOURCES} ${BOMBER_HEADERS}
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     )
+endif()
+
+if(PLATFORM STREQUAL "cpc")
+    # a disc image (CPC 6128, and the M4 mounts it) besides the AMSDOS file
+    get_filename_component(ZCC_DIR ${ZCC_EXECUTABLE} DIRECTORY)
+    find_program(APPMAKE_EXECUTABLE NAMES z88dk.z88dk-appmake z88dk-appmake appmake HINTS ${ZCC_DIR})
+    set(BOMBER_DSK "${CMAKE_CURRENT_BINARY_DIR}/${BOMBER_OUTPUT}.dsk")
+    add_custom_command(
+        OUTPUT ${BOMBER_DSK}
+        COMMAND ${APPMAKE_EXECUTABLE} +cpc --disk -b ${BOMBER_OUTPUT} --org ${CPC_ORG} -o ${BOMBER_OUTPUT}
+        DEPENDS ${BOMBER_APP}
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    )
+    list(APPEND BOMBER_APP ${BOMBER_DSK})
 endif()
 
 add_custom_target(build_${BOMBER_OUTPUT} ALL DEPENDS ${BOMBER_APP})
