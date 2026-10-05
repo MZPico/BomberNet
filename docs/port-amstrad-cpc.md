@@ -111,7 +111,7 @@ Estimate 41–43 KB of the 48 KB, to be measured in step 2.
 | 4 | `tcp_m4.c` under the existing software network device; local relay, then production | CPC against CPC; done: local relay and production, 2 and 3 seats, 300 frames with equal hashes | 3 days |
 | 5 | Cross-play: CPC with MZ, Spectrum and the browser player in one room | the goal; done: CPC against MZ and Spectrum, either hosting, 300 frames with equal hashes | 1 day |
 | 6 | Fit and speed: memory map, assembly where frames run long | holds 60 ms frames on a 464; done: loads below A67Bh, frames within 60 ms by the estimate, to be confirmed on hardware | 2 days |
-| 7 | CPCemu with the M4 ROM; then a real CPC with an M4 (a tester from the community) | validated release | 1 day + hardware |
+| 7 | CPCemu with the M4 ROM; then a real CPC with an M4 (a tester from the community) | CPCemu done: loads from disc on the real firmware, finds the M4, a production match against the scripted CPC without desync; hardware needs a tester | 1 day + hardware |
 
 About three weeks, less than the Spectrum: the core split, the
 network device and the test tools exist.
@@ -267,6 +267,30 @@ OUTI saved 0.4 ms of the 2.8 ms a send costs.
 
 Possible later, if the hardware asks for it: the scan of the 1000 cells
 (about 9 ms), the network calls' C code (about 2 ms).
+
+## Measured in CPCemu (step 7, emulated part)
+
+CPCemu 2.5 for Linux (cpc-emu.org; the 3.0.2 Linux downloads answered 404
+in October 2026) emulates a CPC with the real firmware, AMSDOS and the M4
+board: the real M4 ROM, and its own implementation of the M4's network
+side with host sockets. Set-up: `~/.CPCemu/cpcemu.cfg` from `cpcemu0.cfg`
+with `CPC_TYPE = 0` (464) and `DRIVE_A` = `bomber.dsk` (autostart on);
+the first run asks for a keyboard layout, answered with a mouse click; keys
+reach the window once it has been clicked.
+
+| Check | Result |
+|---|---|
+| Load | `bomber.dsk` autostarts through AMSDOS: the 0400h load address and the variables at A700h work on the real firmware |
+| M4 | the NETWORK row is active: the driver finds the M4 by its ROM name |
+| Production room | the CPCemu machine hosts (room created through DNS, connect and the WebSocket handshake on CPCemu's M4), the scripted CPC of `tools/cpcemu.py` joins: delay 120 ms |
+| Match | 400 frames, no abort: the relay compares both machines' state hashes every 16 frames |
+
+![CPCemu lobby](img/cpc-cpcemu-lobby.png)
+![CPCemu (left) and the scripted CPC (right) in one match](img/cpc-cpcemu-match.png)
+
+So the M4 interface taken from the M4's ROM source and examples agrees
+with an independent implementation of the M4. What is left is a real CPC
+with a real M4 board.
 
 ## 7. Risks
 
