@@ -396,7 +396,10 @@ class CPC:
                 self._sock_entry(n, status=0 if err == 0 else 0xF0)
                 continue
             if s['state'] == 3: continue
-            r, _, _ = select.select([so], [], [], 0)
+            # nothing waiting: wait up to 3 ms (about one interrupt period) so
+            # that a machine on the network runs near real time and the far
+            # end has time to answer (as tools/zxemu.py does)
+            r, _, _ = select.select([so], [], [], 0 if s['rx'] else 0.003)
             if r:
                 try: d = so.recv(4096)
                 except OSError: d = b''
@@ -409,17 +412,17 @@ class CPC:
 
 
 def run_together(machines, addr, count=1, on_hit=None, max_seconds=60.0):
-    """Step several machines side by side (never one alone: they may wait for
-    each other over the network) until each has reached addr count times."""
-    for m in machines: m.set_breakpoint(addr)
-    hits = [0] * len(machines)
-    end = max(m.now() for m in machines) + int(max_seconds * 4_000_000)
-    while min(hits) < count:
-        for i, m in enumerate(machines):
-            if hits[i] >= count: continue
-            a = m.step()
-            if a is not None:
-                if a == addr:
-                    hits[i] += 1
-                    if on_hit: on_hit(i, m)
-        if min(m.now() for m in machines) > end: raise TimeoutError(f'hits {hits}')
+    """Run several machines side by side, one quantum each in turn, until each
+    has passed addr count more times. None of them is ever held: machines that
+    wait for each other over the network must all keep running. on_hit(i, c)
+    is called at every pass (the machine stands at addr then)."""
+    for c in machines: c.set_breakpoint(addr)
+    left = [count] * len(machines)
+    end = [c.now() + int(max_seconds * 4_000_000) for c in machines]
+    while any(n > 0 for n in left):
+        for i, c in enumerate(machines):
+            if c.step() == addr:
+                if on_hit: on_hit(i, c)
+                left[i] -= 1
+            if left[i] > 0 and c.now() > end[i]:
+                raise TimeoutError(f'{addr:04x} not reached, pc={c.pc:04x}')

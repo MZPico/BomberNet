@@ -131,6 +131,7 @@ measurements and the reasoning behind the delay rule: `docs/net-timing.md`.
 | `tools/replay.py`, `tools/replay_zx.py` | the same recording on the MZ build (mz800emu) and the Spectrum build: identical hashes |
 | `tools/lockstep_test.py`, `tools/nettest.py` | two MZ-800s (mz800emu, MZPico card emulated) through the local relay |
 | `tools/lockstep_zx.py` | two Spectrums (`tools/zxemu.py`, Spectranet emulated at its programming interface) through the local relay or production |
+| `tools/replay_cpc.py`, `tools/lockstep_cpc.py` | the same recordings on the Amstrad CPC build; two CPCs with M4 boards (`tools/cpcemu.py`) through the local relay or production |
 | `tools/crossplay.py` | an MZ-800 and a Spectrum in one match |
 | `tools/fusex_match.py` | two FuseX with the real Spectranet firmware (`tools/fusex.py` drives FuseX through its GDB server) |
 | `tools/softnet_test.sh` | the software network device on a PC: two processes in one room |

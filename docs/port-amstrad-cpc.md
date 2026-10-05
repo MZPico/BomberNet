@@ -108,7 +108,7 @@ Estimate 41–43 KB of the 48 KB, to be measured in step 2.
 | 1 | `tools/cpcemu.py`: CPC subset on the `z80` core (64 KB, ROM paging, gate array mode and palette, PPI keyboard and VSYNC, interrupts, screenshot), M4 at its port interface with real sockets | scripted CPC for every later step; done | 2 days |
 | 2 | CPC platform, local play: `+cpc` build to `.dsk`, Mode 1 tables from the MZ character ROM with the dither schemes, 16-byte cell flush, keyboard, two joysticks, frame sync, AY tones | playable local game, 1 to 4 players; done (in `tools/cpcemu.py`) | 5 days |
 | 3 | Determinism: PC recordings replayed on the CPC build, hashes compared | same simulation as MZ and Spectrum; done: 8 recordings, 4,268 frames, no mismatch | 1 day |
-| 4 | `tcp_m4.c` under the existing software network device; local relay, then production | CPC against CPC | 3 days |
+| 4 | `tcp_m4.c` under the existing software network device; local relay, then production | CPC against CPC; done: local relay and production, 2 and 3 seats, 300 frames with equal hashes | 3 days |
 | 5 | Cross-play: CPC with MZ, Spectrum and the browser player in one room | the goal | 1 day |
 | 6 | Fit and speed: memory map, assembly where frames run long | holds 60 ms frames on a 464 | 2 days |
 | 7 | CPCemu with the M4 ROM; then a real CPC with an M4 (a tester from the community) | validated release | 1 day + hardware |
@@ -187,6 +187,37 @@ CPC build and compares the state hash every frame:
 The long recordings outlast their match; the replay tools (also
 `tools/replay_zx.py`) now stop when the game is back on the title, where
 they used to wait for ever.
+
+## Measured after step 4
+
+`c/platform/cpc/tcp_m4.c` implements `tcp.h` on the M4; the Spectrum's
+software network device and WebSocket client run on top unchanged.
+`tools/lockstep_cpc.py` plays two emulated CPCs against each other:
+
+| Match | Result |
+|---|---|
+| Local relay, 2 seats, 300 frames | 18 hashed frames equal, no abort |
+| Local relay, 3 seats (2 + 1) | 18 hashed frames equal, no abort |
+| Production (api.mzpico.com, resolved by the M4's DNS command) | 18 hashed frames equal, no abort, input delay 2 frames |
+
+| Item | 4 MHz Z80 (a real CPC about 20 % more) |
+|---|---|
+| Send one input line (build, WebSocket frame, M4 send) | 3.2 ms |
+| Receive and store the lines of a frame | 5.0 ms median, 10.9 ms at most |
+| Program with network code and buffers | 44.1 KB from 1200h, ends at BDCFh; the stack keeps about 240 bytes clear above it |
+
+Found on the way:
+
+- The M4 keeps a host's connection only while it answers the relay's
+  keep-alive pings. A test that froze one machine while the other waited for
+  it in lockstep lost that machine to the ping timeout: `run_together` in
+  `tools/cpcemu.py` now never holds a machine (as `tools/zxemu.py` learned
+  earlier).
+- The emulated M4 waits up to 3 ms when a socket has nothing waiting, so a
+  machine on the network runs near real time and production's answers
+  arrive within the game's own timeouts.
+- For step 6: the program no longer fits below A6FFh, where AMSDOS loads a
+  file; the network calls take 8 ms of the frame and the cell scan 9 ms.
 
 ## 7. Risks
 

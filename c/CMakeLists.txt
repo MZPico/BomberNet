@@ -35,8 +35,8 @@ elseif(PLATFORM STREQUAL "cpc")
     set(TARGET_FLAGS +cpc -create-app -zorg=${CPC_ORG} -pragma-define:CRT_DISABLELOADER=1 -pragma-define:CRT_DISABLE_FIRMWARE_ISR=1
                      -pragma-define:CRT_ENABLE_STDIO=0 -pragma-define:CLIB_OPEN_MAX=0
                      -pragma-define:CLIB_EXIT_STACK_SIZE=0 -pragma-redirect:fputc_cons=cpc_no_console)
-    set(PLAT_SOURCES "${PLAT_DIR}/plat_cpc.c" "${PLAT_DIR}/tables.c"
-                     "${COMMON_DIR}/netdev_none.c" "${COMMON_DIR}/z80_loops.c")
+    set(PLAT_SOURCES "${PLAT_DIR}/plat_cpc.c" "${PLAT_DIR}/tables.c" "${PLAT_DIR}/tcp_m4.c"
+                     "${COMMON_DIR}/netdev_soft.c" "${COMMON_DIR}/ws.c" "${COMMON_DIR}/z80_loops.c")
     set(APP_SUFFIX cpc)
     set(OUT_SUFFIX cpc)
 else()
