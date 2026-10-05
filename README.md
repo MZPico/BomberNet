@@ -163,4 +163,5 @@ changed on purpose and how fast it runs: `docs/original.md`.
 | `docs/net-protocol.md` | the network device (card commands, ten calls) and the relay protocol |
 | `docs/net-timing.md` | network timing measurements and the 0.2.0 fixes |
 | `docs/port-zx-spectrum.md` | the ZX Spectrum port: feasibility, plan, measurements, FuseX |
+| `docs/port-amstrad-cpc.md` | the Amstrad CPC port with the M4 board: feasibility and plan |
 | `PLAN.md` | the multiplayer plan the C port followed |
