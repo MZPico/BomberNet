@@ -20,7 +20,7 @@ support).
 | Keyboard | 10 x 8 matrix scanned through the PPI and the AY's port A | a keyboard player on cursor keys or Q A O P, the second on W A S D |
 | Joysticks | a joystick port on every model (matrix row 9); a second stick through the usual splitter (row 6) | two sticks without an interface: up to 4 players with two on the keyboard |
 
-## 2. Screen mode: Mode 0 with redrawn glyphs
+## 2. Screen mode: Mode 1, palette black red yellow cyan, dithered figures
 
 The MZ field uses six colours (black, red bricks and walls, magenta outer wall,
 white, yellow, green) plus the enemies' colours, and each player has its own
@@ -51,11 +51,13 @@ read as mixed colours (orange, pale green). The dark enemy checkers resemble
 players 1 and 2 at a glance; the status line keeps the players' colours on
 their digits.
 
-Proposal: Mode 0, glyphs redrawn by a generator plus hand corrections,
-decided on a rendered mock-up of real glyphs in step 2 before the screen
-routine is written. Each cell is then 16 bytes with its colours built in, so
-flushing a changed cell is a 16-byte copy (the Spectrum needs 6-pixel
-shifting and an attribute rule; the CPC has no attribute clash).
+**Decision (5 October 2026): Mode 1, palette A** (black, red, yellow, cyan).
+Every MZ pixel is kept and the glyphs come straight from the MZ character
+ROM: no redrawing, no glyph-quality risk. Each cell is 16 bytes with its inks
+built in, so flushing a changed cell is a 16-byte copy (no 6-pixel shifting
+and no attribute rule as on the Spectrum). To settle on the real screen in
+step 2: the enemies' mixes (perhaps only red-based ones, leaving the bright
+inks to the players) and the outer wall's ink.
 
 ## 3. Network: the M4 board
 
@@ -104,21 +106,21 @@ Estimate 41–43 KB of the 48 KB, to be measured in step 2.
 |---|---|---|---|
 | 0 | Feasibility: M4 interface, emulators, build, screen mode | this document | done |
 | 1 | `tools/cpcemu.py`: CPC subset on the `z80` core (64 KB, ROM paging, gate array mode and palette, PPI keyboard and VSYNC, interrupts, screenshot), M4 at its port interface with real sockets | scripted CPC for every later step | 2 days |
-| 2 | CPC platform, local play: `+cpc` build to `.dsk`, Mode 0 glyph tables (mock-up first), 16-byte cell flush, keyboard, two joysticks, frame sync, AY tones | playable local game, 1 to 4 players | 6 days |
+| 2 | CPC platform, local play: `+cpc` build to `.dsk`, Mode 1 tables from the MZ character ROM with the dither schemes, 16-byte cell flush, keyboard, two joysticks, frame sync, AY tones | playable local game, 1 to 4 players | 5 days |
 | 3 | Determinism: PC recordings replayed on the CPC build, hashes compared | same simulation as MZ and Spectrum | 1 day |
 | 4 | `tcp_m4.c` under the existing software network device; local relay, then production | CPC against CPC | 3 days |
 | 5 | Cross-play: CPC with MZ, Spectrum and the browser player in one room | the goal | 1 day |
 | 6 | Fit and speed: memory map, assembly where frames run long | holds 60 ms frames on a 464 | 2 days |
 | 7 | CPCemu with the M4 ROM; then a real CPC with an M4 (a tester from the community) | validated release | 1 day + hardware |
 
-About three and a half weeks, less than the Spectrum: the core split, the
+About three weeks, less than the Spectrum: the core split, the
 network device and the test tools exist.
 
 ## 7. Risks
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| 4 x 8 glyphs read poorly | Medium | mock-up of real glyphs before the screen routine; Mode 1 stays possible (4 colours, players told apart by shape) |
+| Dithered figures hard to tell apart in a busy game | Low | players have the bright inks; enemy mixes tried on the real screen in step 2 |
 | M4 answers are slow per frame (command, then waiting for the Cortex M4) | Medium | measure in step 4 as on the Spectrum; poll the status table, send one packet per frame |
 | CPCemu's M4 networking only on Windows | Low | `tools/cpcemu.py` covers the scripted tests; CPCemu runs on Windows for the manual check |
 | Memory on a 464 | Low | estimate leaves 5–7 KB; the firmware is switched off |
