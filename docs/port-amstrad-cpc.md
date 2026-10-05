@@ -109,7 +109,7 @@ Estimate 41–43 KB of the 48 KB, to be measured in step 2.
 | 2 | CPC platform, local play: `+cpc` build to `.dsk`, Mode 1 tables from the MZ character ROM with the dither schemes, 16-byte cell flush, keyboard, two joysticks, frame sync, AY tones | playable local game, 1 to 4 players; done (in `tools/cpcemu.py`) | 5 days |
 | 3 | Determinism: PC recordings replayed on the CPC build, hashes compared | same simulation as MZ and Spectrum; done: 8 recordings, 4,268 frames, no mismatch | 1 day |
 | 4 | `tcp_m4.c` under the existing software network device; local relay, then production | CPC against CPC; done: local relay and production, 2 and 3 seats, 300 frames with equal hashes | 3 days |
-| 5 | Cross-play: CPC with MZ, Spectrum and the browser player in one room | the goal | 1 day |
+| 5 | Cross-play: CPC with MZ, Spectrum and the browser player in one room | the goal; done: CPC against MZ and Spectrum, either hosting, 300 frames with equal hashes | 1 day |
 | 6 | Fit and speed: memory map, assembly where frames run long | holds 60 ms frames on a 464 | 2 days |
 | 7 | CPCemu with the M4 ROM; then a real CPC with an M4 (a tester from the community) | validated release | 1 day + hardware |
 
@@ -218,6 +218,23 @@ Found on the way:
   arrive within the game's own timeouts.
 - For step 6: the program no longer fits below A6FFh, where AMSDOS loads a
   file; the network calls take 8 ms of the frame and the cell scan 9 ms.
+
+## Measured after step 5
+
+`tools/crossplay.py [steps] [host] [joiner]` now takes any two of mz, zx,
+cpc. Through the local relay, 300 frames each:
+
+| Match | Hashed frames | Mismatches | Fields at the end |
+|---|---|---|---|
+| CPC hosts, MZ-800 joins | 18 | 0 | identical |
+| MZ-800 hosts, CPC joins | 18 | 0 | identical |
+| CPC hosts, Spectrum joins | 18 | 0 | identical |
+| Spectrum hosts, CPC joins | 18 | 0 | identical |
+| MZ-800 hosts, Spectrum joins (as before) | 18 | 0 | identical |
+
+Every pairing chose an input delay of 2 frames. The browser player is the
+MZ-800 build in an emulator on the same relay; it is covered by the MZ
+pairings and checked against the production page in step 7.
 
 ## 7. Risks
 
