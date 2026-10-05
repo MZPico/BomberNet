@@ -43,6 +43,13 @@ SPACE when ready, the host last. The input delay (DELAY in the lobby, 120 ms
 on most links) is measured before the match. A desync or a lost player ends
 the match with a message.
 
+## eLeMeNt / MB03+ with ESP-01 (128K)
+
+The ESP-01 port and hardware-tested release 19 are described in
+[ports/esp01/README.md](ports/esp01/README.md), including build instructions,
+a reproducible release fixture and remaining hardware checks. Ordinary
+Spectrum builds below continue to use Spectranet.
+
 ## Building
 
 Z80 builds use z88dk (`sccz80`, `z88dk.zcc`, e.g. the snap package) and CMake;

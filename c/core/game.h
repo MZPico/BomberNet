@@ -214,7 +214,11 @@ extern uint16_t hash_n;
 #define NET_OFF   0
 #define NET_HOST  1
 #define NET_JOIN  2
+#ifdef ESP_FAST128
+#define NET_DELAY_MIN 1
+#else
 #define NET_DELAY_MIN 2      /* input delay in frames: measured per match in the lobby (see net_delay) */
+#endif
 #define NET_DELAY_MAX 8
 extern uint8_t net_delay;         /* frames between a key press and its step; host sets it from the lobby round trip */
 extern uint8_t menu_net;          /* NET_OFF / NET_HOST / NET_JOIN (title) */
@@ -271,5 +275,9 @@ void reveal_bonus(void);
 void reveal_exit(void);
 void draw_bonus(void);
 void draw_exit(void);
+
+#ifdef ESP_FAST128
+void composite_frame(void);
+#endif
 
 #endif

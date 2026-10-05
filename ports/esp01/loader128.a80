@@ -1,0 +1,61 @@
+; BASIC loads this bootstrap at 8000h with CLEAR 32767.
+; After entering machine code, copy the loader below game origin (5D00h).
+; Do not overwrite the 128K ROM paging routines in the printer buffer.
+; Raw data blocks follow its ordinary CODE block: driver bank, then game.
+    DEVICE ZXSPECTRUM48
+    ORG #8000
+    INCLUDE "loader_sizes.inc"
+    OUTPUT "loader128.bin"
+bootstrap:
+    di
+    ld hl,body_src
+    ld de,#5d00
+    ld bc,body_len
+    ldir
+    ld sp,24000
+    jp #5d00
+body_src:
+    DISP #5d00
+start:
+    ld a,22
+    call page
+    ld hl,#c000
+    ld (hl),#55
+    ld a,16
+    call page
+    ld (hl),#aa
+    ld a,22
+    call page
+    ld a,(hl)
+    cp #55
+    jr nz,failed
+    ld ix,#c000
+    ld de,BANK_SIZE
+    ld a,#ff
+    scf
+    call #0556
+    jr nc,failed
+    ld a,16
+    call page
+    ld ix,24000
+    ld de,GAME_SIZE
+    ld a,#ff
+    scf
+    call #0556
+    jr nc,failed
+    jp 24000
+failed:
+    ld a,2
+    out (#fe),a
+    jr failed
+page:
+    di
+    ld bc,#7ffd
+    out (c),a
+    ld (#5b5c),a
+    ei
+    ret
+body_len EQU $-start
+    ASSERT $ <= 24000-96
+    ENT
+    OUTEND

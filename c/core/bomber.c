@@ -46,6 +46,111 @@ static void draw_hud_compact(void) {
 }
 
 /* multiplayer HUD: "P1 000000 <man>3  P2 000000 <man>3  T0970 <enemy>1 S01" */
+#ifdef ESP_FAST128
+static void draw_hud_multi(void) __naked {
+ __asm
+    ld a,(_player_count)
+    cp 3
+    jp nc,_draw_hud_compact
+    push ix
+    ld ix,_players
+    ld de,_draw_buf+960
+    ld b,a
+    ld c,0
+    or a
+    jr z,h15_tail
+h15_player:
+    push bc
+    push de
+    ex de,hl
+    ld (hl),0x92
+    inc hl
+    push hl
+    ld l,c
+    ld h,0
+    ld de,_player_digit_codes
+    add hl,de
+    ld a,(hl)
+    pop hl
+    ld (hl),a
+    ld e,(ix+10)
+    ld d,(ix+11)
+    ld hl,(_hi_score)
+    or a
+    sbc hl,de
+    jr nc,h15_score
+    ld (_hi_score),de
+h15_score:
+    pop hl
+    push hl
+    ld bc,3
+    add hl,bc
+    push hl
+    push de
+    call _print_num5
+    pop bc
+    pop bc
+    pop hl
+    push hl
+    ld bc,10
+    add hl,bc
+    ld (hl),0x90
+    inc hl
+    ld a,(_game_mode)
+    cp 1
+    ld a,(ix+9)
+    jr nz,h15_lives
+    ld a,(ix+15)
+h15_lives:
+    ld (hl),a
+    pop hl
+    ld de,13
+    add hl,de
+    ex de,hl
+    pop bc
+    push de
+    ld de,16
+    add ix,de
+    pop de
+    inc c
+    djnz h15_player
+h15_tail:
+    ex de,hl
+    push hl
+    ld (hl),0x30
+    inc hl
+    push hl
+    ld hl,(_time_left)
+    push hl
+    call _print_num5
+    pop bc
+    pop bc
+    pop hl
+    ld de,6
+    add hl,de
+    ld (hl),0x20
+    inc hl
+    ld (hl),0x91
+    inc hl
+    ld a,(_enemies_left)
+    ld (hl),a
+    inc hl
+    inc hl
+    ld (hl),0x10
+    inc hl
+    push hl
+    ld a,(_stage)
+    ld l,a
+    ld h,0
+    push hl
+    call _print_num2
+    pop bc
+    pop bc
+    pop ix
+    ret
+ __endasm;
+}
+#else
 static void draw_hud_multi(void) {
   uint8_t *p = draw_at(0, HUD_ROW);
   uint8_t i;
@@ -64,6 +169,8 @@ static void draw_hud_multi(void) {
   p[7] = C_ENEMY_ICON; p[8] = enemies_left;
   p[10] = C_HUD_S; print_num2(p + 11, stage);
 }
+
+#endif
 
 static void draw_hud(void) {
   uint8_t *p = draw_at(0, HUD_ROW);
@@ -107,12 +214,55 @@ static void frame_common(void) {
   tick_timers();                      /* also presents the previous frame */
   draw_hud();
   draw_hud_icons();
+#ifdef ESP_FAST128
+  composite_frame();
+#else
   composite_map();
+#endif
 }
 
+#ifdef ESP_FAST128
+uint8_t esp_defer_present;
+#endif
+#ifdef ESP_FAST128
+static uint8_t match_break_pressed(void) __naked {
+ __asm
+    ld bc,0xfefe
+    in a,(c)
+    and 1
+    ld hl,0
+    ret nz
+    ld b,0x7f
+    in a,(c)
+    and 1
+    ret nz
+    inc l
+    ret
+ __endasm;
+}
+#endif
 static void frame(void) {
+#ifdef ESP_FAST128
+  if (match_break_pressed()) { net_abort = NET_ABORT_BREAK; return; }
+#endif
+#ifdef ESP_FAST128
+  esp_defer_present=1;
+#endif
+#ifdef ESP_FAST128
+  if (net_active) {
+    tick_timers();
+    input_poll();                 /* send before HUD/compositor work */
+    draw_hud();
+    draw_hud_icons();
+    composite_frame();
+  } else {
+    frame_common();
+    input_poll();
+  }
+#else
   frame_common();
   input_poll();
+#endif
   update_bombs();
   draw_bombs();
   place_bombs();
@@ -132,6 +282,10 @@ static void frame(void) {
     hash_frame_step();
     if (net_active && (frame_no % hash_period) == 0) net_hash(frame_no, state_hash);
   }
+#ifdef ESP_FAST128
+  esp_defer_present=0;
+  if (net_active) { flush_screen(); players_death_colour(); }
+#endif
 }
 
 /* animations only: no input, no AI */
@@ -466,6 +620,50 @@ static uint8_t lobby_enter_code(void) {
 #define LM_TABLE 5
 #define HELLO_TTL 150                 /* frames without a HELLO: the slot is gone */
 
+#ifdef ESP_FAST128
+static void lobby_apply_rtt(uint8_t *samples,uint8_t rtt) __naked {
+ __asm
+    pop af
+    pop de
+    pop hl
+    push hl
+    push de
+    push af
+    push de
+    push hl
+    ld bc,3
+    add hl,bc
+    ld d,h
+    ld e,l
+    dec hl
+    lddr
+    pop hl
+    pop de
+    ld (hl),e
+    ld b,4
+    xor a
+r9_max:
+    cp (hl)
+    jr nc,r9_keep
+    ld a,(hl)
+r9_keep:
+    inc hl
+    djnz r9_max
+    srl a
+    adc a,0
+    cp 2
+    jr nc,r9_nonzero
+    ld a,2
+r9_nonzero:
+    cp 9
+    jr c,r9_store
+    ld a,8
+r9_store:
+    ld (_net_delay),a
+    ret
+ __endasm;
+}
+#else
 static void lobby_apply_rtt(uint8_t *samples, uint8_t rtt) {
   uint8_t i, m = 0, d;
   for (i = 3; i > 0; i--) samples[i] = samples[i - 1];
@@ -476,6 +674,8 @@ static void lobby_apply_rtt(uint8_t *samples, uint8_t rtt) {
   if (d > NET_DELAY_MAX) d = NET_DELAY_MAX;
   net_delay = d;
 }
+
+#endif
 
 typedef struct {
   uint8_t host, seq, sent_at, samples[4];
@@ -518,8 +718,15 @@ static void lobby_messages(lobby_t *L) {
   uint8_t from, m[32], len, i;
   while ((len = net_msg_recv(&from, m)) != 0) {
     if (L->host) {
-      if (m[0] == LM_PONG && len >= 2 && m[1] == L->seq && from != 0)
+      if (m[0] == LM_PONG && len >= 2 && m[1] == L->seq && from != 0) {
+#ifdef ESP_FAST128
+        uint8_t rtt=(uint8_t)(L->n-L->sent_at);
+        L->got_delay=0; /* host: no longer awaiting this ping */
+        lobby_apply_rtt(L->samples,rtt?rtt:1);
+#else
         lobby_apply_rtt(L->samples, (uint8_t)(L->n - L->sent_at));
+#endif
+      }
       else if (m[0] == LM_HELLO && len >= 2 && from > 0 && from < NET_SLOTS) {
         L->counts[from] = m[1] > 3 ? 3 : m[1];
         L->seen[from] = L->n;
@@ -581,9 +788,17 @@ static uint8_t net_lobby(void) {
     if ((L.n & 7) == 0) net_status(&st);
     lobby_messages(&L);
     if (L.host) {
-      if (st.members > 1 && (L.n % 10) == 0) {          /* ping the joiners */
+#ifdef ESP_FAST128
+      if (L.got_delay && (uint8_t)(L.n-L.sent_at)>=50) L.got_delay=0;
+      if (!L.got_delay && st.members > 1 && (L.n % 10) == 0) {
+#else
+      if (st.members > 1 && (L.n % 10) == 0) {
+#endif          /* ping the joiners */
         uint8_t m[2]; m[0] = LM_PING; m[1] = ++L.seq; L.sent_at = (uint8_t)L.n;
         net_msg_send(0xff, m, 2);
+#ifdef ESP_FAST128
+        L.got_delay=1;
+#endif
       }
       for (i = 1; i < NET_SLOTS; i++)                    /* forget joiners that left */
         if (L.counts[i] && (uint16_t)(L.n - L.seen[i]) > HELLO_TTL) L.counts[i] = 0;
@@ -600,6 +815,10 @@ static uint8_t net_lobby(void) {
       strcpy(lobby_extra, "WAITING FOR THE HOST");
     } else if (L.seats < net_total) {
       strcpy(lobby_extra, "WAITING FOR PLAYERS");
+#ifdef ESP_FAST128
+    } else if (L.host && st.members<2) {
+      strcpy(lobby_extra, "SPACE READY TO START");
+#endif
     } else if (L.host ? L.samples[0] == 0 : !L.got_delay) {
       strcpy(lobby_extra, L.host ? "MEASURING THE LINK" : "HOST MEASURES THE LINK");
     } else {
@@ -877,6 +1096,12 @@ static void run_match(void) {
 }
 
 static void run_game(void) {
+  /* A previous network abort must not terminate the next offline match. */
+  net_active = net_abort = net_waiting = 0;
+  hash_period = 0;
+#ifdef ESP_FAST128
+  esp_defer_present = 0;
+#endif
   if (menu_net != NET_OFF && net_device == NETDEV_NET) {
     hash_period = 16;
     net_match_start();
@@ -885,7 +1110,12 @@ static void run_game(void) {
   if (net_active) {
     uint8_t reason = net_abort;
     net_match_end();
-    if (reason) show_message(reason == NETST_DESYNC ? "DESYNC" : reason == NET_ABORT_BREAK ? "MATCH LEFT" : "CONNECTION LOST", "PRESS FIRE");
+#ifdef ESP_FAST128
+    if (reason && reason != NET_ABORT_BREAK) show_message(
+#else
+    if (reason) show_message(
+#endif
+reason == NETST_DESYNC ? "DESYNC" : reason == NET_ABORT_BREAK ? "MATCH LEFT" : "CONNECTION LOST", "PRESS FIRE");
   }
 }
 

@@ -1,0 +1,49 @@
+name: ESP01 port validation
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ['c/**', 'ports/esp01/**', 'runable/19Bomberman.tap', '.github/workflows/esp01.yml']
+  push:
+    branches: [esp01-upstream]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build SjASMPlus
+        run: |
+          git clone --depth 1 --branch v1.20.3 --recursive https://github.com/z00m128/sjasmplus.git "$RUNNER_TEMP/sjasmplus"
+          make -C "$RUNNER_TEMP/sjasmplus" -j2
+          echo "SJASMPLUS=$RUNNER_TEMP/sjasmplus/sjasmplus" >> "$GITHUB_ENV"
+      - name: Install emulator and relay dependencies
+        run: python3 -m pip install zx==0.13.15 fastapi==0.142.2 uvicorn==0.54.0 websockets==16.0
+      - name: Reproduce hardware release exactly
+        run: sh ports/esp01/reproduce19.sh
+      - name: Check release behavior
+        run: |
+          python3 ports/esp01/tests/test_break19.py
+          python3 ports/esp01/tests/test_stream128.py
+          python3 ports/esp01/tests/test_alpha19_hud.py
+          ESP_MATCH=ports/esp01/tests/match_break19.py python3 ports/esp01/tests/test_relay128.py
+      - name: Build fresh driver and game from source
+        run: |
+          docker run --rm --entrypoint /bin/sh -v "$PWD:/src" -w /src z88dk/z88dk:latest ports/esp01/build_game128.sh
+          python3 ports/esp01/bank_layout.py
+          docker run --rm --entrypoint /bin/sh -v "$PWD:/src" -w /src z88dk/z88dk:latest ports/esp01/link_game128.sh
+          python3 ports/esp01/pack_game128.py --prepare
+          (cd build/esp01-128 && "$SJASMPLUS" ../../ports/esp01/loader128.a80)
+          python3 ports/esp01/pack_game128.py
+      - name: Check fresh source build
+        run: |
+          python3 ports/esp01/tests/test_break19.py
+          python3 ports/esp01/tests/test_stream128.py
+          python3 ports/esp01/tests/test_hud128.py
+          ESP_MATCH=ports/esp01/tests/match_break19.py python3 ports/esp01/tests/test_relay128.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: esp01-source-build-hardware-retest-required
+          path: build/esp01-128/bombernet_esp01_128_alpha19.tap
+          if-no-files-found: error

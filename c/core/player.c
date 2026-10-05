@@ -52,6 +52,43 @@ void players_stage_reset(void) {
 }
 
 /* write one player char; an enemy or fire under it starts dying */
+#ifdef ESP_FAST128
+static void put_player_char(player_t *p,uint8_t *c,uint8_t code) __naked {
+ __asm
+    pop af
+    pop bc
+    pop de
+    pop hl
+    push hl
+    push de
+    push bc
+    push af
+    ld a,(de)
+    ld b,a
+    ld a,c
+    ld (de),a
+    ld a,b
+    cp 0xc0
+    ret c
+    ld de,5
+    add hl,de
+    ld c,a
+    ld a,(hl)
+    cp 6
+    ret nc
+    ld (hl),6
+    ld a,c
+    cp 0xe0
+    ret c
+    ld de,-5
+    add hl,de
+    push hl
+    call _player_killed
+    pop bc
+    ret
+ __endasm;
+}
+#else
 static void put_player_char(player_t *p, uint8_t *c, uint8_t code) {
   uint8_t old = *c;
   *c = code;
@@ -60,6 +97,8 @@ static void put_player_char(player_t *p, uint8_t *c, uint8_t code) {
     if (old >= C_FIRE) player_killed(p);
   }
 }
+
+#endif
 
 /* Deathmatch scoring: the owner of the closest exploding bomb gets the kill
  * (+10, shown as 100); blowing yourself up costs 5. */
@@ -76,6 +115,92 @@ void player_killed(player_t *p) {
 }
 
 /* state 0/1 standing, 6..13 dying */
+#ifdef ESP_FAST128
+static void draw_player(player_t *p) __naked {
+ __asm
+    pop af
+    pop hl
+    push hl
+    push af
+    push ix
+    push hl
+    pop ix
+    ld a,(ix+5)
+    cp 6
+    jr c,d14_alive
+    sub 6
+    add a,a
+    ld c,a
+    ld a,0x4e
+    sub c
+    jr d14_code
+d14_alive:
+    or a
+    jr nz,d14_second
+    ld (ix+5),1
+    ld a,(ix+12)
+    jr d14_code
+d14_second:
+    ld a,(ix+13)
+d14_code:
+    ld c,a
+    ld l,(ix+4)
+    ld h,0
+    add hl,hl
+    ld de,_row_off
+    add hl,de
+    ld e,(hl)
+    inc hl
+    ld d,(hl)
+    ld hl,_draw_buf
+    add hl,de
+    ld e,(ix+3)
+    ld d,0
+    add hl,de
+    ex de,hl
+    call d14_char
+    inc de
+    inc c
+    call d14_char
+    ld hl,39
+    add hl,de
+    ex de,hl
+    ld a,c
+    add a,15
+    ld c,a
+    call d14_char
+    inc de
+    inc c
+    call d14_char
+    pop ix
+    ret
+d14_char:
+    ld a,(de)
+    ld h,a
+    ld a,c
+    ld (de),a
+    ld a,h
+    cp 0xc0
+    ret c
+    ld h,a
+    ld a,(ix+5)
+    cp 6
+    ret nc
+    ld (ix+5),6
+    ld a,h
+    cp 0xe0
+    ret c
+    push bc
+    push de
+    push ix
+    call _player_killed
+    pop hl
+    pop de
+    pop bc
+    ret
+ __endasm;
+}
+#else
 static void draw_player(player_t *p) {
   uint8_t code;
   uint8_t *c;
@@ -93,10 +218,15 @@ static void draw_player(player_t *p) {
   put_player_char(p, c + SCREEN_W, code + 16);
   put_player_char(p, c + SCREEN_W + 1, code + 17);
 }
+#endif
 
 /* The death frames (40h-5Fh) are green in the table; there is no room for
  * coloured copies, so the attribute plane is patched after every flush. */
+#ifdef ESP_FAST128
+static void players_death_colour_full(void) {
+#else
 void players_death_colour(void) {
+#endif
   uint8_t i;
   for (i = 0; i < MAX_PLAYERS; i++) {
     player_t *p = &players[i];
@@ -108,14 +238,156 @@ void players_death_colour(void) {
   }
 }
 
+#ifdef ESP_FAST128
+void players_death_colour(void) __naked {
+ __asm
+    push ix
+    ld ix,_players
+    ld b,4
+d14_colour_loop:
+    ld a,(ix+0)
+    or a
+    jr z,d14_colour_next
+    ld a,(ix+5)
+    cp 6
+    jr c,d14_colour_next
+    ld a,(ix+8)
+    or a
+    jr z,d14_colour_full
+d14_colour_next:
+    ld de,16
+    add ix,de
+    djnz d14_colour_loop
+    pop ix
+    ret
+d14_colour_full:
+    pop ix
+    jp _players_death_colour_full
+ __endasm;
+}
+#endif
+
+#ifdef ESP_FAST128
+void draw_players(void) __naked {
+ __asm
+    push ix
+    ld ix,_players
+    ld b,4
+d14_player_loop:
+    ld a,(ix+0)
+    or a
+    jr z,d14_next
+    ld a,(ix+8)
+    or a
+    jr nz,d14_next
+    push bc
+    push ix
+    call _draw_player
+    pop hl
+    pop bc
+d14_next:
+    ld de,16
+    add ix,de
+    djnz d14_player_loop
+    pop ix
+    ret
+ __endasm;
+}
+#else
 void draw_players(void) {
   uint8_t i;
   for (i = 0; i < MAX_PLAYERS; i++)
     if (players[i].active && !players[i].life_lost) draw_player(&players[i]);
 }
+#endif
 
 /* Cursor keys move by one char when none of the four chars ahead is a wall,
  * pillar or fresh brick (in the draw buffer). Players pass through each other. */
+#ifdef ESP_FAST128
+static void move_player(player_t *p) __naked {
+ __asm
+    pop af
+    pop hl
+    push hl
+    push af
+    push ix
+    push hl
+    pop ix
+    ld a,(ix+2)
+    ld d,(ix+4)
+    ld e,(ix+3)
+    bit 1,a
+    jr z,m11_left
+    inc d
+    jr m11_check
+m11_left:
+    bit 3,a
+    jr z,m11_right
+    dec e
+    jr m11_check
+m11_right:
+    bit 2,a
+    jr z,m11_up
+    inc e
+    jr m11_check
+m11_up:
+    bit 0,a
+    jr z,m11_done
+    dec d
+m11_check:
+    ld l,d
+    ld h,0
+    add hl,hl
+    ld bc,_row_off
+    add hl,bc
+    ld c,(hl)
+    inc hl
+    ld b,(hl)
+    ld hl,_draw_buf
+    add hl,bc
+    ld c,e
+    ld b,0
+    add hl,bc
+    call m11_block
+    jr z,m11_done
+    inc hl
+    call m11_block
+    jr z,m11_done
+    ld bc,39
+    add hl,bc
+    call m11_block
+    jr z,m11_done
+    inc hl
+    call m11_block
+    jr z,m11_done
+    ld (ix+3),e
+    ld (ix+4),d
+    ld a,(ix+6)
+    srl a
+    add a,2
+    ld h,a
+    ld l,10
+    push hl
+    ld hl,14
+    push hl
+    call _plat_tone
+    pop bc
+    pop bc
+m11_done:
+    pop ix
+    ret
+m11_block:
+    ld a,(hl)
+    cp 0x88
+    ret z
+    cp 0x89
+    ret z
+    cp 0x80
+    ret
+
+ __endasm;
+}
+#else
 static void move_player(player_t *p) {
   uint8_t k = p->keys, d, x, y;
   const uint8_t *c;
@@ -134,9 +406,67 @@ static void move_player(player_t *p) {
   /* hook for walking animation (the original lost the direction here) */
   plat_tone(((uint16_t)((p->anim >> 1) + 2) << 8) | 0x0a, 14);
 }
+#endif
 
 /* Every 2nd frame: toggle the animation frame; alive -> move; dying -> step
  * the death animation (every 4th call) and raise life_lost at its end. */
+#ifdef ESP_FAST128
+void players_anim_step(void) __naked {
+ __asm
+    ld a,(_tmr_player_anim)
+    or a
+    ret nz
+    push ix
+    ld ix,_players
+    ld b,4
+p15_anim:
+    ld a,(ix+0)
+    or a
+    jr z,p15_anim_next
+    ld a,(ix+6)
+    xor 2
+    ld (ix+6),a
+    ld a,(ix+5)
+    cp 6
+    jr c,p15_move
+    cp 13
+    jr nz,p15_die
+    ld (ix+8),1
+    jr p15_anim_next
+p15_die:
+    ld a,(ix+7)
+    inc a
+    ld (ix+7),a
+    cp 4
+    jr c,p15_anim_next
+    ld (ix+7),0
+    inc (ix+5)
+    ld h,(ix+5)
+    ld l,0
+    push bc
+    push hl
+    ld hl,32
+    push hl
+    call _plat_tone
+    pop hl
+    pop hl
+    pop bc
+    jr p15_anim_next
+p15_move:
+    push bc
+    push ix
+    call _move_player
+    pop hl
+    pop bc
+p15_anim_next:
+    ld de,16
+    add ix,de
+    djnz p15_anim
+    pop ix
+    ret
+ __endasm;
+}
+#else
 void players_anim_step(void) {
   uint8_t i;
   if (tmr_player_anim.counter != 0) return;
@@ -152,9 +482,77 @@ void players_anim_step(void) {
     plat_tone((uint16_t)p->state << 8, 32);
   }
 }
+#endif
 
 /* On the EXIT tile: the stage is regenerated (no points). On the BONUS
  * tile: random 16..142 points (x10 on screen) and the bonus disappears. */
+#ifdef ESP_FAST128
+void check_pickups(void) __naked {
+ __asm
+    push ix
+    ld ix,_players
+    ld b,4
+p15_pick:
+    ld a,(ix+0)
+    or a
+    jr z,p15_pick_next
+    ld a,(ix+5)
+    cp 6
+    jr nc,p15_pick_next
+    ld a,(_exit_y)
+    cp (ix+4)
+    jr nz,p15_bonus
+    ld a,(_exit_x)
+    cp (ix+3)
+    jr nz,p15_bonus
+    xor a
+    ld (_exit_present),a
+    inc a
+    ld (_exit_touched),a
+    pop ix
+    ret
+p15_bonus:
+    ld a,(_bonus_present)
+    or a
+    jr z,p15_pick_next
+    ld a,(_bonus_y)
+    cp (ix+4)
+    jr nz,p15_pick_next
+    ld a,(_bonus_x)
+    cp (ix+3)
+    jr nz,p15_pick_next
+    xor a
+    ld (_bonus_present),a
+    push bc
+    ld hl,0x0100
+    push hl
+    ld hl,0x30
+    push hl
+    call _plat_tone
+    pop hl
+    pop hl
+    call _rnd
+    ld a,l
+    and 63
+    add a,a
+    or 16
+    ld e,a
+    ld d,0
+    ld l,(ix+10)
+    ld h,(ix+11)
+    add hl,de
+    ld (ix+10),l
+    ld (ix+11),h
+    pop bc
+p15_pick_next:
+    ld de,16
+    add ix,de
+    djnz p15_pick
+    pop ix
+    ret
+ __endasm;
+}
+#else
 void check_pickups(void) {
   uint8_t i;
   for (i = 0; i < MAX_PLAYERS; i++) {
@@ -172,6 +570,7 @@ void check_pickups(void) {
     p->score += ((rnd() & 0x3f) << 1) | 0x10;
   }
 }
+#endif
 
 /* closest alive player to (x,y); falls back to player 0 */
 uint8_t nearest_player(uint8_t x, uint8_t y) {

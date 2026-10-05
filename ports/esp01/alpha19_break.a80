@@ -1,0 +1,16 @@
+    push bc
+    ld bc,0xfefe
+    in a,(c)
+    rrca
+    jr c,b19_continue
+    ld b,0x7f
+    in a,(c)
+    rrca
+    jr c,b19_continue
+    ld a,7
+    ld (_net_abort),a
+    pop bc
+    ret
+b19_continue:
+    pop bc
+    jp 0x64e3

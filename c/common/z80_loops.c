@@ -73,6 +73,48 @@ cm_7:
   __endasm;
 }
 
+#ifdef ESP_FAST128
+/* frame_common draws HUD only in row 24, after flush emptied draw_buf.
+ * Copy the empty playfield directly; retain map-over-HUD semantics in row 24.
+ * Other composite_map callers retain the general overlay routine above. */
+void composite_frame(void) __naked {
+  __asm
+    ld hl,_map_layer
+    ld de,_draw_buf
+    ld bc,960
+cf_copy:
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    jp pe,cf_copy
+    ld b,40
+cf_hud:
+    ld a,(hl)
+    cp 0x20
+    jr z,cf_space
+    ld (de),a
+cf_space:
+    inc hl
+    inc de
+    djnz cf_hud
+    ret
+  __endasm;
+}
+#endif
+
 /* State hash byte loop (game.c): hh = rotl16(hh) ^ *p++ + 9E37h, hash_n
  * times. About 50 T per byte. */
 void hash_run(void) __naked {
