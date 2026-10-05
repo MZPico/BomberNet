@@ -4,7 +4,7 @@
  * machine: see platform.h for what a port provides, netdev.h for the network.
  *
  * Conventions kept from the original:
- *   - every screen cell holds a "logical code" (see README, Logical code map),
+ *   - every screen cell holds a "logical code" (see docs/original.md, Logical code map),
  *     translated to display code + attribute only when flushed to VRAM;
  *   - coordinates are (x = column 0..39, y = row 0..24); sprites are 2x2 chars;
  *   - two layers: map_layer (persistent stage) and draw_buf (rebuilt every frame).

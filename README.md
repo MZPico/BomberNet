@@ -1,361 +1,166 @@
-# BomberNet — Bomberman for Sharp MZ-700/800 (disassembly, C port, multiplayer)
+# BomberNet
+
+Bomberman for 8-bit computers, with network play. BomberNet is Hudson Soft's
+1983 Bomber Man for the Sharp MZ-700, taken apart, ported to C and rebuilt for
+up to four players: cooperative or deathmatch, on one keyboard, on joysticks,
+and over the internet. A Sharp MZ-800, a ZX Spectrum and the browser player on
+mzpico.com meet in the same room and play the same field frame for frame.
 
 Version 0.2.0 (tag `v0.2.0`, shown at the bottom of the title screen).
-Release builds: `bombernet.mzf` (Sharp MZ-700/800, also on mzpico.com) and
-`bombernet.tap` (ZX Spectrum 48K, network play with a Spectranet or Spectranext).
-0.2.0 brings the Spectrum version, MZ against Spectrum in one network room,
-and smoother network play (one frame less input delay; `docs/net-timing.md`).
 
-Sharp MZ-700 machine-code tape image (attribute 01, name ` F1200`), Z80,
-load and exec address `1200h`, body `2010h` bytes (`1200h`–`320Fh`).
-A Hudson Soft Bomberman variant (copyright line "(C) 1983 HUDSON SOFT INC").
+![Sharp MZ-800: title](docs/img/mz-title.png) ![Sharp MZ-800: coop](docs/img/mz-coop.png)
+![ZX Spectrum: title](docs/img/zx-title.png) ![ZX Spectrum: deathmatch](docs/img/zx-deathmatch.png)
 
-Files:
+## Play
 
-| file | purpose |
-|---|---|
-| `bomber.mzf` | original tape image (untouched) |
-| `bomber.asm` | complete, commented source; reassembles byte-identical |
-| `build.sh` | `pasmo` assemble + MZF header wrap + compare with the original |
-| `build/` | output of `build.sh` |
-
-`./build.sh` prints `identical to original bomber.mzf` when the round trip is exact.
-
-## Memory map
-
-| range | what |
-|---|---|
-| `0000h`–`0FFFh` | monitor ROM. Used: `GETKY` 001Bh (key or 0, no wait), `MSTA` 0044h (start tone), `MSTP` 0047h (stop tone) |
-| `11A1h` | `RATIO`, monitor work byte pair: tone divider read by `MSTA` |
-| `1200h`–`134Dh` | entry, new game, stage start, main loop, stage clear / time bonus / death handling |
-| `134Eh` | `stage_table`: 5 × (enemy count, enemy behaviour period) |
-| `1358h`–`1550h` | game over, helper frames, title screen |
-| `1551h`–`1777h` | title logo (6×40 codes, FF terminated) and title strings (0 terminated) |
-| `1778h`–`1E08h` | game logic: time, pickups, spawns, enemies, bombs, blast |
-| `1E0Dh`–`20FFh` | player, HUD, walls |
-| `2100h`–`2112h` | HUD strings |
-| `2113h`–`21DEh` | random, map generation |
-| `21DFh`–`21FEh` | bonus/exit position variables, `reserved_cells`, 9 bytes of dead code |
-| `21FFh`–`228Bh` | random generator, number/string printing, buffer address helpers |
-| `228Ch`–`2673h` | `map_layer` 40×25 |
-| `2674h`–`274Eh` | composite, map_addr, delay, beep, flush_screen, put_vram_char, clear_buffers |
-| `274Fh`–`2B4Eh` | `draw_buffer` 40×25 (+24 pad) |
-| `2B4Fh`–`2F4Eh` | `shadow_vram` 40×25 (+24 pad) |
-| `2F4Fh`–`314Eh` | `game_table` 256 × (display code, attribute) |
-| `314Fh`–`3202h` | `title_table` 90 × (display code, attribute) |
-| `3203h`–`320Fh` | 13 unused zero bytes |
-| `D000h` / `D800h` | VRAM characters / attributes (written only by `put_vram_char`) |
-
-Stack grows down from `1200h`. Interrupts are disabled at entry and never re-enabled.
-Everything in the file after the code (`map_layer`, `draw_buffer`, `shadow_vram`,
-the variables at `26C5h`) is a snapshot of RAM at the moment the tape was written
-(the shadow buffer still holds the title screen, the player variables show a
-finished death). They can be replaced by `defs` if the snapshot is not wanted.
-
-## Rendering model
-
-Every cell holds a *logical code*, not an MZ display code. Two 40×25 layers exist:
-
-- `map_layer` (`228Ch`): persistent stage content: bricks `80h`–`87h`, bombs, fire,
-  exploded remains. The outer wall and pillars are **not** here.
-- `draw_buffer` (`274Fh`): rebuilt every frame. `flush_screen` compares it with
-  `shadow_vram`, writes only changed cells to VRAM through the translation table,
-  and clears the draw buffer to spaces while doing so.
-
-Frame composition order (see `main_loop`): HUD text → walls and pillars → HUD icons →
-`composite_map` (non-space map cells over the draw buffer) → bombs/fire → bonus → exit →
-enemies → player. Because each drawer reads the cell it is about to overwrite,
-collision is detected by inspection of the draw buffer at draw time:
-
-| reader | condition | effect |
+| Machine | File | Network play with |
 |---|---|---|
-| `put_enemy_char` | cell ≥ `E0h` (fire) | enemy state 2 (dying) |
-| `put_player_char` | cell ≥ `C0h` (enemy or fire) | player state 6 (dying) |
-| `put_bomb_char` | cell ≥ `E0h` | chain reaction: state 4, timer 6 |
-| `put_bonus_char` / `put_exit_char` | cell ≥ `E0h` | item destroyed, 4 enemies spawn there once |
-| `move_player` | any of the 2×2 ahead is `80h`, `88h`, `89h` | move refused |
-| `enemy_probe` | either char ahead ≥ `80h` in either layer | move refused |
+| Browser | [mzpico.com/play/bombernet](https://mzpico.com/play/bombernet/) (an emulated MZ-800) | built in |
+| Sharp MZ-700/800 | `bombernet.mzf` ([catalog page](https://mzpico.com/titles/bombernet/)) | an MZPico with the NET extension; or a Unicard with NET firmware on a LAN (see Network) |
+| ZX Spectrum 48K or larger | `bombernet.tap` (`LOAD ""`) | a Spectranet or Spectranext |
 
-Coordinates are always `B` = row (Y), `C` = column (X). `draw_addr` and `map_addr`
-turn (B,C) into a buffer pointer in BC. Sprites are 2×2 chars; `put_tile` writes
-`A, A+1 / A+16, A+17`, i.e. tiles live on a 16-wide sheet.
+The release files are in the repository root and on the catalog page.
 
-`put_vram_char` contains the self-modified word `mode_patch` (`2712h`):
-`00 00` (title) lets codes `< 5Ah` go through `title_table` (letters, box drawing,
-logo blocks); `18 09` (game) forces `game_table` for everything.
+**Title menu.** UP/DOWN selects a row, LEFT/RIGHT changes it, SPACE starts.
+Rows: MODE (COOP or DEATHMATCH), NETWORK (OFF, HOST, JOIN; greyed out without
+a network device), PLAYERS (1 to 4 in total), LOCAL (in a network game: how
+many of them sit at this machine), JOYSTICK (the stick interface), then one
+row per local player choosing its input. Deathmatch has no monsters, players start
+in the corners, the first to win 3 rounds wins the match, a kill scores 100.
 
-### Logical code map (game_table)
+| | Sharp MZ | ZX Spectrum |
+|---|---|---|
+| Keys | cursor keys and SPACE; W A S D and E | Q A O P and SPACE (M when two share the keyboard); Sinclair stick keys 6 7 8 9 0 and 1 2 3 4 5 |
+| Joysticks | MZ-800 sticks (ports F0h/F1h), MZ-1X03 | Kempston, Fuller, Cursor (keys 5 to 8 and 0) |
+| Cancel | BREAK | BREAK (CAPS SHIFT + SPACE) |
 
-| codes | meaning |
-|---|---|
-| `00`–`09` | digits 0–9 (numbers are written as raw digit codes) |
-| `0A 0B 1A 1B` | BONUS tile |
-| `0E 0F 1E 1F` | EXIT tile |
-| `10`–`19` | HUD glyphs S C O R E B O N U S; `30 31` = T G |
-| `20` | space; `21` = ":" |
-| `22`–`3F` | enemy death animation frames (2×2, `state*2+1Eh`) |
-| `40`–`5F` | player death animation frames (`4Eh - (state-6)*2`) |
-| `60 64 68 6C` | bomb ticking frames (+ anim offset 0/2) |
-| `80`–`87` | brick, burning stages; reaches `88h` → removed |
-| `88` | outer wall (indestructible), `89` pillar |
-| `8A`, `8C` | player standing frames; `90` lives icon, `91` enemy icon |
-| `A0`–`AF` | player walking frames per direction (never selected, see quirks) |
-| `C0`–`DF` | enemies: `type*4 + C0h + anim` |
-| `E0 E1 F0 F1` | explosion centre; `E2`–`EE` explosion arms per phase |
+**Network play.** One player chooses HOST: the game creates a room and shows
+its four-letter code, which the others need to get by any other means
+(message, phone). They choose JOIN and type the code. The host's PLAYERS row
+is the total; each machine's LOCAL row says how many of them play there, so
+any mix of local and remote players works. In the lobby everybody presses
+SPACE when ready, the host last. The input delay (DELAY in the lobby, 120 ms
+on most links) is measured before the match. A desync or a lost player ends
+the match with a message.
 
-## Execution flow
+## Building
+
+Z80 builds use z88dk (`sccz80`, `z88dk.zcc`, e.g. the snap package) and CMake;
+`-DPLATFORM` selects the machine (default `mz`).
 
 ```
-start (1200)
-  di, sp=1200, clear_buffers, score=hi_score=0
-  └─ title_screen (13A3)
-       mode_patch = nop nop; draw logo/legend/demo sprites every frame
-       GETKY == SPACE ─► new_game (1213): score=0, stage=1, lives=3
-            └─ stage_start (1223)
-                 time=1000, clear flags, load_stage_params, clear_enemies,
-                 spawn_enemies, clear_bombs, clear_buffers, clear_map,
-                 draw_walls, generate_map, composite_map, mode_patch = jr +9
-                 └─ main_loop (1275)  ── one frame ──
-                      tick_timers (also flush_screen: previous frame → VRAM)
-                      draw_hud, draw_walls, draw_hud_icons, composite_map
-                      update_bombs, draw_bombs, place_bomb, player_anim
-                      enemy_ai, draw_bonus, draw_exit, draw_enemies
-                      reveal_bonus, reveal_exit, draw_player
-                      spawn_from_hit, check_pickups, time_tick
-                      life_lost      ─► player_dead (1322): lives--, 0 ► game_over ► title
-                      exit_touched   ─► exit_taken (1312): 5 frames, same stage again
-                      stage_cleared  ─► 20 frames, time_bonus_loop, next_stage ► stage_start
-                      else loop
+mkdir -p build/c  && cd build/c  && cmake ../../c && make                  # -> build/c/bomber.mzf
+mkdir -p build/zx && cd build/zx && cmake -DPLATFORM=zx ../../c && make    # -> build/zx/bomber.tap
+tools/build_host.sh && c/build/sim 30000 2                                 # the game on a PC (key bot)
 ```
 
-Timing is purely frame based (busy loop, no interrupts). `tmr_*` pairs at `1ECBh`
-are `[counter, period]` advanced once per frame by `tick_timers`.
+The MZ build uses the environment of the MZPico-800-Manager (`+mz` target,
+`REGISTER_SP=0xd000`, output renamed to `.mzf`); the Spectrum build loads at
+24000 and keeps its hot code above the contended RAM.
 
-## Data structures
-
-**enemy_table** (`1BDEh`), 7 bytes each, `FFh` terminated, 8 slots (4 used at start,
-up to 4 more after an explosion hits the bonus/exit):
-
-| off | field |
-|---|---|
-| 0 | state: 0 free, 1 alive, 2..9 dying animation |
-| 1,2 | X, Y (screen chars) |
-| 3 | type 0..3: sprite colour and behaviour; decremented each countdown expiry, wraps 3 |
-| 4 | countdown, reloaded from `enemy_period` |
-| 5 | direction 0 left, 1 right, 2 up, 3 down |
-| 6 | unused |
-
-Type 0 moves every frame straight toward the player (`.ea_chase`). Types 1..3 move
-only every 4th enemy tick: they chase when the countdown's low nibble is 0, pick a
-random direction every 4th count, otherwise keep going and re-roll when blocked.
-Kill value: `type*4+2 + rand(1..4)` points (displayed ×10).
-
-**bomb_table** (`1C7Fh`), 4 bytes each, 5 slots, `FFh` terminated:
-state 0 free, 1..4 ticking (7 frames each), 5..12 explosion phases (one per frame),
-13 erase, then free; X, Y; timer.
-
-**blast_pattern** (`1D02h`): four arms (left, right, up, down) × 8 `(dY,dX)` pairs, first
-the 4 chars of the top row then the 4 of the bottom row. Reach is 2 cells. A solid
-wall on the first char skips the row, a brick after char 1 or 3 stops the arm there.
-Bricks burn one stage per explosion frame (`80h → 87h → removed`).
-
-**generate_map** (`2135h`): player at a random grid cell (col 2..16, row 2..8); then 50
-bricks at random grid cells rejecting: within 1 cell of the player, matching
-column/row parity (pillars and always-open corridors), and `reserved_cells`
-(corner exits). The first brick hides the BONUS, the last one the EXIT.
-
-**Player** (`26C6h`…): `player_state` 0/1 standing, 6..13 dying. `stage_cleared`
-is what advances the stage: all enemies dead. Touching the EXIT regenerates the
-current stage without points. Touching the BONUS scores `(rand & 3Fh)*2 | 10h`.
-
-## Quirks worth knowing before adding features
-
-- `move_player` `1FDDh`: `ld a,e` is a dead store; the direction never reaches
-  `player_state`, so walking tiles `A0h`–`AFh` and states 2..5 are unused.
-- Running out of time does not kill the player: the bricks and both items just vanish.
-- Title legend point values (200-160 … 50-10) do not match the code's scoring.
-- `1E09h` (4 bytes) and `21F6h` (9 bytes) are unreachable leftovers.
-- `tmr_unused` (`1ED3h`) and `unused_26c5` are never read.
-- `enemy_table` has 8 slots but `spawn_from_hit` searches only 4 free ones per hit.
-- `print_num5` always appends a fixed `0` digit; the HUD shows every score ×10.
-- The stack lives directly below `1200h`, inside the monitor's free area.
-- Only one key is read per frame via `GETKY`, so bomb (SPACE) and movement cannot
-  happen in the same frame; no joystick support.
-
-## C port (`c/`)
-
-A migration of the game to C, built with z88dk `sccz80`. The code is split so
-that other machines can be added without touching the game: a portable core,
-and one directory per platform. The MZ build uses the same environment as the
-MZPico-800-Manager (`+mz` target, `REGISTER_SP=0xd000`, the same CMake pattern,
-output renamed to `.mzf`).
+## Code structure
 
 ```
-mkdir -p build/c && cd build/c && cmake ../../c && make      # -> build/c/bomber.mzf
+c/core/       the game, identical everywhere: no hardware addresses, no assembly
+c/common/     shared building blocks: network devices, Z80 assembly loops
+c/platform/   one directory per machine: mz, zx, host (the PC simulator)
 ```
 
 | path | content |
 |---|---|
-| `c/core/` | the game, identical on every platform: no hardware addresses, no assembly |
-| `c/core/game.h` | constants, records (`player_t`, `enemy_t`, `bomb_t`, `ftimer_t`), globals, prototypes |
-| `c/core/platform.h` | **what a port implements**: key sets, joysticks, text-entry key, frame sync, tone, screen flush, player colour, menu texts naming the machine's keys; optional assembly versions of two core loops |
-| `c/core/netdev.h` | **the network as ten calls** (status, create, join, leave, ready, send, poll, hash, message send and receive) |
-| `c/core/netplay.c` | lockstep match over the network device |
-| `c/core/input.c` | input sources sampled once per frame into `players[i].keys` |
-| `c/core/video.c` | layers, 2x2 tile helpers, digit/string output, buffer clears |
+| `c/core/game.h` | constants, records (`player_t`, `enemy_t`, `bomb_t`, `ftimer_t`), globals, prototypes, `GAME_VERSION`, `BUILD_ID` (bump on any change of the simulation or the protocol) |
+| `c/core/platform.h` | **what a port implements**: key sets, joysticks, text-entry key, frame sync, tone, screen flush, player colour, menu texts naming the machine's keys; optional assembly versions of core loops |
+| `c/core/netdev.h` | **the network as ten calls**: status, create, join, leave, ready, send, poll, hash, message send and receive |
+| `c/core/bomber.c` | title and menu, lobby, stage life cycle, status line, frame order as in the original main loop |
+| `c/core/netplay.c` | the lockstep match over the network device |
+| `c/core/input.c`, `video.c` | input sampled once per frame; layers, 2x2 tiles, digits and text |
 | `c/core/map.c`, `enemy.c`, `bomb.c`, `player.c` | stage layout, enemies, bombs and blast, players |
-| `c/core/bomber.c` | title screen and menu, lobby, stage life cycle, HUD, frame order identical to the original main loop |
-| `c/core/data.c/.h` | generated by `tools/extract_data.py` from `bomber.mzf`: logo (`tools/make_logo.py`), blast pattern, strings, all in logical codes |
-| `c/common/netdev_card.c`, `uc.h` | the network device as a Unicard-compatible card (MZPico NET extension): detection and the ten calls as card commands over a two-port transport |
-| `c/platform/mz/plat_mz.c` | Sharp MZ-700/800: Z80 inline asm for the keyboard matrix scan, joysticks, tone via monitor MSTA/MSTP, frame limiter, `flush_screen` diff + table translation, `composite_map`, hash loop |
-| `c/platform/mz/uc_mz.c` | card transport on ports 50h/51h |
-| `c/platform/mz/tables.c/.h` | generated: logical code to MZ display code and attribute (game and title tables, player 2..4 sprites, HUD letters) |
-| `c/platform/mz/plat_config.h` | the platform's constants: text rows, joystick kinds, which assembly versions exist |
-| `c/platform/host/sim.c` | the whole game on a PC with a key bot, recording and replay, and a stub of the network card |
+| `c/core/data.c/.h` | generated by `tools/extract_data.py` from `bomber.mzf`: logo (`tools/make_logo.py`), blast pattern, strings |
+| `c/common/netdev_card.c`, `uc.h` | the network device as a Unicard-compatible card (MZPico NET extension, Unicard NET firmware): detection by the INFO feature bit, the ten calls as card commands |
+| `c/common/netdev_soft.c`, `ws.c`, `tcp.h` | the network device in software, on the machine itself: room state, input window, messages, JSON lines over a small WebSocket client over any `tcp.h` |
+| `c/common/netdev_none.c` | the network device of a build without network |
+| `c/common/z80_loops.c` | core loops and text output in Z80 assembly, used by the MZ and the Spectrum |
+| `c/platform/mz/` | Sharp MZ-700/800: keyboard matrix, joysticks, tones through the monitor, 8253 frame limiter, screen flush through the display-code tables; `uc_mz.c` is the card transport on ports 50h/51h |
+| `c/platform/zx/` | ZX Spectrum 48K: keys and joysticks, frame sync on the ROM's frame counter, beeper, the 6 x 8 pixel screen routine in assembly; `tcp_spectranet.c` is `tcp.h` over the Spectranet socket calls |
+| `c/platform/host/` | the PC: `sim.c` (the whole game with a key bot, recording, replay and a stub network card), `tcp_posix.c` and `softnet_test.c` (the software network device on a PC) |
+| `c/platform/*/tables.c/.h` | generated: logical cell codes to the machine's characters and colours (`tools/make_zx_tables.py` for the Spectrum) |
+| `c/platform/*/plat_config.h` | the platform's constants: text rows, joystick kinds, which assembly versions exist |
 
-Screen contract for ports: the core draws 40 x 25 logical cells, rows 0..23 are
-the field and row 24 the status line. A machine with 24 rows shows the status
-line on top of the bottom wall, in its flush routine, without changing the
-buffer the logic reads.
+**Adding a machine** means a new `c/platform/<name>/` with `platform.h`
+implemented, a `plat_config.h`, character tables, and a network device: the
+card protocol if the machine has such a card, otherwise `netdev_soft.c` with a
+`tcp.h` for its network interface, or `netdev_none.c`. The core draws 40 x 25
+logical cells (rows 0..23 the field, row 24 the status line); a machine with
+24 text rows shows the status line on the bottom wall in its flush routine.
+Every machine must simulate the same frames: a frame is 60 ms, and recordings
+made on the PC replay on each build with identical state hashes.
+`docs/port-zx-spectrum.md` records how the Spectrum port was planned and
+measured.
 
-### ZX Spectrum 48K (`c/platform/zx/`)
+## Network
+
+| Device | Machine | Transport to the relay |
+|---|---|---|
+| MZPico, NET extension | Sharp MZ-800 | WebSocket from the card's firmware (WiFi), production relay |
+| Browser player | mzpico.com | the page's WebSocket, production relay |
+| Spectranet / Spectranext | ZX Spectrum | WebSocket from the Spectrum itself (`netdev_soft.c`) |
+| Unicard, NET firmware | Sharp MZ-800 | JSON lines over TCP: a self-hosted `relay/relay.py` (LAN), not the production relay |
+
+The production relay is `ws://api.mzpico.com/net` (Cloudflare, one Durable
+Object per room). `relay/relay.py` is the reference relay for local tests and
+self-hosting: WebSocket on 8765, JSON lines over TCP on 8766
+(`RELAY_TCP_HOST=0.0.0.0` opens the TCP port to the LAN).
 
 ```
-mkdir -p build/zx && cd build/zx && cmake -DPLATFORM=zx ../../c && make   # -> build/zx/bomber.tap
+cd relay && uvicorn relay:app --host 0.0.0.0 --port 8765
 ```
 
-![title](docs/img/zx-title.png) ![coop](docs/img/zx-coop.png) ![deathmatch](docs/img/zx-deathmatch.png)
+A match is lockstep: every frame each machine sends its keys for frame F + d
+and waits for everybody's keys of frame F. The host chooses d from the lobby's
+round trips (`ceil(rtt / 2)` frames of 60 ms, 2 to 8); hashes of the game state
+are compared every 16 frames. Protocol: `docs/net-protocol.md`. Timing
+measurements and the reasoning behind the delay rule: `docs/net-timing.md`.
 
-1 to 4 players locally, and network play with a Spectranet or its WiFi
-successor Spectranext: HOST and JOIN as on the MZ, through the same relay on
-mzpico.com, rooms and lobby included. A Spectrum and an MZ play in the same
-room: the relay does not care which machine is on the other end, and both
-simulate the same field frame for frame.
+## Testing and tools
 
-![MZ-800 and ZX Spectrum in one match](docs/img/cross-mz-zx.png) Without the interface the NETWORK row
-is greyed out. Same field, same rules, same speed as on the MZ: recordings
-made on the PC replay on both machines with identical state hashes.
-
-| | |
+| tool | what it checks |
 |---|---|
-| Screen | cells of 6 x 8 pixels, 40 x 24 of them in 240 x 192; the status line is written on the bottom wall: black text on a bar in the wall's colour, each player's number in the player's colour |
-| Colour | attribute squares (8 pixels) and cells (6 pixels) do not line up: where two cells share a square, a figure wins over scenery |
-| Keys and sticks | Q A O P and SPACE (M when two players share the keyboard); Sinclair stick 1 = keys 6 7 8 9 0; Sinclair stick 2 = keys 1 2 3 4 5; and the stick chosen in the JOYSTICK row: KEMPSTON (port 1Fh), FULLER (port 7Fh) or CURSOR (Protek/AGF, keys 5 to 8 and 0, which excludes the two Sinclair sets). Up to 3 players without an interface, 4 with Kempston or Fuller |
-| Sound | the MZ's tones on the beeper: same pitch (within 1 %) and same length; the game waits while a tone plays, as on the MZ |
-| Network | the network device runs on the Spectrum itself (`c/common/netdev_soft.c`, the MZPico firmware's logic in C) with a small WebSocket client (`c/common/ws.c`) over the Spectranet socket calls (`c/platform/zx/tcp_spectranet.c`); relay `ws://api.mzpico.com/net`. Per frame about 2 ms to send and 3 ms per line received; the input line is read and written in Z80 assembly |
-| Memory | loads at 24000, the program with buffers ends at 64,306; the stack peaks about 330 bytes deep and leaves some 890 bytes free |
-| Frame | three TV frames (60 ms), counted by the ROM interrupt; about 46 ms of it used in a busy 4-player game, the title at the same pace. A whole new screen (stage or round start) takes about 260 ms: after a clear the display is wiped in one pass, and repeated groups of cells are copied from a cache instead of drawn again |
-
-| file | content |
-|---|---|
-| `c/platform/zx/plat_zx.c` | keys, joysticks, frame limiter, beeper, and the screen routine in assembly (groups of four cells = three bytes) |
-| `c/platform/zx/tables.c/.h` | generated by `tools/make_zx_tables.py` from the MZ tables and the MZ character ROM: 79 glyphs narrowed to 6 pixels, letters from a 5 x 7 font, logical code to glyph and attribute |
-| `c/common/z80_loops.c` | the two core loops in Z80 assembly, shared with the MZ |
-| `c/common/netdev_soft.c`, `ws.c`, `tcp.h` | network device in software: room state, input window, messages, JSON lines over a WebSocket over any `tcp.h` |
-| `c/platform/zx/tcp_spectranet.c` | `tcp.h` over the Spectranet socket calls; detection by the control register that mirrors the border |
-| `c/common/netdev_none.c` | network device of a build without network |
-| `tools/zxemu.py` | headless Spectrum for tests (Python package `zx`): load, run to an address, keys, memory, screenshot |
-| `tools/replay_zx.py` | replays a PC recording on the Spectrum build and compares the state hashes |
-| `tools/lockstep_zx.py` | two emulated Spectrums with a Spectranet play a network match through the local relay or production (`RELAY=real`) and compare hashes; the Spectranet is emulated at its programming interface with real sockets |
-| `tools/crossplay.py` | an MZ-800 (mz800emu, MZPico card, TCP to the relay) and a ZX Spectrum (Spectranet, WebSocket) in one match through the local relay; either can host, seats as in the other tests; compares state hashes |
-| `tools/softnet_test.sh` | the same network device built on the PC (`c/platform/host/tcp_posix.c`): two processes create and join a room and exchange 200 frames of inputs |
-
-What changed on purpose:
-
-- **Input** reads the 8255 keyboard matrix directly (rows F6h/F7h), so SPACE and a
-  direction work in the same frame; the original read one key through GETKY.
-- **Random numbers** use a 16-bit xorshift; the original mixed in the Z80 R register.
-- The self-modifying `mode_patch` became the `title_mode` variable.
-- Walls and pillars live in the map layer (the original repainted them into the
-  draw buffer every frame); `map_walls()` is called after every `clear_map()`.
-- **Frame pacing** is fixed to the original's measured frame time: `mz_frame_sync`
-  in `platform/mz/plat_mz.c` waits on 8253 counter 1 (15611 Hz, programmed free-running) until
-  `FRAME_TICKS` (915 = 58.6 ms) have passed since the previous frame. Change
-  `FRAME_TICKS` in `game.h` to retune the game speed; the game logic stays
-  frame-based like the original.
-- Everything else (collision-at-draw-time, layer semantics, scoring, stage flow,
-  quirks such as the exit restarting the stage) is kept, with comments marking the
-  natural hook points for new features (walking animation, more bombs, blast range).
-
-Title menu: cursor UP/DOWN selects a row, LEFT/RIGHT changes it. Rows: MODE (COOP /
-DEATHMATCH), NETWORK (OFF / HOST / JOIN, shown with an MZPico or a Unicard that has the NET
-extension), PLAYERS (1..4; 3-4 need a joystick type), JOYSTICK (NONE / MZ-800 on ports
-F0h/F1h / MZ-1X03, the MZ-700 analogue stick on E008h timed at VBLK), then one row per
-player choosing its input: CURSOR AND SPACE, WASD AND E, JOYSTICK 1, JOYSTICK 2 (any
-combination, no duplicates). Deathmatch: no monsters, corners start, first to 3 round
-wins; kills 100 points.
-
-Bugs fixed against the first C version, both found with the emulator: the BONUS and
-EXIT tiles were visible from the start (the original clears both flags after building
-the map), and a lone dying enemy never disappeared because `tmr_enemy_die` was ticked
-twice per frame (the original ticks only four timers globally; `tmr_explode` and
-`tmr_enemy_die` are advanced by their users).
-
-Network play (phase 6): with an MZPico or a Unicard that has the NET extension (or mz800emu with
-`[UNICARD] mzpico_mode = 1`), the title shows a NETWORK row: HOST creates a room and
-shows its 4-letter code, JOIN asks for a code (type the letters, or UP/DOWN letter and LEFT/RIGHT position, DEL back,
-SPACE join, BREAK cancel). The host's PLAYERS row is the total (2..4); each device's
-LOCAL row says how many of them sit at that machine (1..3, with their own input rows),
-so any mix of local and network players works. Mode and total come from the host; the
-lobby shows SEATS taken and seats the players in slot order (host's first). Everybody
-presses SPACE to ready up, the host's READY goes out once every seat is taken;
-the match is lockstep with an input delay measured in the lobby (host pings, ceil(rtt/2) frames of 60 ms, 2..8, shown as DELAY in ms), hashes are compared every 16
-frames and a desync or a dropped peer ends the match with a message. The reference
-relay is `relay/relay.py` (WebSocket 8765, JSON lines TCP 8766; `RELAY_TCP_HOST=0.0.0.0` opens the
-TCP port to the LAN for a Unicard; the Unicard has only this TCP transport, so it plays on a LAN or
-through a self-hosted relay, not through mzpico.com or against its browser player); `tools/nettest.py`
-and `tools/lockstep_test.py` run two headless emulators through it. Protocol:
-`docs/net-protocol.md`.
-
-Determinism harness (phase 4): record a bot session on the host and replay it on the
-host or on the Z80 build in the emulator, comparing the state hash every frame:
+| `c/build/sim` (`SIM_RECORD`, `SIM_REPLAY`) | records a bot session on the PC and replays it with a state hash per frame |
+| `tools/replay.py`, `tools/replay_zx.py` | the same recording on the MZ build (mz800emu) and the Spectrum build: identical hashes |
+| `tools/lockstep_test.py`, `tools/nettest.py` | two MZ-800s (mz800emu, MZPico card emulated) through the local relay |
+| `tools/lockstep_zx.py` | two Spectrums (`tools/zxemu.py`, Spectranet emulated at its programming interface) through the local relay or production |
+| `tools/crossplay.py` | an MZ-800 and a Spectrum in one match |
+| `tools/fusex_match.py` | two FuseX with the real Spectranet firmware (`tools/fusex.py` drives FuseX through its GDB server) |
+| `tools/softnet_test.sh` | the software network device on a PC: two processes in one room |
+| `tools/netbench.py` | network timing of a real-time match, local relay or production, including the play page (`tools/web_join.mjs`, `tools/netproxy.py`) |
+| `tools/browser_match.mjs` | two browser tabs play a match on the site |
+| `tools/emu.py` | drives a headless mz800emu over its MCP pipe: load, keys, frame benchmarks, screenshots |
 
 ```
 SIM_MODE=1 SIM_PLAYERS=2 SIM_SEED=0x1234 SIM_RECORD=build/replay/dm.bnr c/build/sim 3000 7
-SIM_REPLAY=build/replay/dm.bnr c/build/sim 3000 99        # host replay, different bot seed
-tools/replay.py build/replay/dm.bnr                       # same recording on the Z80 build
+SIM_REPLAY=build/replay/dm.bnr c/build/sim 3000 99     # PC replay, different bot seed
+tools/replay.py build/replay/dm.bnr                    # the same recording on the MZ build
+tools/replay_zx.py build/replay/dm.bnr                 # and on the Spectrum build
 ```
 
-Host simulation:
+The emulator paths come from `$MZ800EMU` (default
+`~/src/mz800emu/build/build-mz800emu/mz800emu`) and `$FUSEX`. The network tests
+need the local relay (above); FuseX needs a virtual display (`Xvfb :97`).
+Building FuseX and its quirks: `docs/port-zx-spectrum.md`.
 
-```
-tools/build_host.sh && c/build/sim 30000 2
-```
+## The original
 
-The key bot is random, so it mostly blows itself up; use the emulator scenarios in
-`tools/` style scripts for targeted checks (see PLAN.md, phase 0).
-It prints text dumps of the screen (walls `#`, pillars `+`, bricks `%`, fire `*`,
-bombs `o`, enemies `E`, player `P`, bonus `B`, exit `X`) and statistics.
-### Performance (measured in mz800emu, MZ-800 in MZ-700 mode, during play)
+`bomber.mzf` is the untouched 1983 tape; `bomber.asm` is its complete,
+commented disassembly, which `./build.sh` reassembles byte-identical with
+`pasmo`. Memory map, rendering model, data structures, quirks, what the C port
+changed on purpose and how fast it runs: `docs/original.md`.
 
-| build | Z80 cycles per frame | ms | fps |
-|---|---|---|---|
-| original asm | 207,888 | 58.6 | 17.1 |
-| C, first version | 312,627 | 88.1 | 11.3 |
-| C, walls in map layer + row-offset table | 223,482 | 63.0 | 15.9 |
-| C, + rewritten flush/composite asm, no divisions | 154,667 | 43.6 | 22.9 |
-| C, with frame limiter (`FRAME_TICKS` 915) | 210,637 | 59.4 | 16.8 |
+## Documents
 
-So the game logic uses about 44 ms of the 59 ms frame; the rest is headroom for
-new features before the pacing would slip.
-
-The flush loop no longer swaps AF' per cell and derives the VRAM address from the
-shadow pointer with a constant delta; both flush and composite are unrolled 8x.
-Digits are printed by subtraction (sccz80's division helper cost ~8k cycles/frame).
-
-### Emulator workflow (`tools/emu.py`)
-
-`tools/emu.py` drives a headless `mz800emu` over its MCP pipe transport (JSONL on
-stdin/stdout, no Python MCP wrapper needed):
-
-```
-tools/emu.py bench bomber.mzf --at 0x26DA --frames 60 --tap SPACE --keys LEFT --png shot.png
-tools/emu.py bench build/c/bomber.mzf --map build/c/bomber.map --frames 60 --tap SPACE --keys LEFT
-```
-
-`bench` loads the MZF (monitor ROM stays mapped), taps SPACE to leave the title,
-holds a key, and measures cycles between arrivals at the frame flush routine.
-Key names are the emulator's (`SPACE`, `LEFT`, `RIGHT`, `UP`, `DOWN`). The emulator
-binary path comes from `$MZ800EMU` (default `~/src/mz800emu/build/build-mz800emu/mz800emu`).
-To expose the same emulator as MCP tools inside Claude Code, run
-`~/src/mz800emu/mcp-server/mcpinit.sh` and copy its generated `.mcp.json` into this project.
+| file | content |
+|---|---|
+| `docs/original.md` | the 1983 original: memory map, rendering, data structures, quirks; the C port's deliberate changes and performance |
+| `docs/net-protocol.md` | the network device (card commands, ten calls) and the relay protocol |
+| `docs/net-timing.md` | network timing measurements and the 0.2.0 fixes |
+| `docs/port-zx-spectrum.md` | the ZX Spectrum port: feasibility, plan, measurements, FuseX |
+| `PLAN.md` | the multiplayer plan the C port followed |
