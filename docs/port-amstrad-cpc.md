@@ -105,7 +105,7 @@ Estimate 41–43 KB of the 48 KB, to be measured in step 2.
 | Step | Work | Result | Effort |
 |---|---|---|---|
 | 0 | Feasibility: M4 interface, emulators, build, screen mode | this document | done |
-| 1 | `tools/cpcemu.py`: CPC subset on the `z80` core (64 KB, ROM paging, gate array mode and palette, PPI keyboard and VSYNC, interrupts, screenshot), M4 at its port interface with real sockets | scripted CPC for every later step | 2 days |
+| 1 | `tools/cpcemu.py`: CPC subset on the `z80` core (64 KB, ROM paging, gate array mode and palette, PPI keyboard and VSYNC, interrupts, screenshot), M4 at its port interface with real sockets | scripted CPC for every later step; done | 2 days |
 | 2 | CPC platform, local play: `+cpc` build to `.dsk`, Mode 1 tables from the MZ character ROM with the dither schemes, 16-byte cell flush, keyboard, two joysticks, frame sync, AY tones | playable local game, 1 to 4 players | 5 days |
 | 3 | Determinism: PC recordings replayed on the CPC build, hashes compared | same simulation as MZ and Spectrum | 1 day |
 | 4 | `tcp_m4.c` under the existing software network device; local relay, then production | CPC against CPC | 3 days |
@@ -115,6 +115,30 @@ Estimate 41–43 KB of the 48 KB, to be measured in step 2.
 
 About three weeks, less than the Spectrum: the core split, the
 network device and the test tools exist.
+
+## Measured after step 1
+
+`tools/cpcemu.py` (needs `pip install z80` in `build/venv`) and its self-test
+`tools/cpcemu_selftest.py`, Z80 code assembled with pasmo:
+
+| Check | Result |
+|---|---|
+| Gate array interrupt | 300 interrupts in 0.999 s of CPC time |
+| VSYNC on the PPI | 50 rising edges per second |
+| Keyboard through PPI and AY register 14 | SPACE (line 5 bit 7), joystick left and fire (line 9 bits 2 and 5) read as on a CPC |
+| Mode 1, palette A | screenshot shows the four inks in the right pens |
+| M4 board | ROM found by its name in the RSX table, pointer table at FF00h, DNS, socket, connect, send, receive poll in the socket table, receive: an HTTP request to the local relay comes back (154 bytes) |
+| Speed | one second of CPC time in under 10 ms of wall time |
+
+The M4 interface was taken from the M4's own ROM source (`m4rom/M4ROM.s`:
+the pointer table at FF00h, the socket table layout documented there) and
+its examples (`M4examples/tcp.s`, `lookup.s`: packet layout, waiting on the
+status bytes). The real M4 firmware is checked against it in step 7, in
+CPCemu.
+
+Not modelled: CPC wait states (frame costs optimistic by about 20 %), the
+CRTC beyond the screen address, sound output (AY tone writes are recorded),
+the CPC firmware (the game does not use it).
 
 ## 7. Risks
 

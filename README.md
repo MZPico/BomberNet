@@ -135,6 +135,7 @@ measurements and the reasoning behind the delay rule: `docs/net-timing.md`.
 | `tools/netbench.py` | network timing of a real-time match, local relay or production, including the play page (`tools/web_join.mjs`, `tools/netproxy.py`) |
 | `tools/browser_match.mjs` | two browser tabs play a match on the site |
 | `tools/emu.py` | drives a headless mz800emu over its MCP pipe: load, keys, frame benchmarks, screenshots |
+| `tools/cpcemu.py`, `tools/cpcemu_selftest.py` | a scripted Amstrad CPC with an M4 board (sockets emulated at its port interface) for the CPC port, and its self-test |
 
 ```
 SIM_MODE=1 SIM_PLAYERS=2 SIM_SEED=0x1234 SIM_RECORD=build/replay/dm.bnr c/build/sim 3000 7
