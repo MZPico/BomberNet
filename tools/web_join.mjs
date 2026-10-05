@@ -63,6 +63,12 @@ await sleep(Number(lobbyS) * 1000);
 await key('Space'); say('READY');
 for (let i = 0; i < 60; i++) { await sleep(500); if (/running/.test(await panel())) break; }
 say('RUNNING'); console.log('panel:', await panel());
+if (process.env.MUTE) await ev("document.getElementById('play-mute')?.click(); 1");   // silent: no audio exemption
+if (process.env.BACKGROUND) {                        // another tab in front: the play page is hidden, as behind FuseX
+  const front = await (await cdp('/json/new?about:blank', { method: 'PUT' })).json();
+  await cdp(`/json/activate/${front.id}`);
+  console.log('hidden:', await ev('document.hidden'));
+}
 await sleep(Number(gameS) * 1000);
 console.log('panel:', await panel()); say('DONE');
 await cdp('/json/new?about:blank', { method: 'PUT' }).catch(() => {});   // keep Chromium for the next run
