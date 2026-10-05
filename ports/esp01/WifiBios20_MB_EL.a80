@@ -115,7 +115,7 @@ vers	equ	#0200	;; Bios version: high byte = major number, low byte = minor numbe
 ;;                                 DE = timeout (range 0- #FFFF)
 ;;                            OUT: HL = address after really read data
 ;;                                 BC = number of missing bytes (not received yet) 0 = OK
-;;                                 C= data sent OK, NC= data not sent ok			
+;;                                 C= data sent OK, NC= data not sent ok
 ;;
 ;; +22 send_block:          Send block of more bytes
 ;;                            IN: HL = address of data to send
@@ -123,7 +123,7 @@ vers	equ	#0200	;; Bios version: high byte = major number, low byte = minor numbe
 ;;                                DE = must be 0 (reserved for future timeout)
 ;;                           OUT: HL = address after really send data
 ;;                                BC = number of missing bytes (not send yet) 0 = OK
-;;                                C= data sent OK, NC= data not sent ok				
+;;                                C= data sent OK, NC= data not sent ok
 ;;
 ;; Services backup all needed registers
 
@@ -193,7 +193,7 @@ ZXi_port6	equ	#763B
 ZXi_port7	equ	#773B
 general_port	equ	#7C3B
 element_port	equ	#783B
-		
+
 
 TX_CHKREADY	equ	#133B	;; Write: bytes to send    Read: status bits
 RX_SETBAUD	equ	#143B	;; Write: set baud rate    Read: received byted
@@ -249,7 +249,7 @@ install_getver	jr	reloc1
 		and	%11110000
 		cp	#E0
 		jr	z,ig_el			;Z=el detected
-		
+
 		xor	a
 
 ig_el		ld	d,a			;D=either #E0 or 0
@@ -286,7 +286,7 @@ turnof_wifi	call	turn_sub
 		out	(c),a
 
 t_off_w		ld	a,#55
-		or	a			;Z		
+		or	a			;Z
 
 		ret
 
@@ -417,7 +417,7 @@ receive_byte	push	bc
 		bit	status_data1,a		;Z = no byte to receive, NZ = byte to receive
 		jr	nc,rece_stat		;NC = read status only, jump to carry setting
 		jr	z,rece_stat		;Z = no byte to receive
-	
+
 		inc	b			;B = high RX_SETBAUD
 		in	e,(c)			;receive byte
 		inc	b			;Set NZ as flag 'received byte valid'
@@ -458,7 +458,7 @@ ld_pop_ret	ld	a,e
 ;;   HL = address to store data
 ;;   DE = timeout (0- #FFFF)
 ;;   BC = number of requested bytes
-;;   OUT= C=data received ok (BC=0), NC= data received not OK (BC=non zero)	
+;;   OUT= C=data received ok (BC=0), NC= data received not OK (BC=non zero)
 
 ;receive_block	ld	a,#7F		;; Test SPACE key (as break)		;; 7
 ;		in	a,(#FE)							;; 11
@@ -469,7 +469,7 @@ receive_block	ld	a,e							;; 4
 		or	d							;; 4
 		dec	de							;; 6
 		ret	z	;; timeout elapsed=NC=data not received correct	;; 11/5
-		
+
 		ld	a,high TX_CHKREADY	;; Get status info
 		in	a,(low TX_CHKREADY)
 		bit	status_data256,a
@@ -514,7 +514,7 @@ reloc3		jr	reloc4
 ;;   HL = address of data to send
 ;;   DE = timeout (not supported yet)
 ;;   BC = length of data to send
-;;   OUT= C=data sent ok (BC=0), NC= data sent not OK (BC=non zero)	
+;;   OUT= C=data sent ok (BC=0), NC= data sent not OK (BC=non zero)
 sending_block	push	de		;; DE = timeout
 		exx
 		pop	de
@@ -529,7 +529,7 @@ send_loop	exx								;; 4
 		or	e							;; 4
 		exx								;; 4= 22
 		jr	z,send_end	;; NC=	data not sent ok		;; 12/7
-		
+
 ;		ld	a,#7F		;; Test SPACE key (as break)		;; 7
 ;		in	a,(#FE)							;; 11
 ;		and	#01							;; 7= 25
@@ -688,4 +688,3 @@ start	call	#4000	;; Install bios
 stop	jr	stop	;; Stop test
 
 ;        SAVESNA snapfile , start
-

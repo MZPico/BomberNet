@@ -251,4 +251,3 @@ void tcp_close(void) {bank_call(ESP_CLOSE,0,0);}
 uint8_t tcp_error(void) {return (uint8_t)bank_call(ESP_ERROR,0,0);}
 uint8_t tcp_peer_closed(void) {return (uint8_t)bank_call(ESP_CLOSED,0,0);}
 uint16_t tcp_read_commands(void) {return bank_call(ESP_READS,0,0);}
-

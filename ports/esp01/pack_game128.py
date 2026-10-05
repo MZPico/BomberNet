@@ -55,4 +55,3 @@ while p<len(tape):
 assert len(blocks)==6 and p==len(tape)
 assert blocks[4][1:-1]==bank and blocks[5][1:-1]==game
 print('TAP: %d bytes; loader %d, ESP image %d, game image %d' % (len(tape),len(loader),len(bank),len(game)))
-

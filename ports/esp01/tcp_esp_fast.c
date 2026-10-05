@@ -1025,4 +1025,3 @@ es_rx: defs 192
     SECTION code_compiler
  __endasm;
 }
-

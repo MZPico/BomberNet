@@ -179,4 +179,3 @@ if os.environ.get('ESP_TEST_RESTART')=='1' and not mism and not any(aborts):
     assert all(z.read8(S('_players')+3)>5 and z.read8(NAB)==0 for z in (a,b))
     print('PASS: real online match -> injected DESYNC -> PRESS FIRE -> title -> OFF -> offline movement on both clients',flush=True)
 sys.exit(1 if mism or any(aborts) or not common else 0)
-
