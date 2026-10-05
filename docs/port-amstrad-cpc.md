@@ -36,6 +36,21 @@ conversions):
   glyphs need redrawing for 4 x 8, as they were narrowed to 6 x 8 for the
   Spectrum (`tools/make_zx_tables.py`). Most CPC games use Mode 0.
 
+Mode 1 with dithered figures: the four inks are black, red (bricks, pillars)
+and two more; a player or an enemy gets one ink or a checkerboard of two, so
+four players and four enemy types stay apart while every MZ pixel is kept.
+Rendered from the MZ character ROM, two palettes (black red yellow cyan;
+black red white green):
+
+![Mode 1 scene](img/cpc-mock-mode1.png)
+![Mode 1 figures: players 1-4, enemy types 0-3](img/cpc-mock-mode1-figures.png)
+
+Players: ink A, ink B, A/B checker, A/red checker. Enemies: red, B/red
+checker, A/black and B/black checkers (darker). At normal size the checkers
+read as mixed colours (orange, pale green). The dark enemy checkers resemble
+players 1 and 2 at a glance; the status line keeps the players' colours on
+their digits.
+
 Proposal: Mode 0, glyphs redrawn by a generator plus hand corrections,
 decided on a rendered mock-up of real glyphs in step 2 before the screen
 routine is written. Each cell is then 16 bytes with its colours built in, so
