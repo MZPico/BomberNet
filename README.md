@@ -299,7 +299,7 @@ LOCAL row says how many of them sit at that machine (1..3, with their own input 
 so any mix of local and network players works. Mode and total come from the host; the
 lobby shows SEATS taken and seats the players in slot order (host's first). Everybody
 presses SPACE to ready up, the host's READY goes out once every seat is taken;
-the match is lockstep with an input delay measured in the lobby (host pings, ceil(rtt/2)+1 frames of 60 ms, 2..8, shown as DELAY in ms), hashes are compared every 16
+the match is lockstep with an input delay measured in the lobby (host pings, ceil(rtt/2) frames of 60 ms, 2..8, shown as DELAY in ms), hashes are compared every 16
 frames and a desync or a dropped peer ends the match with a message. The reference
 relay is `relay/relay.py` (WebSocket 8765, JSON lines TCP 8766; `RELAY_TCP_HOST=0.0.0.0` opens the
 TCP port to the LAN for a Unicard; the Unicard has only this TCP transport, so it plays on a LAN or

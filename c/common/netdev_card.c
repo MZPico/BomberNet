@@ -9,9 +9,10 @@ uint8_t net_device;
 extern uint8_t net_slots;
 
 /* REVD: a Unicard-compatible device answers status {02,06,04,00} and 4 data
- * bytes {major, minor, subtype, pc}; subtype 'M' (4Dh) is an MZPico. Then
- * INFO's NET bit marks the extension: no ERROR, OUTPUT set, command 95h and
- * at least 16 bytes to read. */
+ * bytes {major, minor, subtype, pc}; subtype 'M' (4Dh) is an MZPico. With no
+ * device the ports float and the status bytes do not match. Then INFO's NET
+ * bit marks the extension: no ERROR, OUTPUT set, command 95h and at least 16
+ * bytes to read. */
 void net_detect(void) {
   uint8_t st[4], v[16];
   net_device = NETDEV_NONE;

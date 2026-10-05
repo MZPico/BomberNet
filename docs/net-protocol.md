@@ -24,7 +24,8 @@ on ERROR); output read from 0x51 after CMD_OUTPUT; STORNO cancels.
 
 Detection: a valid REVD answer (any Unicard-compatible device), then INFO
 (0x95) with feature bit `NET` (bit 3 of the feature byte). The INFO status
-must read no ERROR, CMD_OUTPUT set, byte 1 = 0x95 and byte 2 = 16: older
+must read no ERROR, CMD_OUTPUT set, byte 1 = 0x95 and byte 2 at least 16
+(the first 16 bytes are read): older
 Unicard firmware answers an unknown command with ERROR and may leave a stale
 CMD_OUTPUT bit. The REVD subtype ('M' = MZPico) is informational only.
 Without the NET bit, a program must run offline.
