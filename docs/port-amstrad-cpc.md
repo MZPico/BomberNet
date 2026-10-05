@@ -107,7 +107,7 @@ Estimate 41–43 KB of the 48 KB, to be measured in step 2.
 | 0 | Feasibility: M4 interface, emulators, build, screen mode | this document | done |
 | 1 | `tools/cpcemu.py`: CPC subset on the `z80` core (64 KB, ROM paging, gate array mode and palette, PPI keyboard and VSYNC, interrupts, screenshot), M4 at its port interface with real sockets | scripted CPC for every later step; done | 2 days |
 | 2 | CPC platform, local play: `+cpc` build to `.dsk`, Mode 1 tables from the MZ character ROM with the dither schemes, 16-byte cell flush, keyboard, two joysticks, frame sync, AY tones | playable local game, 1 to 4 players; done (in `tools/cpcemu.py`) | 5 days |
-| 3 | Determinism: PC recordings replayed on the CPC build, hashes compared | same simulation as MZ and Spectrum | 1 day |
+| 3 | Determinism: PC recordings replayed on the CPC build, hashes compared | same simulation as MZ and Spectrum; done: 8 recordings, 4,268 frames, no mismatch | 1 day |
 | 4 | `tcp_m4.c` under the existing software network device; local relay, then production | CPC against CPC | 3 days |
 | 5 | Cross-play: CPC with MZ, Spectrum and the browser player in one room | the goal | 1 day |
 | 6 | Fit and speed: memory map, assembly where frames run long | holds 60 ms frames on a 464 | 2 days |
@@ -173,6 +173,20 @@ How it is built:
 Left for step 6: the frames over 60 ms (the scan could halve), and the load
 address: from 1200h the program with network code would pass the end of the
 area AMSDOS can load into (A6FFh).
+
+## Measured after step 3
+
+`tools/replay_cpc.py` replays a recording made by the PC simulator on the
+CPC build and compares the state hash every frame:
+
+| Recording | Frames | Mismatches |
+|---|---|---|
+| `build/ref/coop1`, `coop4`, `dm2`, `dm4` | 299 + 499 + 499 + 499 | 0 |
+| `build/replay/coop1`, `coop2s`, `dm2`, `dm2s` | 865 + 319 + 993 + 319 | 0 |
+
+The long recordings outlast their match; the replay tools (also
+`tools/replay_zx.py`) now stop when the game is back on the title, where
+they used to wait for ever.
 
 ## 7. Risks
 
