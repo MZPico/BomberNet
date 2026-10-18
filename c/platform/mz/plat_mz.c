@@ -193,6 +193,23 @@ mkl_tab:
 }
 
 
+/* BREAK: row F8h, bit 7 (as in plat_key_char) */
+uint8_t plat_break(void) __naked {
+  __asm
+    ld   a,0xf8
+    ld   (0xe000),a
+    ld   b,12               ; let the matrix lines settle
+pb_settle:
+    djnz pb_settle
+    ld   a,(0xe001)
+    cpl
+    and  0x80
+    ld   l,a
+    ld   h,0
+    ret
+  __endasm;
+}
+
 /* Keyboard set B: strobe F2h row: Q R S T U V W X (bit 7..0) -> W bit1 = up,
  * S bit5 = down; strobe F4h row: A B C D E F G H -> A bit7 = left, D bit4 =
  * right, E bit3 = fire. */

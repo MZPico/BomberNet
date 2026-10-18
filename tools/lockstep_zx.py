@@ -7,6 +7,8 @@ both are compared frame by frame.
   RELAY=real tools/lockstep_zx.py        production, api.mzpico.com
   PLAYERS=3 LOCAL_A=2 LOCAL_B=1 ...      seats as in tools/lockstep_test.py
   B_BUILD=build/v020/build/zx ...        B runs another build (its bomber and bomber.map)
+  BREAK_AT=40 ...                        A leaves with BREAK after 40 frames: A ends with
+                                         MATCH LEFT, B with the other player gone
 """
 import os, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -86,9 +88,11 @@ def step_a():                                      # A's own quanta, to time its
     elif pc == F: on_flush(0, a); return 1
     return 0
 done_a = done_b = 0
+BREAK_AT = int(os.environ.get('BREAK_AT', 0))
 end = a.now() + 120 * 3500000
 while (done_a < N or done_b < N) and a.now() < end:
     done_a += step_a()
+    if BREAK_AT and done_a == BREAK_AT: a.press('CAPS SHIFT', 'SPACE')
     if b.step() == FB: on_flush(1, b); done_b += 1
 print(f'frames: A {a.read16(FN)} B {b.read16(FNB)} abort {a.read8(NAB)}/{b.read8(NAB_B)}', flush=True)
 common = sorted(set(seen['A']) & set(seen['B']))
@@ -103,4 +107,7 @@ for name, z in (('A', a), ('B', b)):
     m = z.read(BSS[z], 0xff00 - BSS[z])
     used_from = next((BSS[z] + i for i, v in enumerate(m) if v != 0xa5), 0xff00)
     print(f'{name}: stack reached {used_from:04x}, {used_from - BSS[z]} bytes above the program left unused')
+if BREAK_AT:
+    print(f'BREAK at frame {BREAK_AT}: A abort {aborts[0]} (7 = left), B abort {aborts[1]}, A title_mode {a.read8(TM)}')
+    sys.exit(0 if aborts[0] == 7 and aborts[1] and not mism else 1)
 sys.exit(1 if mism or any(aborts) or not common else 0)

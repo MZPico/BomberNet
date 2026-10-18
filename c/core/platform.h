@@ -23,6 +23,7 @@ extern uint8_t kbd_alt_fire;    /* set by the core: key set A fires with its alt
 uint8_t plat_keys_a(void);      /* key set A (several keys at once) */
 uint8_t plat_keys_b(void);      /* key set B */
 uint8_t plat_key_char(void);    /* text entry: 'A'..'Z', 8 = delete, 0x1b = cancel, 0 = none */
+uint8_t plat_break(void);       /* the cancel key of plat_key_char is down: a quick test, every game frame */
 uint8_t plat_joy(uint8_t n);    /* joystick 0/1 as a key mask, kind from joy_type */
 
 /* The four input sources of the menu (INPUT_KBD_A, INPUT_KBD_B, INPUT_JOY1,
@@ -51,5 +52,6 @@ void plat_hud_colour(uint8_t x, uint8_t n, uint8_t player, uint8_t blank);
 
 /* ---- optional assembly versions of core loops (plat_config.h: PLAT_ASM_*) ---- */
 void composite_map(void);                      /* non-space map cells over draw_buf */
+void composite_frame(void);                    /* the same at the start of a frame: rows 0-23 of draw_buf are blank */
 void hash_run(void);                           /* hash byte loop over hash_ptr/hash_n into hh */
 #endif

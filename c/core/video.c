@@ -169,4 +169,17 @@ void composite_map(void) {
   for (i = 0; i < SCREEN_CELLS; i++)
     if (map_layer[i] != C_SPACE) draw_buf[i] = map_layer[i];
 }
+
+/* composite_map at the start of a frame: the flush has emptied draw_buf and
+ * only the status row is drawn, so the playfield is a copy of the map (the
+ * idea: Milan Stava's ESP-01 port) */
+void composite_frame(void) {
+  uint16_t i;
+#ifdef HOST
+  for (i = 0; i < HUD_ROW * SCREEN_W; i++) assert(draw_buf[i] == C_SPACE);
+#endif
+  memcpy(draw_buf, map_layer, HUD_ROW * SCREEN_W);
+  for (i = HUD_ROW * SCREEN_W; i < SCREEN_CELLS; i++)
+    if (map_layer[i] != C_SPACE) draw_buf[i] = map_layer[i];
+}
 #endif

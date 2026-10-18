@@ -89,11 +89,11 @@ static void draw_hud_icons(void) {
 /* after the flush: each player's lives icon and count in the player's colour,
  * like the player's number (the idea: Milan Stava's ESP-01 Spectrum port) */
 void hud_colours(void) {
-  uint8_t i;
+  static uint8_t i, x, step, blank;                  /* static: smaller code with sccz80 */
   if (title_mode || player_count < 2) return;
-  for (i = 0; i < player_count; i++)                 /* the lives icon and count, see draw_hud_multi */
-    if (player_count > 2) plat_hud_colour(i * 10 + 7, 2, i, 2);      /* the score on the left */
-    else plat_hud_colour(i * 13 + 10, 2, i, 3);
+  x = 10; step = 13; blank = 3;                      /* the lives icon and count, see draw_hud_multi */
+  if (player_count > 2) { x = 7; step = 10; blank = 2; }           /* the score on the left */
+  for (i = 0; i < player_count; i++, x += step) plat_hud_colour(x, 2, i, blank);
 }
 
 /* Every 20 frames: time -= 10. At zero the bricks and items vanish. */
@@ -117,10 +117,11 @@ static void frame_common(void) {
   tick_timers();                      /* also presents the previous frame */
   draw_hud();
   draw_hud_icons();
-  composite_map();
+  composite_frame();
 }
 
 static void frame(void) {
+  if (plat_break()) net_abort = NET_ABORT_BREAK;   /* leaves the match, local or network */
   frame_common();
   input_poll();
   update_bombs();

@@ -73,6 +73,47 @@ cm_7:
   __endasm;
 }
 
+/* composite_frame: composite_map at the start of a frame, when the flush has
+ * emptied draw_buf and only the status row is drawn: the 960 playfield cells
+ * are copied (16 T a byte instead of 38), the status row is merged (the idea:
+ * Milan Stava's ESP-01 port) */
+void composite_frame(void) __naked {
+  __asm
+    ld   hl,_map_layer
+    ld   de,_draw_buf
+    ld   bc,960
+cf_copy:
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    ldi
+    jp   pe,cf_copy         ; 960 = 60 x 16: BC reaches 0 at the end of a pass
+    ld   b,40
+cf_hud:
+    ld   a,(hl)
+    cp   0x20
+    jr   z,cf_0
+    ld   (de),a
+cf_0:
+    inc  hl
+    inc  de
+    djnz cf_hud
+    ret
+  __endasm;
+}
+
 /* State hash byte loop (game.c): hh = rotl16(hh) ^ *p++ + 9E37h, hash_n
  * times. About 50 T per byte. */
 void hash_run(void) __naked {

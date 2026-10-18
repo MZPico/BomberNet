@@ -131,6 +131,10 @@ uint8_t plat_key_char(void) {
   return 0;
 }
 
+uint8_t plat_break(void) {                 /* ESC */
+  return !(cpc_line(8) & 0x04);
+}
+
 /* ---- time ---- */
 static uint8_t last_tick;
 

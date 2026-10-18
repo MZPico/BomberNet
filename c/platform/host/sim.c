@@ -67,6 +67,7 @@ uint8_t plat_keys_a(void) {
 
 uint8_t plat_keys_b(void) { return (scenario || menu_net) ? 0 : (uint8_t)(rand() & 0x1f); }
 uint8_t plat_key_char(void) { return 0; }
+uint8_t plat_break(void) { return 0; }
 void plat_tone(uint16_t ratio, uint8_t len) { (void)ratio; (void)len; tones++; }
 void plat_delay(void) {}
 uint8_t plat_joy(uint8_t n) { (void)n; return 0; }
