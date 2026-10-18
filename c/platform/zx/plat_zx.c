@@ -181,13 +181,20 @@ uint8_t plat_break(void) {                 /* CAPS SHIFT + SPACE */
   return !(zx_in(0xfefe) & 0x01) && !(zx_in(0x7ffe) & 0x01);
 }
 
+#ifdef ZX128
+static void tones_due(void);
+#define TONES_DUE() tones_due()
+#else
+#define TONES_DUE()
+#endif
+
 /* ---- time ---- */
 #define FRAMES_LO ((volatile uint8_t *)0x5c78)     /* ROM frame counter, +1 every 20 ms */
 static uint8_t last_tick;
 
 void plat_frame_sync(void) {                       /* a game frame is three TV frames */
   uint8_t late = (uint8_t)(*FRAMES_LO - last_tick) >= 3;
-  while ((uint8_t)(*FRAMES_LO - last_tick) < 3) ;
+  while ((uint8_t)(*FRAMES_LO - last_tick) < 3) TONES_DUE();
   last_tick = *FRAMES_LO;
   /* A new TV frame has just begun: the beam is in the top border (64 lines,
    * 14,000 T-states) and the joystick ports can be read. After a frame that
@@ -197,9 +204,162 @@ void plat_frame_sync(void) {                       /* a game frame is three TV f
 
 void plat_delay(void) {
   uint8_t t = *FRAMES_LO;
-  while (*FRAMES_LO == t) ;
+  while (*FRAMES_LO == t) TONES_DUE();
 }
 
+#ifdef ZX128
+/* ---- sound on the 128K: the MZ's tones on the AY, the game running on ----
+ * (Milan Stava's ESP-01 port played them so in network matches, where a
+ * beeper tone that stops the game costs the lockstep its time; here always.)
+ * The AY's clock is 1.7734 MHz: period = 1773400 / 16 / (1108400 / ratio)
+ * = ratio / 10. The MZ holds a tone for len * 0.94 ms; here it ends at the
+ * first look at the frame counter after that (the frame sync's wait,
+ * plat_delay): within a TV frame. A channel per kind, as in his port, so
+ * that sounds overlap: 14 (steps, menus) on A, 12 (bombs) on B, the rest on C. */
+static uint8_t ay_on, ay_end[3];                     /* channels sounding (bits), when each ends */
+
+/* channels whose time is up: volume 0 */
+static void tones_due(void) __naked {
+  __asm
+    ld   a,(_ay_on)
+    or   a
+    ret  z
+    ld   hl,_ay_end
+    ld   bc,0x0001          ; B = channel, C = its bit
+td_loop:
+    ld   a,(_ay_on)
+    and  c
+    jr   z,td_next
+    ld   a,(0x5c78)         ; FRAMES - end, not negative: due
+    sub  (hl)
+    jp   m,td_next
+    ld   a,c
+    cpl
+    ld   e,a
+    ld   a,(_ay_on)
+    and  e
+    ld   (_ay_on),a
+    ld   a,b
+    add  a,8                ; its volume register
+    ld   e,0
+    push bc
+    call ay_write
+    pop  bc
+td_next:
+    inc  hl
+    inc  b
+    sla  c
+    bit  3,c
+    jr   z,td_loop
+    ret
+ay_write:                   ; register A, value E
+    ld   bc,0xfffd
+    out  (c),a
+    ld   b,0xbf
+    out  (c),e
+    ret
+  __endasm;
+}
+
+void plat_tone(uint16_t ratio, uint8_t len) __naked {
+  (void)ratio; (void)len;
+  __asm
+    ld   hl,2
+    add  hl,sp
+    ld   c,(hl)             ; len
+    inc  hl
+    inc  hl
+    ld   a,(hl)
+    inc  hl
+    ld   h,(hl)
+    ld   l,a                ; ratio
+    ld   b,0                ; channel: 14 A, 12 B, the rest C
+    ld   a,c
+    cp   14
+    jr   z,pt_channel
+    inc  b
+    cp   12
+    jr   z,pt_channel
+    inc  b
+pt_channel:
+    push bc
+    ld   d,h                ; period = ratio/16 + ratio/32 + ratio/256 + ratio/512 = ratio / 10
+    srl  h
+    rr   l
+    srl  h
+    rr   l
+    srl  h
+    rr   l
+    srl  h
+    rr   l
+    ld   b,h
+    ld   c,l
+    srl  b
+    rr   c
+    add  hl,bc
+    ld   a,d
+    srl  a
+    add  a,d
+    ld   e,a
+    ld   a,0
+    adc  a,0
+    ld   d,a
+    add  hl,de              ; HL = period
+    pop  bc
+    push bc
+    ld   a,b
+    add  a,a                ; fine period register of the channel
+    ld   e,l
+    push hl
+    call ay_write
+    pop  hl
+    pop  bc
+    push bc
+    ld   a,b
+    add  a,a
+    inc  a                  ; coarse
+    ld   e,h
+    call ay_write
+    ld   a,7
+    ld   e,0x38             ; the three tones on, no noise
+    call ay_write
+    pop  bc
+    push bc
+    ld   a,b
+    add  a,8
+    ld   e,12               ; volume
+    call ay_write
+    pop  bc
+    ld   l,c                ; the end: FRAMES + 1 + len * 3 / 64 (len * 0.94 ms in 20 ms frames)
+    ld   h,0
+    ld   d,h
+    ld   e,l
+    add  hl,hl
+    add  hl,de
+    add  hl,hl
+    add  hl,hl              ; H = len * 12 / 256
+    ld   a,(0x5c78)
+    inc  a
+    add  a,h
+    ld   e,b
+    ld   d,0
+    ld   hl,_ay_end
+    add  hl,de
+    ld   (hl),a
+    ld   a,1                ; its bit on
+pt_bit:
+    dec  b
+    jp   m,pt_set
+    add  a,a
+    jr   pt_bit
+pt_set:
+    ld   hl,_ay_on
+    or   (hl)
+    ld   (hl),a
+    ret
+  __endasm;
+}
+#else
 /* ---- sound: the MZ's tones on the beeper ----
  * The MZ starts its tone generator with a divider ("ratio") of the 8253 clock,
  * 1.1084 MHz on the MZ-800, waits in a loop of len * 256 DJNZ (len * 3340
@@ -244,6 +404,7 @@ void plat_tone(uint16_t ratio, uint8_t len) {
   if (tone_count < 2) tone_count = 2;
   beep();
 }
+#endif
 
 /* ---- screen ---- */
 static void zx_clear(void) __naked {

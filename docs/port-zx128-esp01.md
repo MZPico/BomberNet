@@ -21,7 +21,7 @@ leave a match.
    `tcp_esp_fast.c`; the driver chosen at build time. Done, see below.
 3. **ESP-01 emulation** in `tools/zxemu.py`, so that the lockstep and
    cross-play tests include ESP machines. Done, see below.
-4. **128K extras**: his AY sound effects.
+4. **128K extras**: his AY sound effects. Done, see below.
 5. **His assembly versions of game routines**, where a profile shows they
    pay, as `PLAT_ASM_*` for every Z80 machine, each checked by the
    recordings.
@@ -183,3 +183,29 @@ Results, local relay unless noted, 0 mismatches and no abort in each:
 The emulation is written from the documents and the driver, not from a real
 module: the timing of a real ESP (connect, `+++`, the Wi-Fi link) and its
 exact replies are the hardware test's to check (step 6).
+
+## Step 4: the tones on the AY
+
+His port played the game's tones on the 128K's AY in network matches, where
+a beeper tone, which stops the game while it sounds, costs the lockstep its
+time. The 128K build (`-DZX128`, `plat_zx.c`) now plays every tone on the
+AY, without stopping the game, and with the MZ's pitch:
+
+- the AY clock is 1.7734 MHz, so its period is the MZ's ratio / 10
+  (ratio/16 + ratio/32 + ratio/256 + ratio/512, within 2.8 of it, about 1 %);
+  his port took the period from a table of 16 by the ratio's high nibble;
+- a tone ends at the first look at the frame counter after its MZ length
+  (len * 0.94 ms): the frame sync's wait and `plat_delay` look; his port
+  counted whole game frames (60 to 180 ms);
+- a channel per kind, as in his port: len 14 (steps, menus) on A, 12
+  (bombs) on B, the rest on C, so that sounds overlap.
+
+The 48K build keeps the beeper. In assembly (sccz80's C took 250 bytes):
+the 128K game ends at FD8Dh, 92 bytes later than with the beeper; 289
+bytes stay free above the program in a match.
+
+Checked by catching each `plat_tone` and the AY writes after it during a
+recording (dm4, 300 frames, 101 tones): the period, channel, mixer and
+volume as computed, the end after 1 TV frame for len 12 and 14 (11-13 ms on
+the MZ) and 2 to 4 for len 32 (30 ms). The recordings replay, ESP-01
+matches pass.

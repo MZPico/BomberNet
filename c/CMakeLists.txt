@@ -38,7 +38,7 @@ elseif(PLATFORM STREQUAL "zx128")
     # tcp_bank6.c, which is linked first so that it stays below C000h.
     set(ZX_FLAGS +zx -lndos -pragma-define:CLIB_EXIT_STACK_SIZE=0 -pragma-define:CRT_ENABLE_STDIO=0
                  -pragma-define:CLIB_OPEN_MAX=0 -pragma-redirect:fputc_cons=zx_no_console)
-    set(TARGET_FLAGS ${ZX_FLAGS} -zorg=24000 -pragma-define:REGISTER_SP=65535 -I${CMAKE_CURRENT_BINARY_DIR})
+    set(TARGET_FLAGS ${ZX_FLAGS} -DZX128 -zorg=24000 -pragma-define:REGISTER_SP=65535 -I${CMAKE_CURRENT_BINARY_DIR})
     # the driver in bank 6: esp01 (eLeMeNt / MB03+, tcp_esp01.c, which includes
     # tcp_esp01_at.c) or spectranet (as on the 48K, for comparison and tests)
     set(ZX128_NET "esp01" CACHE STRING "128K network driver: esp01 or spectranet")
