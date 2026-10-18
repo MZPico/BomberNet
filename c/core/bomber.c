@@ -86,6 +86,16 @@ static void draw_hud_icons(void) {
   p[4] = C_ENEMY_ICON; p[5] = C_COLON; p[6] = enemies_left;   /* columns 29-31: a blank before STG */
 }
 
+/* after the flush: each player's lives icon and count in the player's colour,
+ * like the player's number (the idea: Milan Stava's ESP-01 Spectrum port) */
+void hud_colours(void) {
+  uint8_t i;
+  if (title_mode || player_count < 2) return;
+  for (i = 0; i < player_count; i++)                 /* the lives icon and count, see draw_hud_multi */
+    if (player_count > 2) plat_hud_colour(i * 10 + 7, 2, i, 2);      /* the score on the left */
+    else plat_hud_colour(i * 13 + 10, 2, i, 3);
+}
+
 /* Every 20 frames: time -= 10. At zero the bricks and items vanish. */
 static void time_tick(void) {
   if (tmr_time.counter != 0) return;

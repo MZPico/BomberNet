@@ -278,6 +278,22 @@ void plat_player_colour(uint8_t x, uint8_t y, uint8_t player) {
   if (a1 != a0) p[1] = player_attrs[player];
 }
 
+/* after the flush: status-line cells in the player's colour, on the bar
+ * (attribute row 23). An 8-pixel square holds parts of two 6-pixel cells, so
+ * the cells are coloured only when the squares they share hold nothing else:
+ * in the 2-player line; in the 3-4 player line the icon shares a square with
+ * the score, which would take the colour too, so that line stays black. */
+void plat_hud_colour(uint8_t x, uint8_t n, uint8_t player, uint8_t blank) {
+  uint16_t p0 = (uint16_t)x * 6, p1 = p0 + (uint16_t)n * 6 - 1;
+  uint8_t a0 = (uint8_t)(p0 >> 3), a1 = (uint8_t)(p1 >> 3), a;
+  uint8_t *p;
+  if ((p0 & 7) && !(blank & 1)) return;            /* the first square reaches into cell x-1 */
+  if ((p1 & 7) != 7 && !(blank & 2)) return;       /* the last one into cell x+n */
+  a = (uint8_t)((zx_bar_attr & 0xf8) | (player_attrs[player] & 0x07));
+  p = (uint8_t *)0x5800 + 23 * 32 + SCR_LEFT + a0;
+  for (; a0 <= a1; a0++) *p++ = a;
+}
+
 /* flush_screen: draw_buf -> screen, groups of four cells; clears draw_buf.
  * Only a group or two change per frame, so the scan is what counts: it keeps
  * its pointers in registers and works out screen addresses only for a group

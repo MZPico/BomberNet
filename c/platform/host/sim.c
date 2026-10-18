@@ -170,6 +170,11 @@ void plat_player_colour(uint8_t x, uint8_t y, uint8_t player) {
   static const uint8_t attrs[MAX_PLAYERS] = {0x40, 0x60, 0x70, 0x10};
   vattr[y * SCREEN_W + x] = attrs[player];
 }
+
+void plat_hud_colour(uint8_t x, uint8_t n, uint8_t player, uint8_t blank) {
+  (void)blank;
+  for (; n; n--, x++) plat_player_colour(x, HUD_ROW, player);
+}
 #include "uc.h"
 /* ---- host stub of the MZPico NET device (SIM_NET=1): loop-back room ----
  * Implements the port-level contract of docs/net-protocol.md for one peer:

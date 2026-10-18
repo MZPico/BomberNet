@@ -137,5 +137,6 @@ void tick_timers(void) {
   plat_frame_sync();
   flush_screen();
   players_death_colour();
+  hud_colours();
 }
 

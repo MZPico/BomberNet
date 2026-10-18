@@ -40,6 +40,11 @@ void plat_player_colour(uint8_t x, uint8_t y, uint8_t player) {
   mz_set_attr(x, y, player_attrs[player]);
 }
 
+void plat_hud_colour(uint8_t x, uint8_t n, uint8_t player, uint8_t blank) {
+  (void)blank;
+  for (; n; n--, x++) mz_set_attr(x, HUD_ROW, player_attrs[player]);
+}
+
 /* Frame limiter: 8253 counter 1 runs at 15611 Hz; the original game frame
  * measured 58.6 ms (208k cycles) in play, i.e. 915 ticks. With an MZ-1X03
  * the frame is aligned to every 3rd vblank (60 ms) because the stick pulses

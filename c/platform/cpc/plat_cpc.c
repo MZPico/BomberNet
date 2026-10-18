@@ -409,6 +409,26 @@ void plat_player_colour(uint8_t x, uint8_t y, uint8_t player) {
   cpc_scheme_ovr = 0xff;
 }
 
+/* after the flush: status-line cells in the player's colours. A cell is
+ * redrawn only when its code changed or the screen was cleared: the flush
+ * leaves an unchanged cell alone, and the frame has no time to spare. */
+static uint16_t hud_gen = 0x100;                  /* never a screen_gen at first */
+static uint8_t hud_seen[2 * MAX_PLAYERS];
+void plat_hud_colour(uint8_t x, uint8_t n, uint8_t player, uint8_t blank) {
+  uint8_t k, code, *seen = hud_seen + 2 * player;
+  (void)blank;
+  if (hud_gen != screen_gen) { memset(hud_seen, 0xff, sizeof(hud_seen)); hud_gen = screen_gen; }
+  cpc_scheme_ovr = cpc_player_schemes[player];
+  for (k = 0; k < n && k < 2; k++) {
+    code = shadow_vram[row_off[HUD_ROW] + x + k];
+    if (seen[k] == code) continue;
+    seen[k] = code;
+    cd_x = x + k; cd_y = HUD_ROW; cd_code = code;
+    cpc_cell();
+  }
+  cpc_scheme_ovr = 0xff;
+}
+
 /* flush_screen: draw_buf -> screen, changed cells only; clears draw_buf.
  * After clear_buffers the screen is wiped in one pass and only the cells
  * that are not blank are drawn. */

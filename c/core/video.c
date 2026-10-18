@@ -153,11 +153,13 @@ void clear_map(void) {
 
 /* draw buffer to spaces, shadow to 0xff so the next flush repaints everything */
 uint8_t screen_cleared;       /* set here: the next flush repaints everything (a platform may shortcut) */
+uint8_t screen_gen;           /* counts the clears: what a platform drew over the flush is gone */
 
 void clear_buffers(void) {
   memset(draw_buf, C_SPACE, SCREEN_CELLS);
   memset(shadow_vram, 0xff, SCREEN_CELLS);
   screen_cleared = 1;
+  screen_gen++;
 }
 
 #ifndef PLAT_ASM_COMPOSITE

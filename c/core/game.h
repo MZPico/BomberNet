@@ -179,6 +179,7 @@ void title_text_dim(uint8_t *p, const char *s);   /* greyed-out (blue) */ /* sam
 void clear_map(void);
 void clear_buffers(void);
 extern uint8_t screen_cleared;       /* 1 after clear_buffers until a platform's flush takes note */
+extern uint8_t screen_gen;           /* + 1 at every clear_buffers */
 
 /* ---- input.c ---- */
 void input_poll(void);                        /* sample every active player's source into .keys */
@@ -264,6 +265,7 @@ void players_setup(uint8_t count);            /* activate players 0..count-1 wit
 void players_stage_reset(void);               /* standing, alive, at their start positions */
 void player_killed(player_t *p);              /* deathmatch credit when a player starts dying */
 void players_death_colour(void);              /* after flush: dying sprites keep the player colour */
+void hud_colours(void);                       /* after flush: each player's lives in the player colour */
 void draw_players(void);
 void players_anim_step(void);
 void check_pickups(void);
