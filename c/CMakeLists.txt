@@ -45,6 +45,7 @@ elseif(PLATFORM STREQUAL "zx128")
     if(ZX128_NET STREQUAL "esp01")
         set(BANK6_SOURCES "${PLAT_DIR}/bank6.c" "${PLAT_DIR}/tcp_esp01.c")
         set(BANK6_DEPENDS "${PLAT_DIR}/tcp_esp01_at.c")
+        set(BANK6_FLAGS -DBANK6_ESP01)
     elseif(ZX128_NET STREQUAL "spectranet")
         set(BANK6_SOURCES "${PLAT_DIR}/bank6.c" "${PLAT_DIR}/tcp_spectranet.c")
     else()
@@ -102,7 +103,7 @@ if(PLATFORM STREQUAL "zx128")
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     add_custom_command(
         OUTPUT bank6 bank6.map bank6_entries.h
-        COMMAND ${ZCC_EXECUTABLE} ${ZX_FLAGS} -zorg=49152 --list -m -I${CORE_DIR} -I${COMMON_DIR} -I${PLAT_DIR}
+        COMMAND ${ZCC_EXECUTABLE} ${ZX_FLAGS} ${BANK6_FLAGS} -zorg=49152 --list -m -I${CORE_DIR} -I${COMMON_DIR} -I${PLAT_DIR}
                 -o bank6 ${BANK6_SOURCES}
         COMMAND ${Python3_EXECUTABLE} ${TOOLS_DIR}/zx128_entries.py bank6.map bank6_entries.h
         DEPENDS ${BANK6_SOURCES} ${BANK6_DEPENDS} ${TOOLS_DIR}/zx128_entries.py "${COMMON_DIR}/tcp.h"

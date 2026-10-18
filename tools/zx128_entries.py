@@ -13,7 +13,7 @@ stream_rx must be padding (as in his release, where it was at D9FDh)."""
 import re, sys
 
 ENTRIES = {'BANK6_SIGNATURE': '_bank6_signature', 'BANK6_INIT': '_bank6_init',
-           'BANK6_TCP_PRESENT': '_tcp_present', 'BANK6_TCP_OPEN': '_tcp_open',
+           'BANK6_TCP_PRESENT': '_bank6_present', 'BANK6_TCP_OPEN': '_tcp_open',
            'BANK6_TCP_SEND': '_tcp_send', 'BANK6_TCP_RECV': '_tcp_recv', 'BANK6_TCP_CLOSE': '_tcp_close'}
 STACK = 0xfe00
 

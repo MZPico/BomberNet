@@ -7,8 +7,51 @@
  * top, so it must not touch the game's memory above C000h; the game passes
  * data through its staging buffer below C000h. */
 #include <stdint.h>
+#include "tcp.h"
 
 const char bank6_signature[4] = {'B', 'N', 'B', '6'};   /* checked by the game before the first call */
+
+#ifdef BANK6_ESP01
+/* Is there an eLeMeNt ZX or an MB03+ (the machines with the ESP-01 UART)?
+ * As the Wi-Fi BIOS 2.0 by Busy and Hood tells them: ZXi register FFh, the
+ * eLeMeNt's at 783Bh/793Bh reads E1h (its ID text), the MB03+'s at
+ * 703Bh/773Bh reads 3xh. Without either the driver would spend 15 s in its
+ * recovery of a module that is not there. The ports have A1 = 1: not the
+ * 128K's paging port. -> L = 1 when one is there */
+static uint8_t esp01_machine(void) __naked {
+  __asm
+    ld   bc,0x783b          ; eLeMeNt: register FFh, the ID
+    ld   a,0xff
+    out  (c),a
+    inc  b                  ; 793Bh
+    in   a,(c)
+    and  0xf0
+    cp   0xe0
+    jr   z,em_yes
+    ld   bc,0x703b          ; MB03+: register FFh
+    ld   a,0xff
+    out  (c),a
+    ld   b,0x77             ; 773Bh
+    in   a,(c)
+    and  0xf0
+    cp   0x30
+    jr   z,em_yes
+    ld   hl,0
+    ret
+em_yes:
+    ld   hl,1
+    ret
+  __endasm;
+}
+#endif
+
+/* the game's tcp_present, through bank6_entries.h */
+uint8_t bank6_present(void) {
+#ifdef BANK6_ESP01
+  if (!esp01_machine()) return 0;
+#endif
+  return tcp_present();
+}
 
 void bank6_init(void) __naked {
   __asm

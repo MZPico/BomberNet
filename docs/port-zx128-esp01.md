@@ -89,18 +89,19 @@ Spectranet one, which the test harness runs until the ESP-01 is emulated
   the ESP's transparent mode with a 4096-byte receive ring in bank 6),
   unchanged but for their headers. The game side is the bridge of step 1;
   it asks for at most 192 bytes per receive, as his bridge did.
-- Bank 6: 10903 bytes used, 4969 free below its stack (his release: 10902).
+- Bank 6: 10972 bytes used, 4900 free below its stack (his release: 10902;
+  the difference is the machine check below).
 - His ring is meant to be 4096-aligned, but the assembler leaves `stream_rx`
   unaligned (D9FDh in his release maps, DA96h here). The code uses the 4096
   bytes from `stream_rx & FF00h`, which works because the bytes before
   `stream_rx` are the alignment padding; `tools/zx128_entries.py` now
   checks that on every build.
-- On a 128K without the module: in `tools/zxemu.py` (the UART ports read
-  FFh: data waiting, sending and FIFO full at once) the title comes after
-  15 seconds of his recovery (10 s trying to send `+++`, then a power cycle
-  of the module); in FuseX (floating bus) after under 3 seconds. Then the
-  network is NONE. His release behaves the same; the tape is meant for
-  machines with the module.
+- Before the driver touches the UART, `bank6_present` (bank6.c) asks
+  whether the machine is an eLeMeNt ZX or has an MB03+, the way the Wi-Fi
+  BIOS 2.0 does (below). Without that, a 128K without the module waited 15
+  seconds for the title in `tools/zxemu.py` (his recovery: 10 s trying to
+  send `+++` to a UART that reads busy, then a power cycle of the module),
+  as his release does; now 0.13 s, and the network is NONE.
 - The recordings replay on the ESP-01 build; the Spectranet variant passes
   the 128K lockstep test.
 
@@ -124,8 +125,19 @@ communication"):
 - The eLeMeNt and MB03+ Wi-Fi modules differ but their software is "100%
   compatible", and the specification follows the ZX Spectrum Next's (which
   later changed 133Bh).
-- Not in the reference: the module power register the driver writes
-  (703Bh/713Bh register 5 bit 0, from the Wi-Fi BIOS 2.0 by Busy and Hood).
+- The Wi-Fi BIOS 2.0 by Busy and Hood (https://hood.speccy.cz/dwnld/
+  Wifi_Bios_2.0.zip, the same source as `ports/esp01/WifiBios20_MB_EL.a80`
+  in PR #2) has the rest: 703Bh/713Bh is the MB03+'s ZXi register pair,
+  register 5 bit 0 the module's power (`turn_sub`, `turnon_wifi`), which
+  serves the eLeMeNt's module too; register FFh tells the machines apart:
+  read at 773Bh after 703Bh it is 3xh with an MB03+, read at 793Bh after
+  783Bh it is E1h on an eLeMeNt ("E", its ID text).
+- Set up on the eLeMeNt: Expansion pack B (e_zxi_039) on "UART MB03+"
+  (from the documentation of Hood's Sarah FTP client: the Wi-Fi programs
+  do not work otherwise). With an MB03+ and an eLeMeNt together both
+  modules are on the same ports and the MB03+'s is the one used.
+- The module takes at most 2048 bytes per send (Sarah); the bridge sends at
+  most 192 at a time.
 - The ESP must already be on the Wi-Fi network (Hood's Wi-Fi Setup program);
   the game does not set credentials.
 - Emulator named in the documents: LnxSpectrum (https://www.ilnx.cz/lnxsp/),
