@@ -29,12 +29,16 @@ try:
     wr(S('_menu_mode'), [mode]); wr(S('_menu_players'), [nplayers]); wr(S('_menu_inputs'), inputs)
     wr(S('_match_seed'), [seed & 0xff, seed >> 8]); wr(S('_hash_period'), [hash_period])
     wr(S('_joy_type'), [1 if nplayers > 2 else 0]); wr(S('_replay_active'), [1])
+    # what an earlier match leaves behind (a hit spot, a network abort): the next match must not depend on it
+    wr(S('_hit_x'), [9]); wr(S('_hit_y'), [5]); wr(S('_net_abort'), [7])
     TM, SH, RK, FN = S('_title_mode'), S('_state_hash'), S('_replay_keys'), S('_frame_no')
     e.press('SPACE')
     k = 0; mismatches = 0; started = False
     while k < len(records):
         e.run_until(F)
-        if rd(TM, 1)[0]: continue
+        if rd(TM, 1)[0]:
+            if started: break                                 # the match is over: back on the title
+            continue
         if not started: started = True; e.release('SPACE')   # first game flush = record 0
         h = rd(SH, 2); h = h[0] | (h[1] << 8)
         rec = records[k]

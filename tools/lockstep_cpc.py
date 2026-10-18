@@ -43,6 +43,7 @@ for c in (a, b):
     c.poke(BSS_END, bytes([0xa5]) * (STACK_TOP - 0x100 - BSS_END))   # stack watermark (below the stack in use)
     c.firmware_stubs()                                               # inside that range: put them back
 frames(4, a, b)
+a.poke(S('_hit_x'), [9]); a.poke(S('_hit_y'), [5])                # A played before (a hit spot), B is fresh
 print('network device: A', a.read8(ND), 'B', b.read8(ND), flush=True)
 a.poke(MM, [1]); a.poke(MP, [PLAYERS]); a.poke(MN, [1]); a.poke(ML, [LOCAL_A])
 b.poke(MN, [2]); b.poke(ML, [LOCAL_B])

@@ -845,6 +845,7 @@ static void run_match(void) {
   kbd_alt_fire = menu_fire_cr;
   rng_seed(match_seed);
   frame_no = 0;
+  hit_x = hit_y = 0;                  /* hashed: as on a machine that never played */
   tmr_player_anim.counter = tmr_enemy_die.counter = tmr_enemy_move.counter = 0;
   tmr_time.counter = 2;
   enemy_anim = bomb_anim = 0;
@@ -877,6 +878,7 @@ static void run_match(void) {
 }
 
 static void run_game(void) {
+  net_abort = net_waiting = 0;        /* an aborted network match must not end this one */
   if (menu_net != NET_OFF && net_device == NETDEV_NET) {
     hash_period = 16;
     net_match_start();

@@ -27,6 +27,8 @@ for _ in range(4): z.run_until(F)
 z.poke(S('_menu_mode'), [mode]); z.poke(S('_menu_players'), [nplayers]); z.poke(S('_menu_inputs'), inputs)
 z.poke(S('_match_seed'), [seed & 0xff, seed >> 8]); z.poke(S('_hash_period'), [hash_period])
 z.poke(S('_joy_type'), [1 if nplayers > 2 else 0]); z.poke(S('_replay_active'), [1])
+# what an earlier match leaves behind (a hit spot, a network abort): the next match must not depend on it
+z.poke(S('_hit_x'), [9]); z.poke(S('_hit_y'), [5]); z.poke(S('_net_abort'), [7])
 TM, SH, RK, FN = S('_title_mode'), S('_state_hash'), S('_replay_keys'), S('_frame_no')
 z.press('SPACE')
 k = 0; mismatches = 0; started = False
