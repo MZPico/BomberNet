@@ -189,14 +189,16 @@ def run_together(machines, addr, count=1, on_hit=None, max_seconds=60.0):
     """Run several machines side by side, one quantum each in turn, until each
     has passed addr count more times. None of them is ever held: machines that
     wait for each other over the network must all keep running. on_hit(i, z)
-    is called at every pass (the machine stands at addr then)."""
-    for z in machines: z.set_breakpoint(addr)
+    is called at every pass (the machine stands at addr then). addr can be a
+    list, one address per machine (different builds)."""
+    addrs = list(addr) if isinstance(addr, (list, tuple)) else [addr] * len(machines)
+    for z, ad in zip(machines, addrs): z.set_breakpoint(ad)
     left = [count] * len(machines)
     end = [z.now() + int(max_seconds * 3500000) for z in machines]
     while any(n > 0 for n in left):
         for i, z in enumerate(machines):
-            if z.step() == addr:
+            if z.step() == addrs[i]:
                 if on_hit: on_hit(i, z)
                 left[i] -= 1
             if left[i] > 0 and z.now() > end[i]:
-                raise TimeoutError(f'{addr:04x} not reached, pc={z.pc:04x}')
+                raise TimeoutError(f'{addrs[i]:04x} not reached, pc={z.pc:04x}')

@@ -452,7 +452,10 @@ static uint8_t lobby_enter_code(void) {
  *    clamped. In a match each side's input has d frames to reach the other,
  *    so the two directions have 2d frames together; a lobby sample already
  *    counts up to a frame of polling at either end, which is the margin
- *    (measurements: docs/net-timing.md).
+ *    (measurements: docs/net-timing.md). A delay of 1 needs a round trip of
+ *    at most 2 frames: a LAN, the local relay, a very near production relay.
+ *    0.2.0 joiners raise 1 to their minimum of 2 for their own keys; every
+ *    key carries its frame number, so such a room plays alike everywhere.
  *  - Every joiner says HELLO with its local player count (on entry and every
  *    50 frames); the host seats players in slot order (its own first) and
  *    announces the TABLE (total, seats, one byte per player: slot * 4 +
@@ -556,7 +559,7 @@ static uint8_t net_lobby(void) {
   lobby_t L;
   memset(&L, 0, sizeof(L));
   L.host = menu_net == NET_HOST;
-  net_delay = NET_DELAY_MIN + 1;
+  net_delay = NET_DELAY_START;
   settings[0] = menu_mode; settings[1] = menu_players;
   for (i = 0; i < MAX_PLAYERS; i++) net_table[i] = 0xff;
   if (L.host) {

@@ -60,7 +60,8 @@ stops the machine at its keyboard routine for that).
 ## The fixes (0.2.0)
 
 - The delay is ceil(rtt / 2), the longest of the last four round trips, at
-  least 2 (`lobby_apply_rtt` in `core/bomber.c`). A lobby sample already
+  least 2 (`lobby_apply_rtt` in `core/bomber.c`; the minimum is 1 since
+  the next section). A lobby sample already
   includes up to a frame of polling at either end; that is the margin.
 - In a network match the MZ paces at the Spectrum's frame, 935 ticks of its
   8253 counter (59.9 ms, `FRAME_TICKS_NET` in `platform/mz/plat_mz.c`).
@@ -87,9 +88,46 @@ nominal clocks, and with equal frames neither falls behind the other.
 
 On the local relay (no internet) every pairing chooses the minimum delay, 2.
 
+## A delay of 1 (after 0.2.0)
+
+PR #2 (the ESP-01 Spectrum port) sent its own keys with a delay of 1 in rooms
+of delay 2, so its player saw their moves 60 ms sooner than everybody else.
+That is consistent everywhere, since each key carries its frame number: which
+delay a machine uses for its own keys is its own business. What a pair of
+machines needs is that their two delays together cover the round trip.
+
+Measured on the production relay, ZX against ZX (both on the test machine,
+50 ms from the relay), with a test build in which a machine can lead:
+
+| Delays (host / joiner) | Frames | Waited | Lost per frame | Waits over 20 ms | Frames over 90 ms | Margin, lowest 10 % |
+|---|---|---|---|---|---|---|
+| 2 / 2 (0.2.0) | 2002 | 3.8 % | 0.9 ms | 0.7 % | 2.9 % | 74 ms |
+| 2 / 1 (PR #2) | 2746 | 6.2 % | 1.0 ms | | 2.7 % | 64 ms |
+| 1 / 1 | 1392 | 8.4 % | 1.1 ms | | 2.4 % | 16 ms |
+
+A lead takes its 60 ms from the pair's common slack, and the waiting moves
+mostly to the leading machine (7.6 to 15.9 % of its frames). On the local
+relay 1 / 1 played like 2 / 2 (waits 3.9 and 0.3 % against 3.5 and 0.9 %,
+from the emulators' different speeds).
+
+So the minimum delay is now 1 for everybody, chosen by the same rule: a
+round trip of at most 2 lobby frames gives 1. Results with the new rule:
+
+| Pairing | Lobby round trip (median, p90) | Delay chosen | Waits | Waits over 20 ms | Frames over 90 ms |
+|---|---|---|---|---|---|
+| ZX - ZX, local relay | 48, 87 ms (joiner) | 1 | | | 4.2 to 5.6 % (as at delay 2: emulator speeds) |
+| ZX - ZX, production | 148, 167 ms | 1 | 11.8 % | 2.0 % | 2.5 % |
+| MZ host - ZX, production | 152, 196 ms | 2 | | | |
+| ZX host - MZ, production | 109, 138 ms | 2 | | | |
+
+Through the production relay from here a room gets 1 or 2 depending on the
+moment's round trip; farther players get 2 or more, as before. A 0.2.0
+joiner raises an announced 1 to its own minimum of 2 for its keys and still
+plays in step (`B_BUILD=build/v020/build/zx tools/lockstep_zx.py`: delays
+1 and 2, 0 mismatches). BUILD_ID is unchanged.
+
 ## Not changed
 
-- The minimum delay stays 2 (120 ms), as in 0.1.1.
 - Mixed versions still play (the delay is announced by the host), but 0.1.1
   measures in its slow lobby frames. 0.2.0 replaced 0.1.1 on the play page
   on 29 September 2026.

@@ -7,7 +7,7 @@
 
 uint8_t menu_net = NET_OFF;
 uint8_t net_active, net_slot, net_slots, net_waiting, net_abort;
-uint8_t net_delay = NET_DELAY_MIN + 1;
+uint8_t net_delay = NET_DELAY_START;
 char net_code[5] = "AAAA";
 static uint16_t net_frame;
 uint8_t net_table[MAX_PLAYERS] = {0, 4, 8, 12};   /* default: one player per device */
