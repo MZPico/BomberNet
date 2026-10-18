@@ -126,6 +126,18 @@ joiner raises an announced 1 to its own minimum of 2 for its keys and still
 plays in step (`B_BUILD=build/v020/build/zx tools/lockstep_zx.py`: delays
 1 and 2, 0 mismatches). BUILD_ID is unchanged.
 
+## Sending the keys earlier (measured, not done)
+
+PR #2 also sends its keys right after the frame starts, before the screen
+work. During replays (dm2, dm4, coop4, 400 frames each) that work, from
+`flush_screen` to `input_poll`, takes a median of 33 to 37 ms on the
+Spectrum, 30 to 32 ms on the CPC and 32 to 33 ms on the MZ (p90 43 to 50 ms).
+So the others would get about 32 ms more margin. But the keys are read where
+they are sent: read 32 ms earlier, they also act 32 ms later, so at the same
+delay the game only feels slower. It pays only as an in-between step, delay
+1 with the early send (about 92 ms of lag) for links too slow for delay 1
+(60 ms) that now get 2 (120 ms). Not worth a second timing mode for now.
+
 ## Not changed
 
 - Mixed versions still play (the delay is announced by the host), but 0.1.1
