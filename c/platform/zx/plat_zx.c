@@ -338,7 +338,7 @@ hc_attr:
     ld   a,(_zx_bar_attr)
     and  0xf8
     or   e
-    ld   e,a                ; the player's ink on the bar's paper
+    ld   e,a                ; ink of the player, paper of the bar
     ld   a,d
     rrca
     rrca
@@ -373,7 +373,7 @@ void flush_screen(void) __naked {
   __asm
     push ix
     ; the status line (row 24), when there is one, is written on the bottom
-    ; wall (row 23): the row becomes a bar in the wall's colour with the text
+    ; wall (row 23): the row becomes a bar in the colour of the wall with the text
     ; on it
     xor  a
     ld   (fz_bar),a
@@ -781,8 +781,8 @@ fz_line:
     ld   e,(ix+5)
     call fz_pick            ; square 2: cell 3, else cell 2
     ld   (hl),a
-    ld   a,(fz_bar)         ; the status bar: black text on the wall's colour,
-    or   a                  ; a player's digit in the player's colour
+    ld   a,(fz_bar)         ; the status bar: black text on the colour of the wall,
+    or   a                  ; a player digit in the colour of the player
     ret  z
     ld   a,(fz_row23)
     or   a
@@ -815,7 +815,7 @@ fz_bartab:
     jr   nz,fz_bartab1
     ld   a,(_zx_bar_attr)
     ret
-fz_bartab1:                  ; the digit keeps its ink, on the bar's colour
+fz_bartab1:                  ; the digit keeps its ink, on the colour of the bar
     and  0x07
     ld   b,a
     ld   a,(_zx_bar_attr)

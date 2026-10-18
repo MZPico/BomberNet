@@ -11,6 +11,10 @@ set(PLATFORM "mz" CACHE STRING "target platform")
 set(CORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/core")
 set(COMMON_DIR "${CMAKE_CURRENT_SOURCE_DIR}/common")
 set(PLAT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/platform/${PLATFORM}")
+if(PLATFORM STREQUAL "zx128")
+    set(PLAT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/platform/zx")
+endif()
+set(TOOLS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../tools")
 
 if(PLATFORM STREQUAL "mz")
     # Same toolchain and flags as MZPico-800-Manager (z88dk sccz80, Sharp MZ target).
@@ -27,6 +31,18 @@ elseif(PLATFORM STREQUAL "zx")
     set(PLAT_SOURCES "${PLAT_DIR}/plat_zx.c" "${PLAT_DIR}/tables.c" "${PLAT_DIR}/tcp_spectranet.c"
                      "${COMMON_DIR}/netdev_soft.c" "${COMMON_DIR}/ws.c" "${COMMON_DIR}/z80_loops.c")
     set(APP_SUFFIX tap)
+    set(OUT_SUFFIX tap)
+elseif(PLATFORM STREQUAL "zx128")
+    # ZX Spectrum 128K: the game as on the 48K, the network driver in RAM bank
+    # 6 at C000h (platform/zx/bank6.c, a program of its own), called through
+    # tcp_bank6.c, which is linked first so that it stays below C000h.
+    set(ZX_FLAGS +zx -lndos -pragma-define:CLIB_EXIT_STACK_SIZE=0 -pragma-define:CRT_ENABLE_STDIO=0
+                 -pragma-define:CLIB_OPEN_MAX=0 -pragma-redirect:fputc_cons=zx_no_console)
+    set(TARGET_FLAGS ${ZX_FLAGS} -zorg=24000 -pragma-define:REGISTER_SP=65535 -I${CMAKE_CURRENT_BINARY_DIR})
+    set(BANK6_SOURCES "${PLAT_DIR}/bank6.c" "${PLAT_DIR}/tcp_spectranet.c")
+    set(PLAT_FIRST "${PLAT_DIR}/tcp_bank6.c")
+    set(PLAT_SOURCES "${PLAT_DIR}/plat_zx.c" "${PLAT_DIR}/tables.c"
+                     "${COMMON_DIR}/netdev_soft.c" "${COMMON_DIR}/ws.c" "${COMMON_DIR}/z80_loops.c")
     set(OUT_SUFFIX tap)
 elseif(PLATFORM STREQUAL "cpc")
     # Amstrad CPC 464/6128: an AMSDOS binary; the game takes the machine over
@@ -54,6 +70,7 @@ set(COMMON_FLAGS ${TARGET_FLAGS} --list -m -I${CORE_DIR} -I${COMMON_DIR} -I${PLA
 # RAM (slower while the picture is drawn): menus and lobby go there, the frame
 # loop's code and the platform's screen routine last.
 set(BOMBER_SOURCES
+    ${PLAT_FIRST}
     "${CORE_DIR}/bomber.c"
     "${CORE_DIR}/netplay.c"
     "${CORE_DIR}/data.c"
@@ -71,7 +88,24 @@ set(BOMBER_OUTPUT bomber)
 set(BOMBER_APP "${CMAKE_CURRENT_BINARY_DIR}/${BOMBER_OUTPUT}.${OUT_SUFFIX}")
 file(GLOB BOMBER_HEADERS "${CORE_DIR}/*.h" "${COMMON_DIR}/*.h" "${PLAT_DIR}/*.h")
 
-if(APP_SUFFIX STREQUAL OUT_SUFFIX)
+if(PLATFORM STREQUAL "zx128")
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_custom_command(
+        OUTPUT bank6 bank6.map bank6_entries.h
+        COMMAND ${ZCC_EXECUTABLE} ${ZX_FLAGS} -zorg=49152 --list -m -I${CORE_DIR} -I${COMMON_DIR} -I${PLAT_DIR}
+                -o bank6 ${BANK6_SOURCES}
+        COMMAND ${Python3_EXECUTABLE} ${TOOLS_DIR}/zx128_entries.py bank6.map bank6_entries.h
+        DEPENDS ${BANK6_SOURCES} ${TOOLS_DIR}/zx128_entries.py "${COMMON_DIR}/tcp.h"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    )
+    add_custom_command(
+        OUTPUT ${BOMBER_APP}
+        COMMAND ${ZCC_EXECUTABLE} ${COMMON_FLAGS} -o ${BOMBER_OUTPUT} ${BOMBER_SOURCES}
+        COMMAND ${Python3_EXECUTABLE} ${TOOLS_DIR}/make_zx128_tap.py ${BOMBER_OUTPUT} ${BOMBER_OUTPUT}.map bank6 ${BOMBER_APP}
+        DEPENDS ${BOMBER_SOURCES} ${BOMBER_HEADERS} bank6 bank6_entries.h ${TOOLS_DIR}/make_zx128_tap.py
+        WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+    )
+elseif(APP_SUFFIX STREQUAL OUT_SUFFIX)
     add_custom_command(
         OUTPUT ${BOMBER_APP}
         COMMAND ${ZCC_EXECUTABLE} ${COMMON_FLAGS} -o ${BOMBER_OUTPUT} ${BOMBER_SOURCES}

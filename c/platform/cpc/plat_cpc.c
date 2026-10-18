@@ -318,7 +318,7 @@ cc_t:
     pop  ix
     ret
 
-cc_live:                    ; a player's colours over the table's: glyph and lookup
+cc_live:                    ; colours of a player over those of the table: glyph and lookup
     ld   c,a                ; scheme
     ld   hl,_cpc_game_tab
     ld   a,(_cd_code)

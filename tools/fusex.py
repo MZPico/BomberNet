@@ -16,7 +16,7 @@ REG = {'af': 0, 'bc': 1, 'de': 2, 'hl': 3, 'sp': 4, 'pc': 5, 'ix': 6, 'iy': 7}
 
 
 class FuseX:
-    def __init__(self, tape, port=None, spectranet=True, video='xvfb', log=None, extra=()):
+    def __init__(self, tape, port=None, spectranet=True, video='xvfb', log=None, extra=(), machine='48'):
         # stdout line-buffered: the port FuseX actually uses is read from it
         if port is None:                            # a free port
             with socket.socket() as t:
@@ -32,7 +32,7 @@ class FuseX:
         libs = os.path.join(os.path.dirname(FUSEX), '3rdparty', 'dist', 'lib')   # its own libspectrum
         env['LD_LIBRARY_PATH'] = libs + (':' + env['LD_LIBRARY_PATH'] if env.get('LD_LIBRARY_PATH') else '')
         roms = os.path.join(os.path.dirname(FUSEX), 'roms')
-        cmd = ['stdbuf', '-oL', FUSEX, '--machine', '48', '--no-sound', '--no-banner', '--rom-dir', roms,
+        cmd = ['stdbuf', '-oL', FUSEX, '--machine', machine, '--no-sound', '--no-banner', '--rom-dir', roms,
                '--gdbserver-enable', '--gdbserver-port', str(port),
                '--tape', os.path.abspath(tape), '--auto-load', '--traps']
         if spectranet: cmd.insert(3, '--spectranet')

@@ -9,11 +9,18 @@ with real sockets (socket, connect, send, recv, pollfd, close,
 gethostbyname), with the registers and flags of the Spectranet ROM, and the
 control register (033Bh) mirrors the border as the real one does. The
 program under test is unchanged. relay=(host, port) sends every connection
-there instead (the local reference relay); None uses the real network."""
+there instead (the local reference relay); None uses the real network.
+
+With bank6=<file> the machine is a 128K Spectrum: the 128 ROM starts up,
+the file goes into RAM page 6 (the build/zx128 network driver), and the
+program starts with ROM 1 (48K BASIC) and page 0 selected, as after the
+build's tape loader. read/poke at C000h and above reach the page selected
+now (BANKM, 5B5Ch, which the program keeps with the port)."""
 import os, re, select, socket, struct, zlib
 import zx
 from zx._device import KeyStroke
 from zx._keyboard import KEYS, Keyboard
+from zx._data import Spectrum128
 
 ORG = 24000
 
@@ -27,11 +34,13 @@ def sym_from_map(path, name):
 class ZX(zx.Spectrum):
     IXCALL = 0x3ffd
 
-    def __init__(self, spectranet=False, relay=('127.0.0.1', 8765)):
+    def __init__(self, spectranet=False, relay=('127.0.0.1', 8765), bank6=None):
         kb = Keyboard()
         kb._state = [0xff] * 8                     # the package keeps it in the class: one per machine here
         self.kb = kb
-        super().__init__(headless=True, keyboard=kb)
+        if bank6: super().__init__(headless=True, keyboard=kb, model=Spectrum128)
+        else: super().__init__(headless=True, keyboard=kb)
+        self.bank6 = bank6
         self.hit = False
         self.ports = {}                            # low port byte -> value: joystick interfaces
         self.spectranet = spectranet
@@ -45,6 +54,10 @@ class ZX(zx.Spectrum):
             # the API jump table the game checks with the interface paged in
             # (no paging here: it is written over the ROM's copy of the font)
             for i in range(14): self.poke(0x3e00 + 3 * i, b'\xc3')
+            if bank6:                              # the 48K BASIC ROM, paged in to run the game: its image is
+                mem = self._SpectrumState__memory  # at 4 x 16K (the package's write() misplaces ROM bytes)
+                for i in range(14): mem[0x10000 + 0x3e00 + 3 * i] = 0xc3
+        if bank6: self.write(0xc000, open(bank6, 'rb').read(), ram_page=6)
 
     def _input(self, addr):
         if self.spectranet and (addr & 0xffff) == 0x033b:
@@ -114,19 +127,37 @@ class ZX(zx.Spectrum):
         self.hit = True                            # the quantum ends here, pc is at the address
 
     def now(self):
-        """T-states since start (69888 per TV frame)."""
-        return self.frame_count * 69888 + self.ticks_since_int
+        """T-states since start (69888 per TV frame, 70908 on the 128K)."""
+        return self.frame_count * (70908 if self.bank6 else 69888) + self.ticks_since_int
 
     def load(self, binary, org=ORG):
         data = open(binary, 'rb').read()
-        self.poke(org, data)
+        self.poke(org, data, page=0)
         self.pc = org
+        if self.bank6:                             # ROM 1 and page 0 (BANKM and port 7FFDh), then the program
+            stub = bytes([0x3e, 0x10, 0x01, 0xfd, 0x7f, 0xed, 0x79, 0x32, 0x5c, 0x5b, 0xc3]) + org.to_bytes(2, 'little')
+            self.poke(0x5d00, stub)                # below C000h (the 128 menu has page 7 there), in the
+            self.pc = 0x5d00                       # loader's area, which the game uses later
         return len(data)
 
-    def poke(self, addr, data):
+    def _offsets(self, addr, n, page=None):
+        """Memory image offsets of addr .. addr + n - 1 (128K: the page at C000h)."""
+        if not self.bank6 or addr + n <= 0xc000: return [(addr, n)]
+        if page is None: page = self._SpectrumState__memory[0x5b5c] & 7
+        base = self._SpectrumState__RAM_PAGE_IMAGE_OFFSETS[page] - 0xc000
+        if addr >= 0xc000: return [(base + addr, n)]
+        return [(addr, 0xc000 - addr), (base + 0xc000, addr + n - 0xc000)]
+
+    def read(self, addr, size, page=None):
+        mem = self._SpectrumState__memory
+        return b''.join(bytes(mem[o:o + k]) for o, k in self._offsets(addr, size, page))
+
+    def poke(self, addr, data, page=None):
         """Write bytes into RAM (the package's own write() handles 48K pages awkwardly)."""
         mem = self._SpectrumState__memory
-        mem[addr:addr + len(data)] = bytes(data)
+        data = bytes(data)
+        for o, k in self._offsets(addr, len(data), page):
+            mem[o:o + k] = data[:k]; data = data[k:]
 
     def run_until(self, addr, max_seconds=10.0):
         """Run until the instruction at addr is about to execute. Breakpoints

@@ -7,6 +7,7 @@ both are compared frame by frame.
   RELAY=real tools/lockstep_zx.py        production, api.mzpico.com
   PLAYERS=3 LOCAL_A=2 LOCAL_B=1 ...      seats as in tools/lockstep_test.py
   B_BUILD=build/v020/build/zx ...        B runs another build (its bomber and bomber.map)
+  A_BUILD=build/zx128 ...                A too; a build with a bank6 file is a 128K Spectrum
   BREAK_AT=40 ...                        A leaves with BREAK after 40 frames: A ends with
                                          MATCH LEFT, B with the other player gone
 """
@@ -14,7 +15,8 @@ import os, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from zxemu import ZX, sym_from_map, run_together
 
-M = 'build/zx/bomber.map'
+A_BUILD = os.environ.get('A_BUILD', 'build/zx')
+M = os.path.join(A_BUILD, 'bomber.map')
 S = lambda n: sym_from_map(M, n)
 B_BUILD = os.environ.get('B_BUILD', 'build/zx')
 SB = lambda n: sym_from_map(os.path.join(B_BUILD, 'bomber.map'), n)
@@ -26,9 +28,10 @@ MN, MM, MP, ML, NC, NA, NAB, NS, NT, NTOT, NDLY = (S(n) for n in ('_menu_net', '
     '_net_code', '_net_active', '_net_abort', '_net_slot', '_net_table', '_net_total', '_net_delay'))
 
 
-def inst(path):
-    z = ZX(spectranet=True, relay=relay)
-    z.load(path)
+def inst(build):
+    b6 = os.path.join(build, 'bank6')
+    z = ZX(spectranet=True, relay=relay, bank6=b6 if os.path.exists(b6) else None)
+    z.load(os.path.join(build, 'bomber'))
     return z
 
 
@@ -41,11 +44,11 @@ def tap(z, key, n=3, *others):
 
 
 t0 = time.time()
-a, b = inst('build/zx/bomber'), inst(os.path.join(B_BUILD, 'bomber'))
+a, b = inst(A_BUILD), inst(B_BUILD)
 FB, TMB, SHB, FNB, NSB, NAB_B, NDLY_B = (SB(n) for n in ('_flush_screen', '_title_mode', '_state_hash', '_frame_no',
     '_net_slot', '_net_abort', '_net_delay'))
 BSS = {a: S('__BSS_END_tail'), b: SB('__BSS_END_tail')}
-for z in (a, b): z.poke(BSS[z], bytes([0xa5]) * (0xff00 - BSS[z]))   # stack watermark
+for z in (a, b): z.poke(BSS[z], bytes([0xa5]) * (0xff00 - BSS[z]), page=0)   # stack watermark (page 0 on a 128K)
 frames(4, a, b)
 a.poke(MM, [1]); a.poke(MP, [PLAYERS]); a.poke(MN, [1]); a.poke(ML, [LOCAL_A])
 b.poke(SB('_menu_net'), [2]); b.poke(SB('_menu_local'), [LOCAL_B])
@@ -104,7 +107,7 @@ print(f'done: {N} steps, {len(common)} hashed frames compared, {len(mism)} misma
       f'{a.sn_calls + b.sn_calls} Spectranet calls; {time.time() - t0:.0f} s')
 a.screenshot('build/zx_net_A.png'); b.screenshot('build/zx_net_B.png')
 for name, z in (('A', a), ('B', b)):
-    m = z.read(BSS[z], 0xff00 - BSS[z])
+    m = z.read(BSS[z], 0xff00 - BSS[z], page=0)
     used_from = next((BSS[z] + i for i, v in enumerate(m) if v != 0xa5), 0xff00)
     print(f'{name}: stack reached {used_from:04x}, {used_from - BSS[z]} bytes above the program left unused')
 if BREAK_AT:
