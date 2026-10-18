@@ -18,7 +18,7 @@ leave a match.
    the network driver in RAM bank 6. Done, see below.
 2. **The ESP-01 driver** as a `tcp.h` in bank 6 (AT set-up and recovery,
    transparent mode, the receive ring), from his `tcp_esp_stream.c` and
-   `tcp_bank128.c`; the driver chosen at build time.
+   `tcp_esp_fast.c`; the driver chosen at build time. Done, see below.
 3. **ESP-01 emulation** in `tools/zxemu.py`, from his tests, so that the
    lockstep and cross-play tests include ESP machines.
 4. **128K extras**: his AY sound effects.
@@ -75,3 +75,58 @@ gains nothing yet; the point is the mechanism):
   the Spectranet calls from bank 6 are covered by `tools/zxemu.py`.)
 - The 128K tape is for 128K machines only: on a 48K the driver block
   overwrites the game.
+
+## Step 2: the ESP-01 driver
+
+`PLATFORM=zx128` now builds with the ESP-01 driver in bank 6
+(`-DZX128_NET=esp01`, the default); `-DZX128_NET=spectranet` keeps the
+Spectranet one, which the test harness runs until the ESP-01 is emulated
+(step 3).
+
+- `c/platform/zx/tcp_esp01_at.c` is his `tcp_esp_fast.c` (the AT command
+  layer: power, probe and recovery of the module, `AT+CIPSTART`, passive
+  receive) and `tcp_esp01.c` his `tcp_esp_stream.c` (after the connection,
+  the ESP's transparent mode with a 4096-byte receive ring in bank 6),
+  unchanged but for their headers. The game side is the bridge of step 1;
+  it asks for at most 192 bytes per receive, as his bridge did.
+- Bank 6: 10903 bytes used, 4969 free below its stack (his release: 10902).
+- His ring is meant to be 4096-aligned, but the assembler leaves `stream_rx`
+  unaligned (D9FDh in his release maps, DA96h here). The code uses the 4096
+  bytes from `stream_rx & FF00h`, which works because the bytes before
+  `stream_rx` are the alignment padding; `tools/zx128_entries.py` now
+  checks that on every build.
+- On a 128K without the module: in `tools/zxemu.py` (the UART ports read
+  FFh: data waiting, sending and FIFO full at once) the title comes after
+  15 seconds of his recovery (10 s trying to send `+++`, then a power cycle
+  of the module); in FuseX (floating bus) after under 3 seconds. Then the
+  network is NONE. His release behaves the same; the tape is meant for
+  machines with the module.
+- The recordings replay on the ESP-01 build; the Spectranet variant passes
+  the 128K lockstep test.
+
+### The hardware (eLeMeNt ZX Programmer's Reference 1.28, 2025-11-17)
+
+From https://element.zxfiles.net/ (documents, "Serial and Wi-Fi
+communication"):
+
+- 143Bh receive, 133Bh transmit; reading 133Bh is the status: bit 0 a byte
+  waiting, bit 1 still transmitting, bit 2 the receive FIFO full (2048
+  bytes, data are lost when it is full), bit 3 256 bytes or more, bit 4
+  1024 bytes or more. Bits 5-7 are not described.
+- Writing 143Bh sets the speed (an index: 0 = 115200, the default after a
+  reset, up to 23 = 11520000). The driver keeps whatever speed is set; the
+  module and the UART must match (115200 in his hardware tests).
+- ZXi register g_zxi_030 (select 7C3Bh, data 7D3Bh): write 01h erases the
+  receive FIFO, as the driver's `es_drain` does.
+- e_zxi_039 (select 783Bh, data 793Bh) chooses what the internal UART is
+  wired to: 00 internal USB-UART (MB03+ mode), 01 MB03+, 02 ZX-Uno, 03
+  ZX128-AY.
+- The eLeMeNt and MB03+ Wi-Fi modules differ but their software is "100%
+  compatible", and the specification follows the ZX Spectrum Next's (which
+  later changed 133Bh).
+- Not in the reference: the module power register the driver writes
+  (703Bh/713Bh register 5 bit 0, from the Wi-Fi BIOS 2.0 by Busy and Hood).
+- The ESP must already be on the Wi-Fi network (Hood's Wi-Fi Setup program);
+  the game does not set credentials.
+- Emulator named in the documents: LnxSpectrum (https://www.ilnx.cz/lnxsp/),
+  with the ZXi ports; whether it emulates the UART/ESP is not stated.

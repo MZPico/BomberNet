@@ -39,7 +39,17 @@ elseif(PLATFORM STREQUAL "zx128")
     set(ZX_FLAGS +zx -lndos -pragma-define:CLIB_EXIT_STACK_SIZE=0 -pragma-define:CRT_ENABLE_STDIO=0
                  -pragma-define:CLIB_OPEN_MAX=0 -pragma-redirect:fputc_cons=zx_no_console)
     set(TARGET_FLAGS ${ZX_FLAGS} -zorg=24000 -pragma-define:REGISTER_SP=65535 -I${CMAKE_CURRENT_BINARY_DIR})
-    set(BANK6_SOURCES "${PLAT_DIR}/bank6.c" "${PLAT_DIR}/tcp_spectranet.c")
+    # the driver in bank 6: esp01 (eLeMeNt / MB03+, tcp_esp01.c, which includes
+    # tcp_esp01_at.c) or spectranet (as on the 48K, for comparison and tests)
+    set(ZX128_NET "esp01" CACHE STRING "128K network driver: esp01 or spectranet")
+    if(ZX128_NET STREQUAL "esp01")
+        set(BANK6_SOURCES "${PLAT_DIR}/bank6.c" "${PLAT_DIR}/tcp_esp01.c")
+        set(BANK6_DEPENDS "${PLAT_DIR}/tcp_esp01_at.c")
+    elseif(ZX128_NET STREQUAL "spectranet")
+        set(BANK6_SOURCES "${PLAT_DIR}/bank6.c" "${PLAT_DIR}/tcp_spectranet.c")
+    else()
+        message(FATAL_ERROR "unknown ZX128_NET ${ZX128_NET}")
+    endif()
     set(PLAT_FIRST "${PLAT_DIR}/tcp_bank6.c")
     set(PLAT_SOURCES "${PLAT_DIR}/plat_zx.c" "${PLAT_DIR}/tables.c"
                      "${COMMON_DIR}/netdev_soft.c" "${COMMON_DIR}/ws.c" "${COMMON_DIR}/z80_loops.c")
@@ -95,7 +105,7 @@ if(PLATFORM STREQUAL "zx128")
         COMMAND ${ZCC_EXECUTABLE} ${ZX_FLAGS} -zorg=49152 --list -m -I${CORE_DIR} -I${COMMON_DIR} -I${PLAT_DIR}
                 -o bank6 ${BANK6_SOURCES}
         COMMAND ${Python3_EXECUTABLE} ${TOOLS_DIR}/zx128_entries.py bank6.map bank6_entries.h
-        DEPENDS ${BANK6_SOURCES} ${TOOLS_DIR}/zx128_entries.py "${COMMON_DIR}/tcp.h"
+        DEPENDS ${BANK6_SOURCES} ${BANK6_DEPENDS} ${TOOLS_DIR}/zx128_entries.py "${COMMON_DIR}/tcp.h"
         WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
     )
     add_custom_command(
