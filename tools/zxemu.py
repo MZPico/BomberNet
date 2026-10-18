@@ -15,8 +15,12 @@ With bank6=<file> the machine is a 128K Spectrum: the 128 ROM starts up,
 the file goes into RAM page 6 (the build/zx128 network driver), and the
 program starts with ROM 1 (48K BASIC) and page 0 selected, as after the
 build's tape loader. read/poke at C000h and above reach the page selected
-now (BANKM, 5B5Ch, which the program keeps with the port)."""
-import os, re, select, socket, struct, zlib
+now (BANKM, 5B5Ch, which the program keeps with the port).
+
+With esp01=True the machine is an eLeMeNt ZX with its ESP-01 (class Esp01):
+the ZXi ID register, the UART and an ESP8266 AT firmware behind it, enough
+for the build/zx128 driver (platform/zx/tcp_esp01*.c), which runs unchanged."""
+import os, re, select, socket, struct, time, zlib
 import zx
 from zx._device import KeyStroke
 from zx._keyboard import KEYS, Keyboard
@@ -31,10 +35,151 @@ def sym_from_map(path, name):
     return int(m.group(1), 16)
 
 
+class Esp01:
+    """The eLeMeNt ZX's UART with an ESP-01 behind it, as the eLeMeNt ZX
+    Programmer's Reference 1.28 and the Wi-Fi BIOS 2.0 (Busy and Hood)
+    describe them:
+    - ZXi register FFh of the eLeMeNt (select 783Bh, read 793Bh) reads E1h,
+      the MB03+'s (select 703Bh, read 773Bh) is absent (FFh); register 5 at
+      703Bh/713Bh bit 0 is the module's power, register 30h at 7C3Bh/7D3Bh,
+      written 1, erases the receive FIFO;
+    - 133Bh: read the status (bit 0 a byte waiting, 1 sending, 2 the FIFO
+      full, 3 256 bytes or more, 4 1024 or more), write a byte to send;
+      143Bh: read the next byte received. 115200 Bd: a byte every 304
+      T-states both ways; the receive FIFO holds 2048 bytes, more are lost.
+    - The ESP: AT, ATE0 (echo until then), AT+CIPMUX/CIPDINFO/CIPRECVMODE/
+      CIPMODE, AT+CIPSTART="TCP",... (a real connection, to relay=(host,
+      port) when given), AT+CIPCLOSE, AT+CIPSEND in CIPMODE=1: transparent,
+      every byte to the socket and back, until "+++" alone (20 ms of silence
+      before and after). Anything else answers ERROR.
+    When it has nothing to deliver it waits up to 2 ms of real time per
+    emulated millisecond, so that the relay's timeouts mean something."""
+    BYTE_T = 3500000 * 10 // 115200
+    GUARD_T = 70000                                # 20 ms
+
+    def __init__(self, z, relay):
+        self.z, self.relay = z, relay
+        self.sel = {}                              # ZXi select register per pair (high byte of the select port)
+        self.reg5 = 0x01                           # the module powered
+        self.fifo = bytearray()                    # what the Spectrum can read
+        self.out = bytearray()                     # what the ESP has said and is still on the wire
+        self.out_t = 0                             # when the next byte of out lands in the FIFO
+        self.tx_free = 0
+        self.sleep_t = 0
+        self.lost = 0
+        self.reset()
+
+    def reset(self):
+        self.echo, self.cipmode, self.transparent = True, 0, False
+        self.line = bytearray()
+        self.plus, self.last_tx = 0, 0
+        if getattr(self, 'sock', None): self.sock.close()
+        self.sock = None
+        self.commands = []
+
+    def say(self, text):
+        if not self.out: self.out_t = max(self.out_t, self.z.now())
+        self.out += text.encode() if isinstance(text, str) else text
+
+    def _deliver(self):
+        now = self.z.now()
+        if self.transparent and self.sock and len(self.out) < 512:
+            try:
+                r, _, _ = select.select([self.sock], [], [], 0)
+                if r:
+                    d = self.sock.recv(4096)
+                    if d: self.say(d)
+                    else: self.sock.close(); self.sock = None
+            except OSError:
+                self.sock = None
+        while self.out and self.out_t <= now:
+            if len(self.fifo) < 2048: self.fifo.append(self.out[0])
+            else: self.lost += 1
+            del self.out[0]
+            self.out_t += self.BYTE_T
+        if self.plus == 3 and now - self.last_tx >= self.GUARD_T:
+            self.plus = 0; self.transparent = False    # +++ alone: back to commands, the connection stays
+        if not self.fifo and not self.out and self.transparent and now - self.sleep_t > 3500:
+            self.sleep_t = now
+            if self.sock: select.select([self.sock], [], [], 0.002)
+
+    def status(self):
+        self._deliver()
+        n = len(self.fifo)
+        return ((1 if n else 0) | (2 if self.z.now() < self.tx_free else 0) | (4 if n >= 2048 else 0) |
+                (8 if n >= 256 else 0) | (16 if n >= 1024 else 0))
+
+    def read(self):
+        self._deliver()
+        return self.fifo.pop(0) if self.fifo else 0xff
+
+    def write(self, b):
+        now = self.z.now()
+        self.tx_free = max(now, self.tx_free) + self.BYTE_T
+        if not self.reg5 & 1: return
+        if self.transparent:
+            if b == 0x2b and (self.plus or now - self.last_tx >= self.GUARD_T) and self.plus < 3:
+                self.plus += 1                     # perhaps the escape: held back
+            else:
+                data = b'+' * self.plus + bytes([b]); self.plus = 0
+                if self.sock:
+                    try: self.sock.sendall(data)
+                    except OSError: self.sock = None
+            self.last_tx = now
+            return
+        self.last_tx = now
+        if self.echo: self.say(bytes([b]))
+        if b == 10:
+            line = self.line.decode('latin-1').strip(); self.line = bytearray()
+            if line: self.command(line)
+        else: self.line.append(b)
+
+    def command(self, c):
+        self.commands.append(c)
+        ok = '\r\nOK\r\n'
+        if c == 'AT': self.say(ok)
+        elif c == 'ATE0': self.echo = False; self.say(ok)
+        elif c in ('AT+CIPMUX=0', 'AT+CIPDINFO=0', 'AT+CIPRECVMODE=0', 'AT+CIPRECVMODE=1'): self.say(ok)
+        elif c in ('AT+CIPMODE=0', 'AT+CIPMODE=1'): self.cipmode = int(c[-1]); self.say(ok)
+        elif c == 'AT+CIPCLOSE':
+            if self.sock: self.sock.close(); self.sock = None; self.say('CLOSED\r\n' + ok)
+            else: self.say('\r\nERROR\r\n')
+        elif c.startswith('AT+CIPSTART="TCP","'):
+            m = re.match(r'AT\+CIPSTART="TCP","([^"]+)",(\d+)$', c)
+            try:
+                s = socket.create_connection(self.relay if self.relay else (m.group(1), int(m.group(2))), timeout=10)
+                s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                self.sock = s; self.say('CONNECT\r\n' + ok)
+            except (OSError, AttributeError):
+                self.say('\r\nERROR\r\nCLOSED\r\n')
+        elif c == 'AT+CIPSEND' and self.cipmode == 1 and self.sock:
+            self.say(ok + '\r\n>'); self.transparent = True; self.plus = 0
+        else: self.say('\r\nERROR\r\n')
+
+    def port_in(self, addr):
+        hi = addr >> 8
+        if hi == 0x13: return self.status()
+        if hi == 0x14: return self.read()
+        if hi == 0x79: return 0xe1 if self.sel.get(0x78) == 0xff else 0x00
+        if hi == 0x71: return self.reg5 if self.sel.get(0x70) == 5 else 0xff
+        return 0xff                                # no MB03+ (773Bh), the rest unused here
+
+    def port_out(self, addr, v):
+        hi = addr >> 8
+        if hi in (0x78, 0x70, 0x7c): self.sel[hi] = v
+        elif hi == 0x13: self.write(v)
+        elif hi == 0x71 and self.sel.get(0x70) == 5:
+            if v & 1 and not self.reg5 & 1:        # powered up: a fresh module after its start-up text
+                self.reset(); self.out_t = self.z.now() + 3500000 // 2; self.out = bytearray(b'\r\nready\r\n')
+            self.reg5 = v
+        elif hi == 0x7d and self.sel.get(0x7c) == 0x30 and v == 1:
+            self.fifo = bytearray()
+
+
 class ZX(zx.Spectrum):
     IXCALL = 0x3ffd
 
-    def __init__(self, spectranet=False, relay=('127.0.0.1', 8765), bank6=None):
+    def __init__(self, spectranet=False, relay=('127.0.0.1', 8765), bank6=None, esp01=False):
         kb = Keyboard()
         kb._state = [0xff] * 8                     # the package keeps it in the class: one per machine here
         self.kb = kb
@@ -47,7 +192,9 @@ class ZX(zx.Spectrum):
         self.relay = relay
         self.socks = {}
         self.sn_calls = 0
+        self.esp = Esp01(self, relay) if esp01 else None
         self.set_on_input_callback(self._input)
+        if esp01: self.set_on_output_callback(self._output)
         self.reset_and_wait()                      # ROM start-up: system variables, IM 1, IY
         if spectranet:
             self.set_breakpoint(self.IXCALL)
@@ -59,7 +206,11 @@ class ZX(zx.Spectrum):
                 for i in range(14): mem[0x10000 + 0x3e00 + 3 * i] = 0xc3
         if bank6: self.write(0xc000, open(bank6, 'rb').read(), ram_page=6)
 
+    def _output(self, addr, value):
+        if (addr & 0xff) == 0x3b: self.esp.port_out(addr & 0xffff, value)
+
     def _input(self, addr):
+        if self.esp and (addr & 0xff) == 0x3b: return self.esp.port_in(addr & 0xffff)
         if self.spectranet and (addr & 0xffff) == 0x033b:
             return 0xf8 | (self.border_colour & 7)     # the control register mirrors the border
         low = addr & 0xff

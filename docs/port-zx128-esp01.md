@@ -19,8 +19,8 @@ leave a match.
 2. **The ESP-01 driver** as a `tcp.h` in bank 6 (AT set-up and recovery,
    transparent mode, the receive ring), from his `tcp_esp_stream.c` and
    `tcp_esp_fast.c`; the driver chosen at build time. Done, see below.
-3. **ESP-01 emulation** in `tools/zxemu.py`, from his tests, so that the
-   lockstep and cross-play tests include ESP machines.
+3. **ESP-01 emulation** in `tools/zxemu.py`, so that the lockstep and
+   cross-play tests include ESP machines. Done, see below.
 4. **128K extras**: his AY sound effects.
 5. **His assembly versions of game routines**, where a profile shows they
    pay, as `PLAT_ASM_*` for every Z80 machine, each checked by the
@@ -142,3 +142,44 @@ communication"):
   the game does not set credentials.
 - Emulator named in the documents: LnxSpectrum (https://www.ilnx.cz/lnxsp/),
   with the ZXi ports; whether it emulates the UART/ESP is not stated.
+
+## Step 3: the ESP-01 emulated
+
+`tools/zxemu.py` with `esp01=True` (class `Esp01`) is an eLeMeNt ZX with its
+module, from the Programmer's Reference and the Wi-Fi BIOS; the driver runs
+unchanged:
+
+- ZXi register FFh reads E1h (an eLeMeNt; no MB03+), register 5 bit 0 the
+  module's power (switched on: "ready" after half a second, a fresh
+  module), register 30h written 1 erases the receive FIFO.
+- The UART at 115200 Bd: a byte every 304 T-states both ways, the status
+  bits as documented, a 2048-byte receive FIFO that loses what does not fit
+  (counted: `Esp01.lost`).
+- The AT firmware: echo until `ATE0`, the set-up commands, `AT+CIPSTART`
+  (a real TCP connection, to the local relay in the tests),
+  `AT+CIPCLOSE`, `AT+CIPSEND` in `CIPMODE=1` into transparent mode, and
+  out of it by `+++` alone (20 ms of silence around it). Anything else
+  answers `ERROR`.
+
+`tools/lockstep_zx.py` runs a build with the ESP-01 driver in bank 6 on
+such a machine (`A_BUILD=build/zx128`, `B_BUILD=...`); `tools/crossplay.py`
+has the machine `esp` besides `mz`, `zx` and `cpc`. The tests read the
+game's variables from page 0, as a 128K may be inside a bank 6 call when
+it is stopped.
+
+Results, local relay unless noted, 0 mismatches and no abort in each:
+
+| match | frames | delay | notes |
+|---|---|---|---|
+| ESP-01 host, 48K Spectranet joiner | 160 | 2 | |
+| ESP-01 against ESP-01 | 240 | 1 | |
+| ESP-01 against ESP-01, 4 players (2 + 2) | 200 | 1 | no FIFO byte lost |
+| ESP-01 against ESP-01, BREAK after 60 | | | both leave; the ESP back to commands (`+++`, `AT+CIPMODE=0`, `AT+CIPCLOSE`), the machine hosts a new room |
+| ESP-01 against MZ-800, both ways | 160 | | playfields identical |
+| ESP-01 against CPC, both ways | 160 | | playfields identical |
+| ESP-01 against 48K Spectrum, both ways | 160 | | playfields identical |
+| ESP-01 host, 48K joiner, production relay | 200 | 3 | the ESP resolves and connects to api.mzpico.com itself |
+
+The emulation is written from the documents and the driver, not from a real
+module: the timing of a real ESP (connect, `+++`, the Wi-Fi link) and its
+exact replies are the hardware test's to check (step 6).

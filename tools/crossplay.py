@@ -8,7 +8,8 @@ tools/cpcemu.py with an M4 board (both WebSocket to the relay). They go
 through the same relay and meet in one room; the driver advances them side
 by side, one TV frame each in turn, and compares their state hashes.
 
-  tools/crossplay.py [steps] [host] [joiner]   machines: mz, zx, cpc; default mz zx
+  tools/crossplay.py [steps] [host] [joiner]   machines: mz, zx, cpc, esp; default mz zx
+                                               (esp: build/zx128, an eLeMeNt with its ESP-01)
                                                (the second argument alone: mz or zx hosts the other)
   PLAYERS=3 LOCAL_HOST=2 LOCAL_JOIN=1   seats: players in total, local players per machine
 Needs the local relay (relay/relay.py) on 8765 (WebSocket) and 8766 (TCP),
@@ -57,16 +58,23 @@ class Spectrum:
     kind = 'ZX'
     keys = {'fire': 'SPACE', 'walk': 'P'}
 
+    build = 'build/zx'
+
     def __init__(self):
-        self.S = {n: sym_from_map('build/zx/bomber.map', n) for n in NAMES}
-        self.z = ZX(spectranet=True, relay=('127.0.0.1', 8765)); self.z.load('build/zx/bomber')
+        self.S = {n: sym_from_map(self.build + '/bomber.map', n) for n in NAMES}
+        if self.kind == 'ESP':
+            self.z = ZX(esp01=True, bank6=self.build + '/bank6', relay=('127.0.0.1', 8765))
+        else:
+            self.z = ZX(spectranet=True, relay=('127.0.0.1', 8765))
+        self.z.load(self.build + '/bomber')
         self.z.set_breakpoint(self.S['_flush_screen'])
         self.flushes = []                                # (frame_no, state_hash) at each flush
 
-    def r8(self, n): return self.z.read8(self.S[n])
-    def r16(self, n): return self.z.read16(self.S[n])
-    def rd(self, n, k=1): return self.z.read(self.S[n], k)
-    def wr(self, n, bs): self.z.poke(self.S[n], bytes(bs))
+    # the game's variables are in page 0 (a 128K may stand in bank 6 at a frame's end)
+    def r8(self, n): return self.z.read(self.S[n], 1, page=0)[0]
+    def r16(self, n): return int.from_bytes(self.z.read(self.S[n], 2, page=0), 'little')
+    def rd(self, n, k=1): return self.z.read(self.S[n], k, page=0)
+    def wr(self, n, bs): self.z.poke(self.S[n], bytes(bs), page=0)
     def tv_frame(self):
         start = self.z.frame_count
         while self.z.frame_count == start:
@@ -75,6 +83,12 @@ class Spectrum:
     def press(self, k): self.z.press(self.keys.get(k, k))
     def release(self, k): self.z.release(self.keys.get(k, k))
     def close(self): pass
+
+
+class Element(Spectrum):
+    """The 128K build with its ESP-01 driver, on an emulated eLeMeNt ZX."""
+    kind = 'ESP'
+    build = 'build/zx128'
 
 
 class Amstrad:
@@ -115,7 +129,7 @@ def until(cond, limit, *ms):
 
 
 t0 = time.time()
-MACHINES = {'mz': MZ, 'zx': Spectrum, 'cpc': Amstrad}
+MACHINES = {'mz': MZ, 'zx': Spectrum, 'cpc': Amstrad, 'esp': Element}
 host, join = MACHINES[HOST](), MACHINES[JOIN]()
 both = (host, join)
 run(90, *both)                                                    # both titles up and settled
@@ -132,7 +146,7 @@ join.wr('_net_code', code)
 join.press('fire'); run(TAP, *both); join.release('fire'); run(TAP, *both)   # code screen
 join.press('fire'); run(TAP, *both); join.release('fire')                    # join
 if not until(lambda: join.r8('_net_slot') == 1, 1500, *both):
-    if join.kind == 'ZX': join.z.screenshot('build/cross_join.png')
+    if hasattr(join, 'z'): join.z.screenshot('build/cross_join.png')
     sys.exit(f'join failed: title_mode {join.r8("_title_mode")} menu_net {join.r8("_menu_net")} code {join.rd("_net_code", 4)}')
 run(120, *both)                                                       # lobby: delay measured, seat table
 join.press('fire'); run(TAP, *both); join.release('fire')             # ready, joiner first
@@ -172,7 +186,7 @@ print(f'done: frames {H} {host.r16("_frame_no")} {J} {join.r16("_frame_no")}, {l
 fh, fj = host.rd('_map_layer', 1000), join.rd('_map_layer', 1000)
 print(f'fields identical: {fh == fj} (read at frames {H} {host.r16("_frame_no")}, {J} {join.r16("_frame_no")})')
 for m in both:
-    if m.kind == 'ZX': m.z.screenshot('build/cross_zx.png')
+    if hasattr(m, 'z'): m.z.screenshot(f'build/cross_{m.kind.lower()}.png')
     elif m.kind == 'CPC': m.c.screenshot('build/cross_cpc.png')
     else: m.e.screenshot('build/cross_mz.png')
 for m in both: m.close()
