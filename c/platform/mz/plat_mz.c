@@ -451,7 +451,14 @@ j13_sw:
   __endasm;
 }
 
-/* plat_tone(ratio, len): RATIO=ratio, MSTA, busy loop len*256, MSTP. */
+/* plat_tone(ratio, len): RATIO = ratio and MSTA start the 8253's counter 0
+ * on the speaker, as in the original; the original then waited len * 256
+ * DJNZ (len * 0.94 ms) for MSTP and the game stood still meanwhile. Here
+ * the game goes on: the start is taken from counter 1 (15611 Hz, the frame
+ * limiter's), and mz_tones_due stops the tone once len * 14.75 ticks have
+ * passed. It is called while the frame limiter waits and in plat_delay, so
+ * a tone ends within the frame it was due in. A new tone replaces one still
+ * sounding (one tone generator). */
 void plat_tone(uint16_t ratio, uint8_t len) __naked {
   __asm
     push iy
@@ -461,22 +468,73 @@ void plat_tone(uint16_t ratio, uint8_t len) __naked {
     ld   h,(iy+3)
     ld   (0x11a1),hl        ; RATIO
     ld   c,(iy+0)
-    ld   b,0
+    push bc
     call 0x0044             ; MSTA
-mt_loop:
-    djnz mt_loop
-    dec  c
-    jr   nz,mt_loop
-    call 0x0047             ; MSTP
+    pop  bc
+    ld   l,c                ; length in counter 1 ticks: len * 15 - len / 4
+    ld   h,0
+    ld   d,h
+    ld   e,l
+    add  hl,hl
+    add  hl,hl
+    add  hl,hl
+    add  hl,hl
+    or   a
+    sbc  hl,de
+    srl  e
+    srl  e
+    sbc  hl,de
+    ld   (tone_len),hl
+    call tone_now
+    ld   (tone_start),de
+    ld   a,1
+    ld   (tone_on),a
     pop  iy
     ret
+; DE = counter 1 now (a down counter)
+tone_now:
+    ld   a,0x40             ; latch counter 1
+    ld   (0xe007),a
+    ld   a,(0xe005)
+    ld   e,a
+    ld   a,(0xe005)
+    ld   d,a
+    ret
+; the tone sounding long enough: MSTP
+mz_tones_due:
+    ld   a,(tone_on)
+    or   a
+    ret  z
+    call tone_now
+    ld   hl,(tone_start)
+    or   a
+    sbc  hl,de              ; ticks since the start
+    ld   bc,(tone_len)
+    or   a
+    sbc  hl,bc
+    ret  c
+    xor  a
+    ld   (tone_on),a
+    jp   0x0047             ; MSTP
+tone_on:    defb 0
+tone_start: defw 0
+tone_len:   defw 0
   __endasm;
 }
 
+/* the original's pause, 5000h turns of 26 T-states (150 ms): now 2D40h turns
+ * of 46, with a look at the tone every 256 */
 void plat_delay(void) __naked {
   __asm
-    ld   hl,0x5000
+    ld   hl,0x2d40
 md_loop:
+    ld   a,l
+    or   a
+    jr   nz,md_turn
+    push hl
+    call mz_tones_due
+    pop  hl
+md_turn:
     dec  hl
     ld   a,h
     or   l
@@ -514,6 +572,7 @@ void mz_frame_sync(uint16_t ticks) __naked {
     ld   b,(iy+1)
     ld   (fsync_ticks),bc
 fsync_loop:
+    call mz_tones_due       ; a tone due to end meanwhile
     ld   a,0x40             ; latch counter 1
     ld   (0xe007),a
     ld   a,(0xe005)

@@ -136,22 +136,27 @@ uint8_t plat_break(void) {                 /* ESC */
 }
 
 /* ---- time ---- */
+static void tones_due(void);
 static uint8_t last_tick;
 
 void plat_frame_sync(void) {               /* a game frame is three TV frames: 18 interrupts */
-  while ((uint8_t)(cpc_ticks - last_tick) < 18) ;
+  while ((uint8_t)(cpc_ticks - last_tick) < 18) tones_due();
   last_tick = cpc_ticks;
 }
 
 void plat_delay(void) {                    /* one TV frame */
   uint8_t t = cpc_ticks;
-  while ((uint8_t)(cpc_ticks - t) < 6) ;
+  while ((uint8_t)(cpc_ticks - t) < 6) tones_due();
 }
 
-/* ---- sound: the MZ's tones on the AY's channel A ----
- * MZ: frequency = 1108400 / ratio, the game waits len * 3340 T-states of
- * 3.55 MHz (len * 0.94 ms) and stands still meanwhile, as here.
- * AY: period = 1 MHz / (16 * frequency) = ratio * 0.0564. */
+/* ---- sound: the MZ's tones on the AY, the game running on ----
+ * MZ: frequency = 1108400 / ratio for len * 3340 T-states of 3.55 MHz
+ * (len * 0.94 ms). AY: period = 1 MHz / (16 * frequency) = ratio * 0.0564.
+ * The original stands still while a tone sounds; here the AY sounds by
+ * itself and tones_due silences it when its time is up, in the waits of
+ * the frame sync and plat_delay (300 Hz ticks). A channel per kind, as on
+ * the 128K Spectrum (from Milan Stava's ESP-01 port), so that sounds
+ * overlap: len 14 (steps, menus) on A, 12 (bombs) on B, the rest on C. */
 static uint8_t ay_reg, ay_val;
 
 static void ay_write(void) __naked {
@@ -176,16 +181,30 @@ static void ay_write(void) __naked {
 
 static void ay(uint8_t reg, uint8_t val) { ay_reg = reg; ay_val = val; ay_write(); }
 
+static uint8_t tone_on, tone_end[3];                 /* channels sounding (bits), the tick each ends */
+
+static void tones_due(void) {
+  static uint8_t ch;
+  if (!tone_on) return;
+  for (ch = 0; ch < 3; ch++)
+    if ((tone_on & (1 << ch)) && (int8_t)(cpc_ticks - tone_end[ch]) >= 0) {
+      ay(8 + ch, 0);
+      tone_on &= (uint8_t)~(1 << ch);
+    }
+}
+
 void plat_tone(uint16_t ratio, uint8_t len) {
-  uint16_t period = (ratio >> 4) - (ratio >> 7) + (ratio >> 9);
-  uint8_t t, wait = (uint8_t)(((uint16_t)len * 9) >> 5);
-  if (!wait) wait = 1;
-  ay(0, (uint8_t)period);
-  ay(1, (uint8_t)(period >> 8) & 0x0f);
-  ay(8, 13);
-  t = cpc_ticks;
-  while ((uint8_t)(cpc_ticks - t) < wait) ;
-  ay(8, 0);
+  static uint16_t period;
+  static uint8_t ch, wait;
+  period = (ratio >> 4) - (ratio >> 7) + (ratio >> 9);
+  wait = (uint8_t)(((uint16_t)len * 9) >> 5);                   /* len * 0.94 ms in 3.33 ms ticks */
+  ch = len == 14 ? 0 : len == 12 ? 1 : 2;
+  ay(ch * 2, (uint8_t)period);
+  ay(ch * 2 + 1, (uint8_t)(period >> 8) & 0x0f);
+  ay(7, 0x38);                                                  /* the three tones on, no noise */
+  ay(8 + ch, 13);
+  tone_end[ch] = (uint8_t)(cpc_ticks + wait + 1);
+  tone_on |= (uint8_t)(1 << ch);
 }
 
 /* ---- the machine taken over ---- */
@@ -258,8 +277,10 @@ void plat_init(void) {
   di_now();
   memset(_BSS_head, 0, (uint16_t)(_BSS_END_tail - _BSS_head));
   takeover();
-  ay(7, 0x3e);                            /* mixer: tone A only */
+  ay(7, 0x38);                            /* mixer: the three tones, no noise */
   ay(8, 0);
+  ay(9, 0);
+  ay(10, 0);
 }
 
 /* ---- screen ---- */

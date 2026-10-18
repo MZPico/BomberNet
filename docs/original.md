@@ -195,6 +195,16 @@ current stage without points. Touching the BONUS scores `(rand & 3Fh)*2 | 10h`.
   previous frame. In a network match it waits `FRAME_TICKS_NET` (935 = 59.9 ms,
   the Spectrum's frame) so that both machines keep the same pace in lockstep.
   The game logic stays frame-based like the original.
+- **Tones do not stop the game.** The original starts the 8253's tone (MSTA),
+  waits len * 256 DJNZ (len * 0.94 ms) and stops it (MSTP); while it waits the
+  game stands still, so at busy moments a quarter of the 4-player frames ran
+  past their time (21 to 27 % in the recordings). Now `plat_tone` starts the
+  tone and returns; the frame limiter's wait and `plat_delay` stop it when its
+  length has passed. Late frames: 3 to 5 %, as with the sound off. A tone
+  that falls due after the wait ends sounds on until the next wait, up to
+  about one frame's work longer than its length. The CPC and the 128K
+  Spectrum play their tones on the AY the same way; the 48K Spectrum's
+  beeper needs the CPU and still stops the game.
 - Everything else (collision-at-draw-time, layer semantics, scoring, stage flow,
   quirks such as the exit restarting the stage) is kept, with comments marking the
   natural hook points for new features (walking animation, more bombs, blast range).
