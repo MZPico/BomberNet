@@ -182,8 +182,16 @@ static uint16_t rec_pos = 16, frames;
  * arrow, and then report no key on its release). SHIFT has a line of its
  * own, so it is the fire key that works while walking; SPACE fires too,
  * standing. Fire is a press, not a level: one bomb each time (held, the
- * core would drop one every two cells). */
-static uint8_t fire_held, keys_frame = 0xff, keys_now, flushes;   /* flushes: +1 a frame (flush_screen) */
+ * core would drop one every two cells), and a press counts only after
+ * fire was up for two frames, and fire is down only after 2 vertical
+ * blanks (40 ms): an emulator's keyboard mapping can drop or add SHIFT
+ * for a moment while one arrow gives way to another, which made a bomb
+ * at a turn. */
+extern volatile uint8_t fire_tv;
+#ifdef FIREDEBUG
+static uint8_t fire_count;                /* fires so far, SHIFT's line, KBCODE: on the status line */
+#endif
+static uint8_t fire_up = 2, keys_frame = 0xff, keys_now, flushes;   /* flushes: +1 a frame (flush_screen) */
 uint8_t plat_keys_a(void) {
   uint8_t k = 0, c, f;
 #ifdef ATARI_TEST
@@ -196,12 +204,19 @@ uint8_t plat_keys_a(void) {
     else if (c == 0x0f) k = KEY_DOWN;
     else if (c == 0x06) k = KEY_LEFT;
     else if (c == 0x07) k = KEY_RIGHT;
-    else if (c == 0x21) k = KEY_SPACE;
   }
-  if (!(SKSTAT & 0x08)) k |= KEY_SPACE;               /* SHIFT */
+  if (fire_tv >= 2) k |= KEY_SPACE;                   /* SHIFT or SPACE, down for 2 vertical blanks (atari.s) */
   f = k & KEY_SPACE;
-  if (fire_held) k &= (uint8_t)~KEY_SPACE;            /* still the same press */
-  fire_held = f;
+  if (f) {
+    if (fire_up < 2) k &= (uint8_t)~KEY_SPACE;        /* still the same press, or one up for only a frame */
+    fire_up = 0;
+  } else if (fire_up < 2) fire_up++;
+#ifdef FIREDEBUG
+  if (k & KEY_SPACE) fire_count++;                    /* shown over P1's score */
+  atari_screen[963] = atari_text_code[fire_count % 10];
+  atari_screen[964] = atari_text_code[(SKSTAT >> 3) & 1];
+  atari_screen[965] = atari_text_code[(KBCODE & 0x3f) / 10]; atari_screen[966] = atari_text_code[(KBCODE & 0x3f) % 10];
+#endif
   keys_frame = flushes; keys_now = k;
   return k;
 }
@@ -338,21 +353,29 @@ static void halve(uint8_t *m, const uint8_t *a, const uint8_t *b) {
 }
 
 /* The title's legend (rows 7-8): the player and the four enemies in their
- * MZ colours, by the four sprites and the missiles as a fifth (PF3). */
+ * MZ colours, by the four sprites and the missiles as a fifth (PF3), their
+ * shapes converted as in the game (narrow dots); the text cells under them
+ * are left blank. */
 #define ICON_ROW 7
+#define ICON(c) (atari_icon_shape + (atari_icon_index[c] << 3))
 static const uint8_t icon_x[5] = {2, 0x0b, 0x13, 0x1a, 0x22};
 static void title_icons(void) {
   uint8_t k, r, c[4], *hc, shape[16];
-  const uint8_t *f = atari_title_font;
+  const uint8_t *a, *b;
   for (k = 0; k < 5; k++) {
-    const uint8_t *cell = shadow_vram + ICON_ROW * SCREEN_W + icon_x[k];
+    uint16_t at = ICON_ROW * SCREEN_W + icon_x[k];
+    const uint8_t *cell = shadow_vram + at;
     uint8_t col;
     c[0] = cell[0]; c[1] = cell[1]; c[2] = cell[SCREEN_W]; c[3] = cell[SCREEN_W + 1];
+    atari_screen[at] = atari_screen[at + 1] = 0;      /* the sprite alone draws the icon */
+    atari_screen[at + SCREEN_W] = atari_screen[at + SCREEN_W + 1] = 0;
     hc = icon_cells[k];
     if (hc[0] == c[0] && hc[1] == c[1] && hc[2] == c[2] && hc[3] == c[3]) continue;
     memcpy(hc, c, 4);
-    halve(shape, f + (atari_title_code[c[0]] << 3), f + (atari_title_code[c[1]] << 3));
-    halve(shape + 8, f + (atari_title_code[c[2]] << 3), f + (atari_title_code[c[3]] << 3));
+    a = ICON(c[0]); b = ICON(c[1]);                   /* converted as the game's cells: tables.c */
+    for (r = 0; r < 8; r++) shape[r] = (uint8_t)(a[r] << 4 | b[r]);
+    a = ICON(c[2]); b = ICON(c[3]);
+    for (r = 0; r < 8; r++) shape[8 + r] = (uint8_t)(a[r] << 4 | b[r]);
     col = ink_colours[atari_title_ink[c[0] != C_SPACE ? c[0] : c[2]]];
     if (k < 4) {
       memcpy(PLAYER_MEM(k) + FIELD_TOP + ICON_ROW * 8, shape, 16);

@@ -33,6 +33,10 @@ Tables written to c/platform/atari/tables.[ch]:
   atari_logo_code   logical code (title mode) -> screen code in it
   atari_title_ink   logical code (title mode) -> its MZ ink (0-7), for the
                     sprites that colour the legend's icons
+  atari_icon_index  logical code (title mode) -> its shape in atari_icon_shape
+  atari_icon_shape  8 rows of a 4-bit sprite half each: the legend's icons
+                    converted as the game's cells (the dots narrow), so they
+                    look as in the game
 The fonts are 1 KB aligned (ATARI_ALIGN, tables.h), as ANTIC wants them.
 
   tools/make_atari_tables.py [--mock screen.bin out.png]   (a logical screen rendered as design D)
@@ -143,6 +147,15 @@ for code in range(256):
     logo_code[code] = logo_index[shape]
 assert len(logo_font) <= 128, len(logo_font)
 
+# ---- the title's icons (the legend's player and enemies, sprites): as the game converts its cells
+icon_shapes, icon_index = [bytes(8)], [0] * 256
+for code in range(256):
+    g = cg[tt[2 * code] * 8: tt[2 * code] * 8 + 8]
+    if not any(g) or not (player_of(code) is not None or 0xc0 <= code <= 0xdf): continue   # the player, the enemies
+    shape = bytes(sum(1 << (3 - i) for i, px in enumerate(r) if px) for r in four_glyph(g))
+    if shape not in icon_shapes: icon_shapes.append(shape)
+    icon_index[code] = icon_shapes.index(shape)
+
 # ---- sprite halves: a player cell as 8 rows of 4 bits (one sprite byte is two cells)
 sprite = [bytes(8)] * 256
 for code in range(256):
@@ -176,6 +189,8 @@ def write_tables():
          carray('atari_logo_font', b''.join(logo_font) + bytes(8 * (128 - len(logo_font))), align=' ATARI_ALIGN(1024)'),
          carray('atari_logo_code', bytes(logo_code)),
          carray('atari_title_ink', bytes(title_ink)),
+         carray('atari_icon_index', bytes(icon_index)),
+         carray('atari_icon_shape', b''.join(icon_shapes)),
          carray('atari_sprite_index', bytes(sprite_index)),
          carray('atari_sprite_shape', b''.join(sprite_shapes))]
     open(os.path.join(out, 'tables.c'), 'w').write('\n'.join(c))
@@ -185,7 +200,8 @@ def write_tables():
         'extern const uint8_t atari_field_font[1024], atari_text_font[1024], atari_title_font[1024];\n'
         'extern const uint8_t atari_field_code[256], atari_text_code[256], atari_title_code[256];\n'
         f'extern const uint8_t atari_sprite_index[256], atari_sprite_shape[{8 * len(sprite_shapes)}];\n'
-        'extern const uint8_t atari_logo_font[1024], atari_logo_code[256], atari_title_ink[256];\n#endif\n')
+        'extern const uint8_t atari_logo_font[1024], atari_logo_code[256], atari_title_ink[256];\n'
+        f'extern const uint8_t atari_icon_index[256], atari_icon_shape[{8 * len(icon_shapes)}];\n#endif\n')
     print(f'field font {len(field_font)} of 128 shapes, text font {len(text_font)}, title font {len(title_font)}, '
           f'logo font {len(logo_font)}, sprite shapes {len(sprite_shapes)}')
 

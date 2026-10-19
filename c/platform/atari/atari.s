@@ -61,6 +61,10 @@ atari_dli_title:
 ; needs of them: the clock, the hardware registers from the OS's shadows
 ; (set by plat_atari.c), and the sprites back to the players' places in the
 ; field.
+        .section .bss.fire_tv,"aw",@nobits
+        .global fire_tv
+fire_tv: .zero 1
+
         .section .text.atari_vbi,"ax",@progbits
         .global atari_vbi
 atari_vbi:
@@ -92,7 +96,29 @@ atari_vbi:
         sta 0xd012,x
         dex
         bpl 2b
-7:      lda atari_hpos+0        ; the sprites in the field
+7:      lda 0xd20f              ; SKSTAT: SHIFT (bit 3 low), counted in fire_tv
+        and #0x08               ; (plat_keys_a: fire needs 2 vertical blanks,
+        bne 8f                  ; 40 ms: an emulator's short SHIFT does not
+        lda fire_tv             ; drop a bomb)
+        cmp #255
+        beq 9f
+        inc fire_tv
+        jmp 9f
+8:      lda 0xd20f              ; else SPACE down (KBCODE 21h): counted alike
+        and #0x04
+        bne 10f
+        lda 0xd209
+        and #0x3f
+        cmp #0x21
+        bne 10f
+        lda fire_tv
+        cmp #255
+        beq 9f
+        inc fire_tv
+        jmp 9f
+10:     lda #0
+        sta fire_tv
+9:      lda atari_hpos+0        ; the sprites in the field
         sta 0xd000
         lda atari_hpos+1
         sta 0xd001
