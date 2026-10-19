@@ -6,7 +6,8 @@
  * WebSocket header), then reads until nothing waits (a status, a read, the
  * drained call). The status line shows, in 128 us units, the average and
  * the longest of 64 frames: 2 players (9 bytes in a frame), 4 players (27),
- * then the same at 19,200 baud. */
+ * then the same at 19,200 baud. BENCH_OUT, BENCH_IN2 and BENCH_IN4 set
+ * other sizes (docs/net-protocol.md: JSON lines). */
 #include <stdint.h>
 #include <string.h>
 #include "game.h"
@@ -25,7 +26,13 @@ static void show(uint8_t at, uint16_t v) {
   atari_screen[962 + at] = atari_text_code[v % 10];
 }
 
-static uint8_t out[16], in[64];
+#ifndef BENCH_OUT                                 /* bytes a frame: ours out, waiting for 2 and 4 players */
+#define BENCH_OUT 12
+#define BENCH_IN2 9
+#define BENCH_IN4 27
+#endif
+
+static uint8_t out[64], in[64];
 
 static void bench(uint8_t at, uint16_t in_len) {
   uint16_t t, d, max = 0;
@@ -36,7 +43,7 @@ static void bench(uint8_t at, uint16_t in_len) {
   for (f = 0; f < 64; f++) {
     plat_frame_sync();                            /* a frame's start, as in the game */
     t = atari_now();
-    tcp_send(out, 12);
+    tcp_send(out, BENCH_OUT);
     sw += atari_since(t);
     while (tcp_recv(in, sizeof(in)) > 0) ;
     d = atari_since(t);
@@ -56,8 +63,8 @@ void main(void) {
   memset(out, 0x42, sizeof(out));
   if (!tcp_present()) { show(0, 999); for (;;) ; }
   if (tcp_open("bench", 1)) { show(0, 998); for (;;) ; }
-  bench(0, 9);                                    /* 2 players */
-  bench(8, 27);                                   /* 4 players */
+  bench(0, BENCH_IN2);                                    /* 2 players */
+  bench(8, BENCH_IN4);                                   /* 4 players */
   {                                               /* a status alone (nothing waiting) */
     uint16_t t; uint32_t sum = 0; uint8_t f;
     tcp_bench_in(0);

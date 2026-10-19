@@ -132,6 +132,50 @@ platform's `plat_config.h` asks for it with `NET_BINARY_INPUT`
 128K with ESP-01 or Spectranet) and the CPC. The MZ-800 (`netdev_card.c`: the
 card holds the WebSocket and its input-line rule) stays on JSON lines; the two kinds play in one room.
 
+### Measured: JSON against binary lines (2026-10-19)
+
+Two machines, 300 frames of a busy match (the recordings dm2 and dm4:
+2 players 1+1, 4 players 2+2), tones off, through the local relay; all
+hashes equal. CPU time per frame in ms, median; the frame is 60 ms.
+Network work is `input_poll` to `update_bombs` (sending ours, receiving and
+storing the others'); the whole frame is the flush to the next frame sync
+(median / 90th percentile, frames over 60 ms in brackets). Spectrums:
+`tools/lockstep_zx.py` (3.5 MHz); CPC and MZ-800: the same measurement in
+copies of `tools/lockstep_cpc.py` (a plain 4 MHz Z80; a real CPC about
+20 % more) and `tools/lockstep_test.py` (the MZ only walking, not the
+recordings).
+
+| Network work | JSON 2 | JSON 4 | binary 2 | binary 4 |
+|---|---|---|---|---|
+| ZX48, Spectranet | 8.1 | 8.5 | 6.1 | 6.6 |
+| ZX128, Spectranet | 10.6 | 11.1 | 7.9 | 8.5 |
+| ZX128, ESP-01 | 24.9 | 25.5 | 11.0 | 11.6 |
+| CPC, M4 | 9.1 | 9.6 | 6.7 | 7.3 |
+| MZ-800, card (JSON only) | 3.4 | 3.7 | | |
+
+| Whole frame | JSON 2 | JSON 4 | binary 2 | binary 4 |
+|---|---|---|---|---|
+| ZX48 | 42.9 / 48.7 (4 %) | 48.1 / 62.3 (12 %) | 41.1 / 50.3 (2 %) | 46.2 / 61.0 (10 %) |
+| ZX128, Spectranet | 45.6 / 51.3 (7 %) | 51.5 / 70.3 (20 %) | 43.1 / 48.7 (4 %) | 51.7 / 65.1 (13 %) |
+| ZX128, ESP-01 | 59.6 / 66.9 (47 %) | 65.9 / 82.8 (94 %) | 46.2 / 52.9 (8 %) | 51.8 / 69.6 (15 %) |
+| CPC | 40.1 / 47.7 (1 %) | 45.8 / 57.0 (6 %) | 37.8 / 42.2 (1 %) | 42.8 / 55.0 (2 %) |
+| MZ-800 | 36.4 / 37.7 | 41.0 / 42.3 | | |
+
+The Atari waits on SIO throughout, so the bus time adds to the frame.
+`tools/build_atari.py --bench` in Altirra with `tools/atari/fakefn.atdevice`
+(FujiNet's delays, its default high speed); the JSON sizes from the
+Worker's lines (46 bytes out, 50 in per player) with
+`CFLAGS_ATARI="-DBENCH_OUT=46 -DBENCH_IN2=50 -DBENCH_IN4=150"`. Here 4
+players are 4 machines (3 lines in). The game's own work is the step 3
+figure (`docs/port-atari-xl.md`) plus about 1 ms of network code:
+
+| Atari XL + FujiNet | JSON 2 | JSON 4 | binary 2 | binary 4 |
+|---|---|---|---|---|
+| SIO a frame, average | 38.0 | 84.0 | 24.8 | 28.8 |
+| of it our line out | 15.0 | 15.0 | 8.8 | 8.8 |
+| game work | 38.2 | 41.6 | 38.2 | 41.6 |
+| whole frame, estimated | about 76 | about 126 | about 63 | about 70 |
+
 ## Frame budget
 
 Parameter blobs have fixed sizes so the device can use a plain byte-count
