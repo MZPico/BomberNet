@@ -15,12 +15,13 @@ if(PLATFORM STREQUAL "zx128")
     set(PLAT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/platform/zx")
 endif()
 set(TOOLS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../tools")
+set(CPU_DIR "${CMAKE_CURRENT_SOURCE_DIR}/cpu/z80")       # every machine so far is a Z80
 
 if(PLATFORM STREQUAL "mz")
     # Same toolchain and flags as MZPico-800-Manager (z88dk sccz80, Sharp MZ target).
     set(TARGET_FLAGS +mz -lm -create-app -pragma-define:REGISTER_SP=0xd000)
     set(PLAT_SOURCES "${PLAT_DIR}/plat_mz.c" "${PLAT_DIR}/uc_mz.c" "${PLAT_DIR}/tables.c"
-                     "${COMMON_DIR}/netdev_card.c" "${COMMON_DIR}/z80_loops.c")
+                     "${COMMON_DIR}/netdev_card.c" "${CPU_DIR}/loops.c")
     set(APP_SUFFIX mzt)
     set(OUT_SUFFIX mzf)
 elseif(PLATFORM STREQUAL "zx")
@@ -29,7 +30,7 @@ elseif(PLATFORM STREQUAL "zx")
                      -pragma-define:CLIB_EXIT_STACK_SIZE=0 -pragma-define:CRT_ENABLE_STDIO=0
                      -pragma-define:CLIB_OPEN_MAX=0 -pragma-redirect:fputc_cons=zx_no_console)
     set(PLAT_SOURCES "${PLAT_DIR}/plat_zx.c" "${PLAT_DIR}/tables.c" "${PLAT_DIR}/tcp_spectranet.c"
-                     "${COMMON_DIR}/netdev_soft.c" "${COMMON_DIR}/ws.c" "${COMMON_DIR}/z80_loops.c")
+                     "${COMMON_DIR}/netdev_soft.c" "${COMMON_DIR}/ws.c" "${CPU_DIR}/loops.c" "${CPU_DIR}/netline.c")
     set(APP_SUFFIX tap)
     set(OUT_SUFFIX tap)
 elseif(PLATFORM STREQUAL "zx128")
@@ -53,7 +54,7 @@ elseif(PLATFORM STREQUAL "zx128")
     endif()
     set(PLAT_FIRST "${PLAT_DIR}/tcp_bank6.c")
     set(PLAT_SOURCES "${PLAT_DIR}/plat_zx.c" "${PLAT_DIR}/tables.c"
-                     "${COMMON_DIR}/netdev_soft.c" "${COMMON_DIR}/ws.c" "${COMMON_DIR}/z80_loops.c")
+                     "${COMMON_DIR}/netdev_soft.c" "${COMMON_DIR}/ws.c" "${CPU_DIR}/loops.c" "${CPU_DIR}/netline.c")
     set(OUT_SUFFIX tap)
 elseif(PLATFORM STREQUAL "cpc")
     # Amstrad CPC 464/6128: an AMSDOS binary; the game takes the machine over
@@ -68,14 +69,14 @@ elseif(PLATFORM STREQUAL "cpc")
                      -pragma-define:CRT_ENABLE_STDIO=0 -pragma-define:CLIB_OPEN_MAX=0
                      -pragma-define:CLIB_EXIT_STACK_SIZE=0 -pragma-redirect:fputc_cons=cpc_no_console)
     set(PLAT_SOURCES "${PLAT_DIR}/plat_cpc.c" "${PLAT_DIR}/tables.c" "${PLAT_DIR}/tcp_m4.c"
-                     "${COMMON_DIR}/netdev_soft.c" "${COMMON_DIR}/ws.c" "${COMMON_DIR}/z80_loops.c")
+                     "${COMMON_DIR}/netdev_soft.c" "${COMMON_DIR}/ws.c" "${CPU_DIR}/loops.c" "${CPU_DIR}/netline.c")
     set(APP_SUFFIX cpc)
     set(OUT_SUFFIX cpc)
 else()
     message(FATAL_ERROR "unknown PLATFORM ${PLATFORM}")
 endif()
 
-set(COMMON_FLAGS ${TARGET_FLAGS} --list -m -I${CORE_DIR} -I${COMMON_DIR} -I${PLAT_DIR})
+set(COMMON_FLAGS ${TARGET_FLAGS} --list -m -I${CORE_DIR} -I${COMMON_DIR} -I${PLAT_DIR} -I${CPU_DIR})
 
 # Link order is memory order. On the Spectrum the first 8 KB land in contended
 # RAM (slower while the picture is drawn): menus and lobby go there, the frame
@@ -97,7 +98,7 @@ set(BOMBER_SOURCES
 
 set(BOMBER_OUTPUT bomber)
 set(BOMBER_APP "${CMAKE_CURRENT_BINARY_DIR}/${BOMBER_OUTPUT}.${OUT_SUFFIX}")
-file(GLOB BOMBER_HEADERS "${CORE_DIR}/*.h" "${COMMON_DIR}/*.h" "${PLAT_DIR}/*.h")
+file(GLOB BOMBER_HEADERS "${CORE_DIR}/*.h" "${COMMON_DIR}/*.h" "${PLAT_DIR}/*.h" "${CPU_DIR}/*.h")
 
 if(PLATFORM STREQUAL "zx128")
     find_package(Python3 REQUIRED COMPONENTS Interpreter)

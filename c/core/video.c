@@ -54,7 +54,7 @@ void print_string(uint8_t *p, const char *s) {
 }
 #endif
 
-#ifndef PLAT_ASM_TEXT                 /* common/z80_loops.c on the Z80 machines */
+#ifndef PLAT_ASM_TEXT                 /* cpu/z80/loops.c on the Z80 machines */
 /* digits are logical codes 0..9; no division (sccz80 calls a slow helper) */
 void print_num2(uint8_t *p, uint8_t v) {
   uint8_t q = 0;
@@ -92,7 +92,7 @@ void print_num4(uint8_t *p, uint16_t v) {
 #endif
 
 /* game-mode glyph for each letter A..Z (0 = not available) */
-const uint8_t hud_letters[26] = {          /* public: common/z80_loops.c reads it */
+const uint8_t hud_letters[26] = {          /* public: cpu/z80/loops.c reads it */
   0x95, 0x15, 0x11, 0x97, 0x14, 0xbe, 0x31, 0x98, 0x99, 0x00, 0x8f, 0x93, 0x94,
   0x17, 0x12, 0x92, 0x00, 0x13, 0x10, 0x30, 0x18, 0x9e, 0x8e, 0x9f, 0x96, 0x00,
 };

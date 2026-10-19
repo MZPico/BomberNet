@@ -81,7 +81,7 @@ c/platform/   one directory per machine: mz, zx, host (the PC simulator)
 | `c/common/netdev_card.c`, `uc.h` | the network device as a Unicard-compatible card (MZPico NET extension, Unicard NET firmware): detection by the INFO feature bit, the ten calls as card commands |
 | `c/common/netdev_soft.c`, `ws.c`, `tcp.h` | the network device in software, on the machine itself: room state, input window, messages, JSON lines over a small WebSocket client over any `tcp.h` |
 | `c/common/netdev_none.c` | the network device of a build without network |
-| `c/common/z80_loops.c` | core loops and text output in Z80 assembly, used by the MZ and the Spectrum |
+| `c/cpu/z80/` | faster Z80 versions of shared C (playfield copy, hash loop, text and digits, the network's input lines), used where `plat_config.h` asks; the C stays the reference (`docs/portability.md`) |
 | `c/platform/mz/` | Sharp MZ-700/800: keyboard matrix, joysticks, tones through the monitor, 8253 frame limiter, screen flush through the display-code tables; `uc_mz.c` is the card transport on ports 50h/51h |
 | `c/platform/zx/` | ZX Spectrum 48K: keys and joysticks, frame sync on the ROM's frame counter, beeper, the 6 x 8 pixel screen routine in assembly; `tcp_spectranet.c` is `tcp.h` over the Spectranet socket calls |
 | `c/platform/zx/bank6.c`, `tcp_bank6.c`, `tcp_esp01*.c` | the 128K build (`PLATFORM=zx128`, `docs/port-zx128-esp01.md`): the network driver in RAM bank 6 (the ESP-01's, by Milan Stava, or the Spectranet's), the game's `tcp.h` pages it in |
@@ -137,6 +137,7 @@ measurements and the reasoning behind the delay rule: `docs/net-timing.md`.
 | `tools/crossplay.py` | two different machines in one match: MZ-800, Spectrum, CPC, or the 128K with its ESP-01 (`esp`) |
 | `tools/fusex_match.py` | two FuseX with the real Spectranet firmware (`tools/fusex.py` drives FuseX through its GDB server) |
 | `tools/softnet_test.sh` | the software network device on a PC: two processes in one room |
+| `tools/test_portable.sh` | the PC simulator natively and on big-endian PowerPC (qemu), replaying `tests/recordings`: the core's byte-order check |
 | `tools/netbench.py` | network timing of a real-time match, local relay or production, including the play page (`tools/web_join.mjs`, `tools/netproxy.py`) |
 | `tools/browser_match.mjs` | two browser tabs play a match on the site |
 | `tools/emu.py` | drives a headless mz800emu over its MCP pipe: load, keys, frame benchmarks, screenshots |
@@ -170,5 +171,6 @@ changed on purpose and how fast it runs: `docs/original.md`.
 | `docs/net-timing.md` | network timing measurements and the 0.2.0 fixes |
 | `docs/port-zx-spectrum.md` | the ZX Spectrum port: feasibility, plan, measurements, FuseX |
 | `docs/port-amstrad-cpc.md` | the Amstrad CPC port with the M4 board: feasibility and plan |
+| `docs/portability.md` | the rules that keep one C game for Z80, 6502 and 68000 machines |
 | `docs/port-zx128-esp01.md` | the 128K Spectrum with an ESP-01 (Milan Stava's port, brought in step by step): plan and progress |
 | `PLAN.md` | the multiplayer plan the C port followed |

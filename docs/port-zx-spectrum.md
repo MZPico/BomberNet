@@ -251,7 +251,7 @@ What was done:
 - The title spent its time in C loops that fill the menu box, copy the logo
   and convert text character by character. Block fills and copies
   (memset/memcpy) and the five text routines in Z80 assembly
-  (`common/z80_loops.c`, also used by the MZ) fixed it and made the program
+  (`common/z80_loops.c`, now `cpu/z80/loops.c`, also used by the MZ) fixed it and made the program
   smaller.
 - After `clear_buffers` the Spectrum wipes its display in one pass (pixels
   and attributes pushed through the stack pointer) and marks the cells as

@@ -1,6 +1,7 @@
-/* Core loops in Z80 assembly, shared by the Z80 platforms (PLAT_ASM_COMPOSITE,
- * PLAT_ASM_HASH in plat_config.h). No hardware access; IY is not touched
- * (the Spectrum ROM interrupt needs it). */
+/* Core loops in Z80 assembly, for the Z80 machines that ask for them in
+ * plat_config.h (PLAT_ASM_COMPOSITE, PLAT_ASM_HASH, PLAT_ASM_TEXT). The C in
+ * core/ is the reference; see docs/portability.md. No hardware access; IY is
+ * not touched (the Spectrum ROM interrupt needs it). */
 #include <stdint.h>
 #include "game.h"
 
