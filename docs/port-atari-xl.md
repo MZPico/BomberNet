@@ -13,9 +13,9 @@ The first port to a processor other than the Z80, chosen before the C64
 
 0. **Feasibility on the 6502**: the core built with llvm-mos, recordings
    replayed in its simulator, frames timed. Done, see below.
-1. **6502 helpers** (`c/cpu/6502/`): fast `memcpy`/`memset` in place of the
-   library's, the screen flush; measure again, with the network code
-   (`netdev_soft.c`, `ws.c`) on a loop-back `tcp.h`.
+1. **6502 helpers** (`c/cpu/6502/`) and the screen flush in assembly;
+   measure again, with the network code (`netdev_soft.c`, `ws.c`) against a
+   relay inside the program. Done, see below.
 2. **The screen**: 40 x 25 cells (a display list for the 25th row), colours
    per cell against hardware sprites for the players; mock-ups to choose
    from, then the cell tables from the MZ characters.
@@ -78,3 +78,50 @@ the network code and device, so the Atari has headroom and the C64 will be
 tight, which confirms the Atari first. A core change that tracks changed
 cells instead of copying and comparing the whole screen every frame would
 help every machine further, but is not needed for the Atari.
+
+## Step 1: 6502 assembly where the cycles were, the network code measured
+
+- `c/cpu/6502/loops.s`: `composite_frame` (the playfield copy, about 11
+  cycles a byte) and `composite_map`, under `PLAT_ASM_COMPOSITE` as on the
+  Z80; the C in `core/video.c` stays the reference. Not a replacement of
+  the library's `memcpy`: that would tie us to llvm-mos's calling
+  convention for library routines, these take no arguments.
+- `c/platform/sim6502/flush.s`: the measurement platform's flush in
+  assembly, as a real port's would be: four quarters of 250 cells with
+  absolute,x, the cell tables split into 256-byte code and colour halves
+  (`sim_codes`, `sim_attrs`), about 25 cycles a cell.
+- `c/platform/sim6502/tcp_fake.c`: a relay inside the program behind
+  `tcp.h` (the WebSocket handshake, `create`, `ready`, and for each of our
+  input lines the other slots' lines for that frame). With `SIM_NET` the
+  platform opens a room through the real `net_detect`/`net_create`/
+  `net_ready` and does a network frame's work every game frame: `net_send`
+  of our keys, the other machines' lines through the WebSocket parser,
+  `net_poll`, `net_hash`.
+- `tools/sim6502.py` with `CFLAGS6502="-DSIM_ASM"` (the assembly),
+  `-DSIM_NET -DSIM_SLOTS=n` (the network with n machines), `-Os` for size.
+
+Correct: with the assembly, dm4, coop4, dm2s and 1500 frames of coop2-score
+replay with 0 mismatches.
+
+Busy 4-player deathmatch (dm4), median (90th percentile) of a frame's work:
+
+| | Atari (~1.5 MHz) | C64 (0.94 MHz) |
+|---|---|---|
+| standalone, `-O2` | 27.6 ms (29.7) | 44.1 ms (47.5) |
+| standalone, `-Os` | 29.4 ms (32.0) | 46.9 ms (51.1) |
+| network, 2 machines, `-Os`, hash on | 33.6 ms (35.5; 99th 40.2) | 53.7 ms (56.6; 99th 64.2) |
+| network, 4 machines, `-Os`, hash on | 34.0 ms (35.9; 99th 40.6) | 54.3 ms (57.3; 99th 64.8) |
+
+The network figures hold the state hash (about 3.8 ms on the Atari) and
+the network code, which is only about 1 ms on the 6502 (on the Z80, with
+sccz80 and the Spectranet calls, 8 ms); not yet the device: FujiNet's
+serial bus is step 4. The Atari has about 25 ms of a 60 ms frame left for
+it, the C64 about 5.
+
+Size (llvm-mos, per source file): the core and the network code are about
+46 KB of code at `-O2` (`netdev_soft.c` 14.5 KB), 30 KB at `-Os`, plus
+about 3 KB of tables and constants and 4 KB of variables: about 37 KB at
+`-Os`, comparable with the Z80 builds (40 KB). That fits an Atari XL/XE
+with BASIC off ($0700-$BFFF, less the screen, character set and display
+list); the RAM under the OS ROM is there if needed. The build will be
+`-Os`, 2 ms slower than `-O2`.

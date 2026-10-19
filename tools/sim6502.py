@@ -26,7 +26,12 @@ with open(os.path.join(out, 'rec_data.h'), 'w') as f:
     f.write('};\n')
 c = os.path.join(ROOT, 'c')
 src = [f'{c}/core/{n}.c' for n in ('bomber', 'netplay', 'data', 'map', 'game', 'input', 'video', 'enemy', 'bomb', 'player')]
-src += [f'{c}/platform/mz/tables.c', f'{c}/common/netdev_none.c', f'{c}/platform/sim6502/plat_sim6502.c']
+src += [f'{c}/platform/mz/tables.c', f'{c}/platform/sim6502/plat_sim6502.c']
+xflags = os.environ.get('CFLAGS6502', '').split()
+if '-DSIM_ASM' in xflags: src += [f'{c}/cpu/6502/loops.s', f'{c}/platform/sim6502/flush.s']
+if '-DSIM_NET' in xflags or any(x.startswith('-DSIM_SLOTS') for x in xflags):
+    src += [f'{c}/common/netdev_soft.c', f'{c}/common/ws.c', f'{c}/platform/sim6502/tcp_fake.c']
+else: src += [f'{c}/common/netdev_none.c']
 inc = [f'-I{c}/core', f'-I{c}/common', f'-I{c}/platform/sim6502', f'-I{c}/platform/mz', f'-I{out}']
 elf = os.path.join(out, 'bomber.elf'); binf = os.path.join(out, 'bomber')
 flags = opts + (['-DHASH_OFF'] if '--hash-off' in sys.argv else []) + os.environ.get('CFLAGS6502', '').split()
@@ -38,7 +43,7 @@ r = subprocess.run([f'{SDK}/bin/mos-sim', *(['--profile'] if prof else []), binf
 o = r.stdout
 print(f'{os.path.basename(rec)} {" ".join(flags)}: program {size} bytes')
 for l in o.splitlines():
-    if l.startswith(('RESULT', 'CYCLES', 'OVER', 'MISMATCH')): print(' ', l)
+    if l.startswith(('RESULT', 'CYCLES', 'OVER', 'MISMATCH', 'SIM_NET')): print(' ', l)
 m = re.search(r'CYCLES median (\d+) p90 (\d+) p99 (\d+) max (\d+)', o)
 if m:
     med, p90, p99, mx = map(int, m.groups())

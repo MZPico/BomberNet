@@ -7,4 +7,7 @@
 #define PLAT_JOY_TYPES 3
 #define JOY_800  1
 #define JOY_1X03 2
+#ifdef SIM_ASM
+#define PLAT_ASM_COMPOSITE 1    /* cpu/6502/loops.s */
+#endif
 #endif

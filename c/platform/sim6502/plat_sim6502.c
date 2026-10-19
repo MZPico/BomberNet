@@ -2,8 +2,11 @@
  * (rec_data.h, from tools/sim6502.py), checks the state hash of every game
  * frame against it and times the frames in CPU cycles: from the start of the
  * flush to the next frame sync, the work a frame does. The screen flush is
- * C: each changed cell's code and colour into screen and colour memory, as
- * a C64 (screen RAM + colour RAM) or an Atari would take them. */
+ * C (or with SIM_ASM 6502 assembly, flush.s): each changed cell's code and
+ * colour into screen and colour memory, as a C64 (screen RAM + colour RAM) or
+ * an Atari would take them. With SIM_NET every game frame also does a
+ * network frame's work (net_send of our keys, the other slots' input lines
+ * through the WebSocket parser, net_poll) against the relay in tcp_fake.c. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,8 +14,20 @@
 #include "tables.h"
 #include "rec_data.h"                 /* rec[]: BNR1 header and 6-byte records; REC_LEN */
 
+#ifdef SIM_NET
+#include "netdev.h"
+extern uint8_t sim_slots;
+#ifndef SIM_SLOTS
+#define SIM_SLOTS 2
+#endif
+#define getenv_slots SIM_SLOTS
+#endif
+
 #define MAX_FRAMES 1200
-static uint8_t vram[SCREEN_CELLS], vattr[SCREEN_CELLS];
+uint8_t sim_vram[SCREEN_CELLS], sim_vattr[SCREEN_CELLS], sim_codes[256], sim_attrs[256];   /* public for flush.s */
+void flush_cells(void);
+#define vram sim_vram
+#define vattr sim_vattr
 static uint16_t pos = 16, frames, game_frames, mismatches, tones;
 static uint32_t t_flush, work[MAX_FRAMES];
 static uint16_t nwork;
@@ -68,9 +83,27 @@ static void replay_step(void) {
   (void)h;
 #endif
   memcpy(replay_keys, rec + pos, 4);
+#ifdef SIM_NET
+  {                                           /* a network frame's work: our keys out, the others' in */
+    static uint8_t mine[NET_BYTES], kv[NET_SLOTS * NET_BYTES];
+    uint16_t av;
+    mine[0] = rec[pos]; mine[1] = rec[pos + 1];
+    net_send(game_frames + 1, mine);
+    net_poll(game_frames, &av, kv);
+    if (hash_period && (frame_no % hash_period) == 0) net_hash(frame_no, state_hash);
+  }
+#endif
   pos += 6;
   game_frames++;
 }
+
+#ifdef SIM_NET
+void sim_peer_keys(uint16_t frame, uint8_t slot, uint8_t keys[4]) {   /* slot s plays the recording's players 2s, 2s+1 */
+  uint16_t p = 16 + (uint16_t)frame * 6;
+  memset(keys, 0, 4);
+  if (p + 6 <= REC_LEN && slot < 2) { keys[0] = rec[p + 2 * slot]; keys[1] = rec[p + 2 * slot + 1]; }
+}
+#endif
 
 void flush_screen(void) {
   uint16_t i;
@@ -80,6 +113,9 @@ void flush_screen(void) {
 #ifdef FLUSH_NONE                             /* measurement: the frame without showing it */
   memset(draw_buf, C_SPACE, SCREEN_CELLS); (void)i; (void)tab;
   return;
+#endif
+#ifdef SIM_ASM
+  if (!title_mode) { flush_cells(); (void)i; (void)tab; return; }
 #endif
   for (i = 0; i < SCREEN_CELLS; i++) {
     uint8_t a = draw_buf[i];
@@ -107,4 +143,20 @@ void plat_init(void) {                        /* the recording's settings, as th
 #endif
   if (menu_players > 2) joy_type = JOY_800;
   replay_active = 1;
+  {
+    uint16_t c;
+    for (c = 0; c < 256; c++) { sim_codes[c] = game_table[2 * c]; sim_attrs[c] = game_table[2 * c + 1]; }
+  }
+#ifdef SIM_NET
+  {                                           /* a room through the real network code */
+    static char code[5];
+    uint8_t slot, st[2] = {0, 0};
+    uint16_t seed, start;
+    if (getenv_slots) sim_slots = getenv_slots;
+    net_detect();
+    if (net_create(BUILD_ID, sim_slots, st, 2, code, &slot) || net_ready(1, &seed, &start) || seed == 0xffff)
+      printf("SIM_NET: no room\n");
+    else printf("SIM_NET: room %s, %u slots, start %u\n", code, sim_slots, start);
+  }
+#endif
 }
