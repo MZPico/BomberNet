@@ -9,6 +9,11 @@ both are compared frame by frame.
   B_BUILD=build/v020/build/zx ...        B runs another build (its bomber and bomber.map)
   A_BUILD=build/zx128 ...                A too; a build with a bank6 file is a 128K Spectrum,
                                          an eLeMeNt with an ESP-01 when that is its driver
+  KEYS=build/ref/dm4.bnr ...             the players' keys from a recording (A's local players
+                                         are its players 1 and 2, B's 3 and 4): a busy match
+  QUIET=1 ...                            tones off
+  PROF=_net_send,_ws_poll,...            A's time per game frame in each of these functions, entry to
+                                         return (calls they make included)
   BREAK_AT=40 ...                        A leaves with BREAK after 40 frames: A ends with
                                          MATCH LEFT, B with the other player gone
 """
@@ -79,24 +84,52 @@ for _ in range(200):
     frames(1, a, b)
 print('in game: title_mode', g8(a, TM), g8(b, TMB), 'net_active', g8(a, NA), g8(b, SB('_net_active')),
       '| seats', g8(a, NTOT), gr(a, NT, 4).hex(), '| delay', g8(a, NDLY), g8(b, NDLY_B), flush=True)
-a.press('P'); b.press('O')                                       # both walk: inputs cross the network
+KEYS = os.environ.get('KEYS')
+SETS = ({0x01: 'Q', 0x02: 'A', 0x08: 'O', 0x04: 'P', 0x10: 'SPACE'},      # key set A (local player 1)
+        {0x01: '9', 0x02: '8', 0x08: '6', 0x04: '7', 0x10: '0'})          # key set B (local player 2)
+if KEYS:
+    kd = open(KEYS, 'rb').read(); krec = [kd[16 + i * 6:20 + i * 6] for i in range((len(kd) - 16) // 6)]
+    kpos, held = {a: 0, b: 0}, {a: set(), b: set()}
+else:
+    a.press('P'); b.press('O')                                   # both walk: inputs cross the network
+def drive(z, first):                               # at each flush: the next record's keys for z's local players
+    if not KEYS: return
+    r = krec[kpos[z] % len(krec)]; kpos[z] += 1
+    want = {k for j in range(2) for bit, k in SETS[j].items() if r[first + j] & bit}
+    for k in held[z] - want: z.release(k)
+    for k in want - held[z]: z.press(k)
+    held[z] = want
+if os.environ.get('QUIET'):
+    gp(a, S('_plat_tone'), b'\xc9'); gp(b, SB('_plat_tone'), b'\xc9')   # plat_tone returns at once
 HP = 16
 seen = {'A': {}, 'B': {}}
-work = []
-COMP = S('_composite_map')
-a.set_breakpoint(SYNC); a.set_breakpoint(COMP)                  # A only: its frame time
+work, netw = [], []                                # A: frame work (flush .. next frame sync), network (input_poll)
+IP, UB = S('_input_poll'), S('_update_bombs')
+for x in (SYNC, IP, UB): a.set_breakpoint(x)
+PROF = {S(n): n for n in os.environ.get('PROF', '').split(',') if n}
+for x in PROF: a.set_breakpoint(x)
+prof, pcalls, open_calls = {}, {}, {}             # name -> T-states; return address -> (name, sp, start)
 last = {}
 def on_flush(i, z):                                # every frame of each machine
     name = 'AB'[i]
     f = g16(z, FN if z is a else FNB)
     if f >= HP: seen[name][(f // HP) * HP] = g16(z, SH if z is a else SHB).to_bytes(2, 'little').hex()
+    drive(z, 0 if z is a else 2)
 def step_a():                                      # A's own quanta, to time its frames
     pc = a.step()
-    if pc == SYNC: last['sync'] = a.now()
-    elif pc == COMP:
-        if 'comp' in last and 'sync' in last: work.append((last['sync'] - last['comp']) / 3500.0)
-        last['comp'] = a.now()
-    elif pc == F: on_flush(0, a); return 1
+    if pc in PROF and work:                         # an entry, in the game: its return is the address on the stack
+        ret = a.read16(a.sp)
+        if ret not in open_calls:
+            open_calls[ret] = (PROF[pc], a.sp, a.now()); a.set_breakpoint(ret)
+    if pc in open_calls and a.sp == open_calls[pc][1] + 2:
+        n, _, t = open_calls.pop(pc)
+        prof[n] = prof.get(n, 0) + a.now() - t; pcalls[n] = pcalls.get(n, 0) + 1
+    if pc == SYNC:
+        if 'flush' in last: work.append((a.now() - last.pop('flush')) / 3500.0)
+    elif pc == IP: last['ip'] = a.now()
+    elif pc == UB:
+        if 'ip' in last: netw.append((a.now() - last.pop('ip')) / 3500.0)
+    elif pc == F: last['flush'] = a.now(); on_flush(0, a); return 1
     return 0
 done_a = done_b = 0
 BREAK_AT = int(os.environ.get('BREAK_AT', 0))
@@ -110,7 +143,15 @@ common = sorted(set(seen['A']) & set(seen['B']))
 mism = [f for f in common if seen['A'][f] != seen['B'][f]]
 for f in common: print(f'frame {f}: A {seen["A"][f]} B {seen["B"][f]} {"MISMATCH" if f in mism else "ok"}')
 aborts = (g8(a, NAB), g8(b, NAB_B))
-if work: print('A: frame time incl. waiting for the network ms avg %.1f (not a CPU figure: the emulator runs faster than real time)' % (sum(work) / len(work)))
+if len(work) > 20:
+    w, nw = sorted(work[10:]), sorted(netw[10:])
+    pc = lambda v, q: v[min(len(v) - 1, int(len(v) * q))]
+    print(f'A: frame work (flush .. next frame sync, at 3.5 MHz) median {pc(w, .5):.1f} ms, 90th {pc(w, .9):.1f}, max {w[-1]:.1f}; '
+          f'over 60 ms {sum(x > 60 for x in w)} of {len(w)} ({sum(x > 60 for x in w) / len(w) * 100:.0f} %); '
+          f'network (input_poll) median {pc(nw, .5):.1f} ms, 90th {pc(nw, .9):.1f}')
+    if PROF:
+        for n, t in sorted(prof.items(), key=lambda x: -x[1]):
+            print(f'   {n:22} {t / len(work) / 3500.0:5.2f} ms per frame, {pcalls[n] / len(work):5.1f} calls')
 print(f'done: {N} steps, {len(common)} hashed frames compared, {len(mism)} mismatches; abort flags {aborts}; '
       f'{a.sn_calls + b.sn_calls} Spectranet calls; {time.time() - t0:.0f} s')
 a.screenshot('build/zx_net_A.png'); b.screenshot('build/zx_net_B.png')

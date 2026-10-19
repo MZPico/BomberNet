@@ -61,16 +61,55 @@ static void hbytes(const uint8_t *p, uint16_t n) {
 static uint16_t map_acc = 0x5a5a;
 static void hash_scalars(void);
 
+/* The records are hashed as these bytes, the same on every machine: each
+ * player's fields in order with the score low byte first, then the bombs'
+ * and the enemies' fields. Where the records lie in memory exactly so
+ * (little-endian, no padding: the Z80, the 6502, the PC) they are hashed
+ * as they lie, which is fast; the sizes are checked here, so that a
+ * compiler that pads them stops the build. A machine that stores them
+ * otherwise (the 68000: big-endian, structures padded to even sizes) sets
+ * PLAT_HASH_PORTABLE and hashes field by field. */
+#ifdef PLAT_HASH_PORTABLE
+static void hash_records(void) {
+  uint8_t i, j;
+  for (i = 0; i < MAX_PLAYERS; i++) {
+    const player_t *p = &players[i];
+    h8(p->active); h8(p->input); h8(p->keys); h8(p->x); h8(p->y); h8(p->state); h8(p->anim);
+    h8(p->death_tick); h8(p->life_lost); h8(p->lives); h16(p->score);
+    h8(p->tile_a); h8(p->tile_b); h8(p->kills); h8(p->wins);
+  }
+  for (j = 0; j < BOMB_SLOTS; j++) {
+    const bomb_t *b = &bombs[j];
+    h8(b->state); h8(b->x); h8(b->y); h8(b->timer); h8(b->owner);
+  }
+  for (j = 0; j < ENEMY_SLOTS; j++) {
+    const enemy_t *e = &enemies[j];
+    h8(e->state); h8(e->x); h8(e->y); h8(e->type); h8(e->countdown); h8(e->dir);
+  }
+}
+#else
+typedef char player_record_is_16_bytes[sizeof(player_t) == 16 ? 1 : -1];
+typedef char bomb_record_is_5_bytes[sizeof(bomb_t) == 5 ? 1 : -1];
+typedef char enemy_record_is_6_bytes[sizeof(enemy_t) == 6 ? 1 : -1];
 static void hash_records(void) {
   hbytes((const uint8_t *)players, sizeof(players));
   hbytes((const uint8_t *)bombs, sizeof(bombs));
   hbytes((const uint8_t *)enemies, sizeof(enemies));
 }
+#endif
 
-/* every frame after frame_no++ (hash_period != 0): the period's slice */
+/* every frame after frame_no++ (hash_period != 0): the period's slice.
+ * Frame k of the period hashes rows k-1 .. k of k * SCREEN_H / (period - 1)
+ * (floor), worked out by a running count over the period's consecutive
+ * frames, not by dividing every frame; a power-of-two period (16) takes
+ * k by a mask. */
+static uint8_t hs_row;                /* rows the period has hashed so far */
+static uint16_t hs_rem;               /* k * SCREEN_H mod (period - 1) */
 void hash_frame_step(void) {
-  uint8_t k = frame_no % hash_period, r0, r1;
+  uint8_t k, r0, r1;
   if (hash_period < 2) { compute_state_hash(); return; }
+  k = (hash_period & (hash_period - 1)) ? (uint8_t)(frame_no % hash_period)
+                                        : (uint8_t)frame_no & (uint8_t)(hash_period - 1);
   if (k == 0) {                       /* hash frame: records + accumulated map */
     hh = 0x5a5a;
     hash_records();
@@ -80,8 +119,11 @@ void hash_frame_step(void) {
     map_acc = 0x5a5a;
     return;
   }
-  r0 = (uint8_t)(((k - 1) * SCREEN_H) / (hash_period - 1));
-  r1 = (uint8_t)((k * SCREEN_H) / (hash_period - 1));
+  if (k == 1) hs_row = 0, hs_rem = 0;
+  r0 = hs_row;
+  hs_rem += SCREEN_H;
+  while (hs_rem >= (uint8_t)(hash_period - 1)) { hs_rem -= (uint8_t)(hash_period - 1); hs_row++; }
+  r1 = hs_row;
   if (r1 > r0) {
     hh = map_acc;
     hbytes(map_layer + r0 * SCREEN_W, (uint16_t)(r1 - r0) * SCREEN_W);

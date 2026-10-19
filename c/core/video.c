@@ -54,6 +54,7 @@ void print_string(uint8_t *p, const char *s) {
 }
 #endif
 
+#ifndef PLAT_ASM_TEXT                 /* common/z80_loops.c on the Z80 machines */
 /* digits are logical codes 0..9; no division (sccz80 calls a slow helper) */
 void print_num2(uint8_t *p, uint8_t v) {
   uint8_t q = 0;
@@ -76,6 +77,20 @@ void print_num5(uint8_t *p, uint16_t v) {
   *p = 0;                       /* the original always shows a trailing 0 */
 }
 
+void print_num4(uint8_t *p, uint16_t v) {
+  uint8_t i;
+  if (v > 9999) v = 9999;
+  for (i = 1; i < 4; i++) {
+    uint16_t d = pow10[i];
+    uint8_t q = 0;
+    while (v >= d) { v -= d; q++; }
+    *p++ = q;
+  }
+  *p++ = (uint8_t)v;
+  *p = 0;
+}
+#endif
+
 /* game-mode glyph for each letter A..Z (0 = not available) */
 const uint8_t hud_letters[26] = {          /* public: common/z80_loops.c reads it */
   0x95, 0x15, 0x11, 0x97, 0x14, 0xbe, 0x31, 0x98, 0x99, 0x00, 0x8f, 0x93, 0x94,
@@ -93,19 +108,6 @@ void hud_text(uint8_t *p, const char *s) {
   }
 }
 #endif
-
-void print_num4(uint8_t *p, uint16_t v) {
-  uint8_t i;
-  if (v > 9999) v = 9999;
-  for (i = 1; i < 4; i++) {
-    uint16_t d = pow10[i];
-    uint8_t q = 0;
-    while (v >= d) { v -= d; q++; }
-    *p++ = q;
-  }
-  *p++ = (uint8_t)v;
-  *p = 0;
-}
 
 /* title mode: letters and space are direct, digits are codes 0..9, '-' is
  * 40h; anything else would hit the logo graphics, so it becomes a space */
