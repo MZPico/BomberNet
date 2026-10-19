@@ -165,8 +165,13 @@ white $0E, blue $78.
   replace the arrow and then report no key at its release, so the walk
   stops). SHIFT has its own line and works while walking (checked in
   Altirra 4.40: arrow and SHIFT are both seen; after SPACE is released
-  under an arrow, no key is); SPACE fires too, standing. Text entry from
-  the OS's key code (CH).
+  under an arrow, no key is); SPACE fires too, standing. Fire is a press:
+  one bomb each (held, the core drops one every two cells, as on the other
+  machines). Altirra's default arrow key mode ("Ctrl inverted") does not
+  pass SHIFT held first and Left/Right pressed after; its mode "Ctrl/Shift
+  states mapped directly" does, and its input map "Arrow Keys -> Joystick"
+  avoids the keyboard's limits altogether. Text entry from the OS's key
+  code (CH).
 - Sound: POKEY voices 1-3, tones that do not stop the game, a voice per kind
   as on the CPC.
 - Timing: 3 TV frames (PAL), 4,3,4,3,4 on NTSC (60 ms on average).

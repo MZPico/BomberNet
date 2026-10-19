@@ -171,9 +171,11 @@ static uint16_t rec_pos = 16, frames;
  * SPACE is not seen at all on a real machine (emulators let it replace the
  * arrow, and then report no key on its release). SHIFT has a line of its
  * own, so it is the fire key that works while walking; SPACE fires too,
- * standing. */
+ * standing. Fire is a press, not a level: one bomb each time (held, the
+ * core would drop one every two cells). */
+static uint8_t fire_held;
 uint8_t plat_keys_a(void) {
-  uint8_t k = 0, c;
+  uint8_t k = 0, c, f;
 #ifdef ATARI_TEST
   return title_mode && (frames & 1) ? KEY_SPACE : 0;
 #endif
@@ -186,6 +188,9 @@ uint8_t plat_keys_a(void) {
     else if (c == 0x21) k = KEY_SPACE;
   }
   if (!(SKSTAT & 0x08)) k |= KEY_SPACE;               /* SHIFT */
+  f = k & KEY_SPACE;
+  if (fire_held) k &= (uint8_t)~KEY_SPACE;            /* still the same press */
+  fire_held = f;
   return k;
 }
 
