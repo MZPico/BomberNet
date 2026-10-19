@@ -7,6 +7,10 @@
 uint8_t ws_open(const char *host, uint16_t port, const char *path);  /* 0, else 9 (no link) */
 uint8_t ws_send(char *text);                       /* text with WS_HDR bytes of room in front; 0, else 11 or 9 */
 const char *ws_poll(void);                         /* next received line or 0; valid until the next call */
+#ifdef NET_BINARY_INPUT                            /* plat_config.h: input lines as binary messages */
+uint8_t ws_send_bin(uint8_t *data, uint8_t n);     /* data with WS_HDR bytes of room in front; 0, else 9 */
+extern uint8_t ws_bin, ws_len;                     /* after ws_poll: a binary message, its length */
+#endif
 void ws_close(void);
 extern uint8_t ws_open_now;                        /* connection up */
 extern uint8_t ws_lost;                            /* set when the peer closed or the link failed */

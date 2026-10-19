@@ -44,9 +44,10 @@ sio_div:  .zero 1
 sio_wait: .zero 1
 sio_btime: .zero 1              ; a byte's time in VCOUNT steps (bytetime)
 atari_irqen: .zero 1            ; IRQEN's bits outside SIO (keyboard, BREAK)
-        .global sio_last, sio_busy
+        .global sio_last, sio_busy, sio_acked
 sio_last: .zero 1               ; the last call's result
 sio_busy: .zero 1               ; 1 while a command runs
+sio_acked: .zero 1              ; 1 once the device accepted the command frame
 frame:    .zero 5
 sum:      .zero 1
 left:     .zero 2
@@ -57,6 +58,8 @@ ptr = 0x30                      ; zero page of the OS's own SIO (the OS is off)
         .section .text.atari_sio,"ax",@progbits
         .global atari_sio
 atari_sio:
+        lda #0
+        sta sio_acked
         lda #1
         sta sio_busy            ; a short vertical blank meanwhile (atari.s)
         lda sio_div
@@ -92,7 +95,7 @@ atari_sio:
         sta SKRES               ; clear old serial errors
         lda #0x34               ; COMMAND low
         sta PBCTL
-        jsr delay               ; about 1 ms before the frame
+        jsr delay               ; t0
         lda #5
         sta left
         jsr send
@@ -100,7 +103,7 @@ atari_sio:
         jmp fail
 9:
         jsr rxmode              ; the device may answer at once
-        jsr delay               ; about 1 ms after the frame
+        jsr delay               ; t1
         lda #0x3c               ; COMMAND high
         sta PBCTL
         lda #GETWAIT            ; the answer
@@ -112,6 +115,8 @@ atari_sio:
         beq 9f
         jmp nak
 9:
+        lda #1                  ; accepted: what follows may have taken effect
+        sta sio_acked
         lda sio_dir
         bpl 9f
         jmp out
@@ -142,7 +147,8 @@ atari_sio:
 9:
         lda #1
         jmp leave
-out:    jsr delay
+out:    jsr delay               ; t3: the device ready for the data frame, 1 ms
+        jsr delay
         jsr setbuf
         jsr checksum            ; the data's checksum after it
         sta sum
@@ -316,25 +322,55 @@ next:   iny
 2:      dec left
         rts
 
-; receive `left` bytes to ptr (GETWAIT ticks for each); carry set and A = the error
-recv:   ldy #0
+; receive `left` bytes to ptr, tight: at 57,600 baud a byte comes every
+; 174 us, and a DLI waiting for its scan line may take 60 of them. About
+; 45 cycles a byte: the timeout looked at every 256 polls (GETWAIT ticks
+; for the whole block), POKEY's latched errors (framing, overrun) once at
+; the end. Carry set and A = the error.
+recv:   lda RTCLOK
+        clc
+        adc #GETWAIT
+        sta limit
+        ldy #0
 1:      lda left
         ora left+1
+        beq 6f
+        ldx #0
+2:      lda IRQST
+        and #0x20
         beq 3f
-        lda #GETWAIT
-        jsr get
-        bcs 4f
+        dex
+        bne 2b
+        lda RTCLOK
+        cmp limit
+        bne 2b
+        lda #0x8a
+        sec
+        rts
+3:      lda atari_irqen         ; acknowledge "input ready", ready for the next
+        sta IRQEN
+        ora #0x20
+        sta IRQEN
+        lda SERIN
         sta (ptr),y
         iny
-        bne 2f
+        bne 4f
         inc ptr+1
-2:      lda left
+4:      lda left
         bne 5f
         dec left+1
 5:      dec left
         jmp 1b
-3:      clc
-4:      rts
+6:      lda SKSTAT              ; framing error, overrun: bits 7, 6 low
+        and #0xc0
+        cmp #0xc0
+        bne 7f
+        clc
+        rts
+7:      sta SKRES
+        lda #0x8c
+        sec
+        rts
 
 ; one byte within A ticks: A = the byte, carry clear; carry set and A =
 ; 0x8a (timeout) or 0x8c (framing, overrun). Keeps Y.
@@ -389,8 +425,13 @@ bytetime:
         bne 1b
         rts
 
-; about 1 ms (1,200 cycles at the speed a text screen leaves)
-delay:  ldx #240
-1:      dex
+; the command frame's t0 (COMMAND low to the first byte, 750 us at least)
+; and t1 (the last byte to COMMAND high, 650 us): 7 changes of VCOUNT,
+; 768-896 us, whatever ANTIC's DMA does to the CPU's speed
+delay:  ldx #7
+1:      lda VCOUNT
+2:      cmp VCOUNT
+        beq 2b
+        dex
         bne 1b
         rts

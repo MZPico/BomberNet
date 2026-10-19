@@ -19,6 +19,11 @@ uint16_t net_relay_port = NET_RELAY_PORT;
 uint8_t net_device;
 
 #define WIN 16                   /* frames kept; a peer is at most the input delay (8) ahead */
+#ifdef NET_BINARY_INPUT          /* plat_config.h: the input lines as binary messages (the relay's bin=1) */
+#define BIN_ARG "&bin=1"
+#else
+#define BIN_ARG ""
+#endif
 #define MSGQ 4
 #define E_BUILD 6
 #define E_NOROOM 8
@@ -250,9 +255,30 @@ static void handle_line(const char *l) {
   }
 }
 
+#ifdef NET_BINARY_INPUT
+/* a binary input line: [slot, frame lo, frame hi, keys] */
+static void bin_input(const uint8_t *b, uint8_t n) {
+  uint16_t frame;
+  uint8_t i;
+  if (n < 3 || b[0] >= NET_SLOTS) return;
+  frame = b[1] | (uint16_t)b[2] << 8;
+  if (frame < s_base || frame - s_base >= WIN) return;
+  i = (uint8_t)frame & (WIN - 1);
+  n -= 3;
+  memcpy(data[i][b[0]], b + 3, n < NET_BYTES ? n : NET_BYTES);
+  have[i] |= (uint8_t)(1 << b[0]);
+}
+#endif
+
 static void pump(void) {
   const char *l;
+#ifdef NET_BINARY_INPUT
+  while ((l = ws_poll()) != 0)
+    if (ws_bin) bin_input((const uint8_t *)l, ws_len);
+    else handle_line(l);
+#else
   while ((l = ws_poll()) != 0) handle_line(l);
+#endif
   if (ws_lost) { ws_lost = 0; link_lost(); }
 }
 
@@ -295,12 +321,12 @@ uint8_t net_status(net_status_t *st) {
 }
 
 uint8_t net_create(uint16_t build, uint8_t slots, const uint8_t *settings, uint8_t len, char code[5], uint8_t *slot) {
-  static char path[32];
+  static char path[40];
   char *p;
   uint8_t r;
   if (slots < 1 || slots > NET_SLOTS) return E_PARAM;
   if (len > 16) len = 16;
-  p = put_u(put_s(path, "/net?game="), NET_GAME_ID); put_s(p, "&create=1")[0] = 0;
+  p = put_u(put_s(path, "/net?game="), NET_GAME_ID); put_s(p, "&create=1" BIN_ARG)[0] = 0;
   p = put_u(put_s(out, "{\"op\":\"create\",\"game\":"), NET_GAME_ID);
   p = put_u(put_s(p, ",\"build\":"), build);
   p = put_u(put_s(p, ",\"slots\":"), slots);
@@ -317,7 +343,7 @@ uint8_t net_join(uint16_t build, const char *code, uint8_t *slot, uint8_t *slots
   static char path[40];
   char *p;
   uint8_t r;
-  p = put_u(put_s(path, "/net?game="), NET_GAME_ID); put_s(put_s(p, "&code="), code)[0] = 0;
+  p = put_u(put_s(path, "/net?game="), NET_GAME_ID); put_s(put_s(put_s(p, "&code="), code), BIN_ARG)[0] = 0;
   p = put_u(put_s(out, "{\"op\":\"join\",\"game\":"), NET_GAME_ID);
   p = put_u(put_s(p, ",\"build\":"), build);
   put_s(put_s(put_s(p, ",\"code\":\""), code), "\"}")[0] = 0;
@@ -357,9 +383,18 @@ uint8_t net_send(uint16_t frame, const uint8_t keys[NET_BYTES]) {
     memcpy(data[i][s_slot], keys, NET_BYTES);
     have[i] |= (uint8_t)(1 << s_slot);
   }
+#ifdef NET_BINARY_INPUT
+  {                                                   /* [frame lo, frame hi, keys] */
+    uint8_t *b = (uint8_t *)out;
+    b[0] = (uint8_t)frame; b[1] = (uint8_t)(frame >> 8);
+    memcpy(b + 2, keys, s_nbytes);
+    return ws_send_bin(b, (uint8_t)(2 + s_nbytes)) ? E_FULL : 0;
+  }
+#else
   fi_frame = frame; fi_keys = keys;
   fmt_input();
   return send_line() ? E_FULL : 0;
+#endif
 }
 
 uint8_t net_poll(uint16_t frame, uint16_t *avail, uint8_t keys[NET_SLOTS * NET_BYTES]) {

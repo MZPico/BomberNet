@@ -7,6 +7,8 @@
      0xb800-0xbaff  sprite memory's unused first 0x300 bytes: the variables
                     of hi_netdev_soft.o (zeroed by plat_init, before any
                     network call)
+     0x0400-0x06ff  the OS's pages 4-6: the variables of hi_ws.o and the
+                    buffers named .bss.lowfree (zeroed by plat_init)
    (0xb400 the screen, 0xb800 the sprites: tools/build_atari.py.)
    tools/build_atari.py puts the code and fonts into the .xex as segments
    that the loader copies up (atari_hicopy). */
@@ -14,10 +16,12 @@ MEMORY {
     hifont (rw) : ORIGIN = 0xc000, LENGTH = 0x1000
     hiram (rwx) : ORIGIN = 0xd800, LENGTH = 0xfffa - 0xd800
     pmggap (rw) : ORIGIN = 0xb800, LENGTH = 0x300
+    lowfree (rw) : ORIGIN = 0x0400, LENGTH = 0x300
 }
 SECTIONS {
     .hifont : { *(.rodata.atari_field_font) *(.rodata.atari_text_font)
                 *(.rodata.atari_title_font) *(.rodata.atari_logo_font) } >hifont
     .hitext : { *hi_*.o(.text .text.* .rodata .rodata.*) } >hiram
     .hibss (NOLOAD) : { *hi_netdev_soft.o(.bss .bss.*) } >pmggap
+    .lowbss (NOLOAD) : { *hi_ws.o(.bss .bss.*) *(.bss.lowfree) } >lowfree
 } INSERT BEFORE .text;

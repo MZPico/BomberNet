@@ -89,7 +89,7 @@ static uint16_t t_start, t_n, t_max;      /* frame work */
 static uint32_t t_flush, t_work;
 #endif
 #ifdef NETTEST_TIME
-extern uint16_t atari_sio_time;           /* tcp_fujinet.c: SIO time since the last frame */
+extern uint16_t atari_sio_time, atari_sio_fails;   /* tcp_fujinet.c: SIO time since the last frame, failures */
 static uint16_t nt_sum, nt_max, nt_n;
 #endif
 uint8_t atari_text_page, atari_title_page, atari_hpos[4], atari_hud_hpos[4];
@@ -405,7 +405,10 @@ void flush_screen(void) {
   if (atari_sio_time > nt_max) nt_max = atari_sio_time;   /* SIO time a frame: average, longest of 16 */
   nt_sum += atari_sio_time; atari_sio_time = 0;
   if (++nt_n == 16) {
-    show3(960 + 32, nt_sum >> 4); show3(960 + 36, nt_max);
+    show3(960 + 3, nt_sum >> 4); show3(960 + 16, nt_max);   /* over the scores: average, longest */
+    show3(960 + 6, atari_sio_fails);
+    { extern uint8_t atari_sio_failcmd, atari_sio_failr;   /* the last failure */
+      show3(960 + 19, atari_sio_failcmd); show3(960 + 22, atari_sio_failr); }
     nt_sum = nt_max = nt_n = 0;
   }
 #endif
@@ -451,7 +454,8 @@ void plat_init(void) {
   build_lists();
   atari_text_page = (uint8_t)((uint16_t)atari_text_font >> 8);
   atari_title_page = (uint8_t)((uint16_t)atari_title_font >> 8);
-  memset(pmg, 0, sizeof(pmg));
+  memset(pmg, 0, sizeof(pmg));                        /* with the network code's variables (hiram.ld) */
+  memset((void *)0x400, 0, 0x300);                    /* the OS's pages 4-6: more of them */
   PMBASE = (uint8_t)((uint16_t)pmg >> 8);
   for (i = 0; i < 4; i++) { REG(0x2c0 + i) = player_colours[i]; REG(0xd008 + i) = 0; }
   GPRIOR = 0x01;                                      /* players over the playfield */

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Two clients through the relay: create/join, ready -> start, 20 frames of
 inputs, hashes (one deliberate desync), a message, a build mismatch, a
-spectator, leave -> dropped. Usage: test_relay.py ws://127.0.0.1:8765/net"""
+spectator, leave -> dropped; then a mixed room, a JSON and a binary (bin=1)
+client. Usage: test_relay.py ws://127.0.0.1:8765/net"""
 import asyncio, json, sys
 import websockets
 
@@ -83,7 +84,46 @@ async def main():
                 e = await recv_op(d, "error"); check(e["code"] == 7, "same code under another game id -> unknown room")
         except websockets.exceptions.ConnectionClosed as ex:
             check("room unknown" in str(ex), "same code under another game id -> unknown room (closed by relay)")
+    fails += await binary_room()
     print("FAILURES:", fails)
+    return fails
+
+
+async def recv_any(ws, timeout=3):
+    """next message: a dict from JSON text, or the bytes of a binary one"""
+    m = await asyncio.wait_for(ws.recv(), timeout)
+    return m if isinstance(m, bytes) else json.loads(m)
+
+
+async def binary_room():
+    """A JSON client hosts, a binary one (bin=1) joins: the input lines cross
+    as JSON one way and binary the other; everything else stays JSON."""
+    fails = 0
+    def check(cond, what):
+        nonlocal fails
+        print(("ok   " if cond else "FAIL ") + what)
+        if not cond: fails += 1
+    async with websockets.connect(url_create()) as a:
+        await a.send(json.dumps({"op": "create", "game": GAME, "build": BUILD, "slots": 2, "bytes": 2, "settings": ""}))
+        code = (await recv_op(a, "room"))["code"]
+        async with websockets.connect(url_join(code) + "&bin=1") as b:
+            await b.send(json.dumps({"op": "join", "game": GAME, "build": BUILD, "code": code}))
+            r = await recv_op(b, "room"); check(r["slot"] == 1, "binary client joins (JSON room message)")
+            await a.send(json.dumps({"op": "ready", "ready": 1}))
+            await b.send(json.dumps({"op": "ready", "ready": 1}))
+            await recv_op(a, "start"); await recv_op(b, "start")
+            for f in range(300, 310):
+                await b.send(bytes([f & 0xFF, f >> 8, f & 0x1F, 0x40]))
+                await a.send(json.dumps({"op": "input", "frame": f, "data": "%02x80" % (f & 0x0F)}))
+            got_a = [await recv_op(a, "input") for _ in range(10)]
+            check(all(m["slot"] == 1 and m["frame"] == 300 + i and m["data"] == "%02x40" % ((300 + i) & 0x1F)
+                      for i, m in enumerate(got_a)), "JSON client receives the binary client's inputs as JSON")
+            got_b = []
+            while len(got_b) < 10:
+                m = await recv_any(b)
+                if isinstance(m, bytes): got_b.append(m)
+            check(all(m == bytes([0, (300 + i) & 0xFF, (300 + i) >> 8, (300 + i) & 0x0F, 0x80]) for i, m in enumerate(got_b)),
+                  "binary client receives inputs as [slot, frame lo, frame hi, data]")
     return fails
 
 sys.exit(asyncio.run(main()))

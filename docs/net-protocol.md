@@ -113,6 +113,22 @@ One socket per device. JSON frames:
 Rooms die 10 minutes after their last message (a host may wait a while). Codes are 4 letters from a
 26-letter alphabet without I/O. A room is bound to (game, build).
 
+**Binary input lines** (`&bin=1` in the URL; staging since 2026-10-19, not
+yet production): for machines on a slow serial bus (the Atari's FujiNet),
+the per-frame input lines go as binary WebSocket messages, about 7 bytes
+instead of about 50; every other message stays JSON, and JSON clients in
+the same room see nothing different:
+
+```
+-> [frame lo, frame hi, data (N bytes)]
+<- [slot, frame lo, frame hi, data (N bytes)]
+```
+
+Both relays (`relay/relay.py`, mz-catalog `workers/site/net.js`) translate
+between the two; `relay/test_relay.py` checks a mixed room. In BomberNet the
+platform's `plat_config.h` asks for it with `NET_BINARY_INPUT`
+(`c/common/netdev_soft.c`, `c/common/ws.c`).
+
 ## Frame budget
 
 Parameter blobs have fixed sizes so the device can use a plain byte-count

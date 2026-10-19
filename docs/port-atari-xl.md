@@ -293,11 +293,40 @@ the JSON input lines, the CPU waiting throughout:
 | write ours (56 bytes) | 12 ms | 12 ms |
 | total, against about 20 ms left of the frame | 30 ms | 48 ms |
 
-So the JSON lines over SIO do not fit, not even for two. The ways out:
-a compact binary input message for the Atari from the relay (a few bytes
-a slot instead of about 50); SIO run by interrupts in the background, so
-that the CPU only pays about 50 cycles a byte; FujiNet's PROCEED line
-(data waiting) instead of a status command every frame. Test aids:
-`-DNETTEST_HOST` (the menu set to host 2 players, detection 3 s late for
-FujiNet-PC's restart), `-DNETTEST_TIME` (SIO time a frame on the status
-line).
+So the JSON lines over SIO do not fit, not even for two. What was done:
+
+- **Binary input lines** (`NET_BINARY_INPUT`, the relay's `bin=1`, see
+  `docs/net-protocol.md`): our line out is 12 bytes with its WebSocket
+  header, each other player's 9. The relay change is on staging only
+  (mz-catalog, committed locally); the reference relay has it too, and a
+  mixed room (the Atari binary, a Spectrum JSON) plays through it.
+- One status command a frame, not two: after a read that took all that was
+  waiting, the next `tcp_recv` answers "nothing" without asking.
+- The command frame's t0 and t1 at their minimums by VCOUNT (about 0.8 ms
+  each instead of 1.1).
+- FujiNet's PROCEED line was looked at and left: FujiNet asserts it only
+  5 ms after the last status and then toggles it every 100 ms, while in a
+  match data waits every frame.
+
+Robustness, found in long emulated matches: a status or the speed query
+is repeated after any failure; a NAK (to the command or to our data frame)
+always means "not done" and is repeated; a read or a write that failed
+after it was accepted is not (it would lose or double bytes); data blocks
+are received by a tight loop (about 45 cycles a byte: a byte comes every
+174 us, and a DLI waiting for its scan line takes up to 60). With that, an
+Atari (binary) and a Spectrum (JSON) played 840 frames through the local
+relay with no failed command.
+
+The cost per frame, estimated (the emulated chain still cannot time it:
+Altirra goes on emulating while it waits for the hub):
+2 players about 50 bytes on the bus, 4 players about 70, plus three
+command frames with their gaps: about 16 ms and 19 ms, against about 20 ms
+left of the frame. Tight for 4 players; a real FujiNet will tell. Further
+savings if needed: SIO in the background by interrupts.
+
+Test aids: `-DNETTEST_HOST` (the menu set to host 2 players, detection
+3 s late for FujiNet-PC's restart), `-DNETTEST_TIME` (on the status line
+over the scores: SIO time a frame, average and longest of 16, in 128 us
+units; failed commands, and the last one's command and result). Memory:
+the WebSocket client's variables and FujiNet's open buffer in the OS's
+pages 4-6 ($0400-$06FF, free with the OS off).

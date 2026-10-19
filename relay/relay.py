@@ -28,6 +28,13 @@ class Conn:
     native mz800emu transport, port TCP_PORT), same protocol on both."""
     def __init__(self, ws: WebSocket | None = None, reader=None, writer=None):
         self.ws, self.reader, self.writer = ws, reader, writer
+        # bin=1 in the WebSocket URL: input lines as binary messages, both ways
+        # (for the serial-bus machines): ours [frame lo, frame hi, data...],
+        # from the relay [slot, frame lo, frame hi, data...]
+        self.binary = bool(ws) and ws.query_params.get("bin") == "1"
+
+    async def send_bytes(self, data: bytes):
+        await self.ws.send_bytes(data)
 
     async def send(self, text: str):
         if self.ws:
@@ -38,7 +45,15 @@ class Conn:
 
     async def recv(self) -> str:
         if self.ws:
-            return await self.ws.receive_text()
+            m = await self.ws.receive()
+            if m["type"] == "websocket.disconnect":
+                raise WebSocketDisconnect(m.get("code", 1000))
+            if m.get("bytes") is not None:          # a binary input line: as its JSON
+                b = m["bytes"]
+                if len(b) < 2:
+                    return "{}"
+                return json.dumps({"op": "input", "frame": b[0] | b[1] << 8, "data": b[2:].hex()})
+            return m.get("text") or ""
         line = await self.reader.readline()
         if not line:
             raise ConnectionError("eof")
@@ -88,11 +103,18 @@ class Room:
 
     async def broadcast(self, msg: dict, exclude: Conn | None = None):
         data = json.dumps(msg)
+        blob = None                                   # the input line for binary connections
+        if msg.get("op") == "input":
+            f = msg["frame"]
+            blob = bytes([msg["slot"], f & 0xFF, (f >> 8) & 0xFF]) + bytes.fromhex(msg["data"])
         for m in list(self.members.values()) + [Member(s, -1) for s in self.spectators]:
             if m.ws is exclude:
                 continue
             try:
-                await m.ws.send(data)
+                if blob is not None and m.ws.binary:
+                    await m.ws.send_bytes(blob)
+                else:
+                    await m.ws.send(data)
             except Exception:
                 pass
 

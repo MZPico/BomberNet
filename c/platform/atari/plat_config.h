@@ -5,4 +5,5 @@
 #define PLAT_JOY_TYPES 2
 #define JOY_ATARI 1             /* the two joystick ports */
 #define PLAT_ASM_COMPOSITE 1    /* cpu/6502/loops.s */
+#define NET_BINARY_INPUT 1      /* input lines as binary messages (the relay's bin=1): ~7 bytes on FujiNet's bus, not ~50 */
 #endif

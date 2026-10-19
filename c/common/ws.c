@@ -1,5 +1,6 @@
 /* Minimal WebSocket client (RFC 6455) over tcp.h, as much as the relay needs:
- * one text message per line, unfragmented, ping answered, close honoured.
+ * one text message per line, unfragmented, ping answered, close honoured;
+ * with NET_BINARY_INPUT also binary messages (the input lines).
  *
  * Client frames must be masked; the mask key is 0, so the payload goes out
  * as it is (no XOR on a Z80). The handshake reply is read as a stream: only
@@ -36,6 +37,15 @@ uint8_t ws_send(char *text) {
   if (!ws_open_now) return 9;
   return send_frame(0x1, text, (uint16_t)strlen(text));
 }
+
+#ifdef NET_BINARY_INPUT
+uint8_t ws_bin, ws_len;
+
+uint8_t ws_send_bin(uint8_t *data, uint8_t n) {
+  if (!ws_open_now) return 9;
+  return send_frame(0x2, (char *)data, n);
+}
+#endif
 
 static int16_t fill(void) {                 /* more bytes into rx; 0 = none, -1 = closed */
   int16_t n = tcp_recv(rx, sizeof(rx));
@@ -119,7 +129,15 @@ const char *ws_poll(void) {
       done:
         f_state = 0;
         line[f_have < WS_LINE_MAX - 1 ? f_have : WS_LINE_MAX - 1] = 0;
-        if (f_op == 0x1) return line;
+        if (f_op == 0x1) {
+#ifdef NET_BINARY_INPUT
+          ws_bin = 0;
+#endif
+          return line;
+        }
+#ifdef NET_BINARY_INPUT
+        if (f_op == 0x2) { ws_bin = 1; ws_len = (uint8_t)(f_have < WS_LINE_MAX - 1 ? f_have : WS_LINE_MAX - 1); return line; }
+#endif
         if (f_op == 0x9) send_frame(0xa, line, f_have < WS_LINE_MAX ? f_have : WS_LINE_MAX - 1);   /* ping -> pong, same (binary) payload */
         if (f_op == 0x8) { ws_lost = 1; ws_close(); return 0; }
         break;

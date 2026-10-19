@@ -21,7 +21,7 @@
 #define CMD_HSIO '?'                      /* FujiNet's high-speed index (the POKEY divisor), then that speed */
 
 /* sio.s: one SIO command without the OS (its ROM is off) */
-extern uint8_t sio_dev, sio_cmd, sio_dir, sio_div, sio_wait, sio_btime;
+extern uint8_t sio_dev, sio_cmd, sio_dir, sio_div, sio_wait, sio_btime, sio_acked;
 extern uint16_t sio_aux, sio_len;
 extern void *sio_buf;
 uint8_t atari_sio(void);                  /* 1: done, 128 and up: error */
@@ -29,6 +29,8 @@ uint8_t atari_sio(void);                  /* 1: done, 128 and up: error */
 static uint8_t open, div = DIV_STD;
 #ifdef NETTEST_TIME
 uint16_t atari_sio_time;                  /* time in SIO since plat_atari.c last took it, 128 us units */
+uint16_t atari_sio_fails;                 /* commands that failed in the end */
+uint8_t atari_sio_failcmd, atari_sio_failr, atari_sio_failack;   /* the last of them */
 uint16_t atari_now(void);
 uint16_t atari_since(uint16_t t);
 #endif
@@ -39,10 +41,13 @@ static uint8_t sio1(void) {
   return atari_sio();
 }
 
-/* One command. A failure that is not an answer (no answer, a garbled
- * byte, a bad checksum; not a NAK or the device's error) is tried again,
- * then at the other speed: FujiNet goes back to 19,200 baud after bad
- * command frames, and starts there after a reset. */
+/* One command. A NAK (to the command or to our data frame: not done) is
+ * tried once more. If the device did not answer the command frame at all,
+ * or garbled, it is tried again, then at the other speed: FujiNet goes back
+ * to 19,200 baud after bad command frames, and starts there after a reset.
+ * Once accepted, a read or a write is not repeated for other failures (it
+ * would take more bytes off the stream, or send its bytes twice); a status
+ * or the speed query may be. */
 static uint8_t div_hs = DIV_STD;          /* the high speed, once FujiNet named it */
 static uint8_t sio(uint8_t cmd, uint8_t dir, void *buf, uint16_t len, uint16_t aux, uint8_t wait) {
   uint8_t r;
@@ -52,14 +57,16 @@ static uint8_t sio(uint8_t cmd, uint8_t dir, void *buf, uint16_t len, uint16_t a
   sio_dev = DEV_N; sio_cmd = cmd; sio_dir = dir;
   sio_buf = buf; sio_len = len; sio_aux = aux;
   sio_wait = wait;                         /* ticks of 20 ms for the device to complete */
+  uint8_t again = cmd == 'S' || cmd == CMD_HSIO;      /* these may run twice */
   r = sio1();
-  if (r != 1 && r != 0x8b && r != 0x90) r = sio1();   /* a byte lost: once more */
-  if (r != 1 && r != 0x8b && r != 0x90 && div_hs != DIV_STD) {
+  if (r == 0x8b || (r != 1 && r != 0x90 && (!sio_acked || again))) r = sio1();   /* not done: once more */
+  if (r != 1 && r != 0x8b && r != 0x90 && (!sio_acked || again) && div_hs != DIV_STD) {
     div = div == DIV_STD ? div_hs : DIV_STD;          /* then the other speed */
     r = sio1();
   }
 #ifdef NETTEST_TIME
   atari_sio_time += atari_since(t);
+  if (r != 1) { atari_sio_fails++; atari_sio_failcmd = cmd; atari_sio_failr = r; atari_sio_failack = sio_acked; }
 #endif
   return r;
 }
@@ -85,7 +92,7 @@ uint8_t tcp_present(void) {
 }
 
 uint8_t tcp_open(const char *host, uint16_t port) {
-  static char spec[256];
+  static char spec[256] __attribute__((section(".bss.lowfree")));   /* the OS's page 4-6 (hiram.ld) */
   char *p = spec, d[6];
   uint8_t n = 0;
   memset(spec, 0, sizeof(spec));
@@ -113,13 +120,20 @@ uint8_t tcp_send(const uint8_t *buf, uint16_t n) {
   return 0;
 }
 
+/* After a read that took all that was waiting, the next call says "nothing"
+ * without asking: the WebSocket parser asks again at once, and a status
+ * command costs about 4 ms of the frame. Data that comes meanwhile is read
+ * on the call after. */
+static uint8_t drained;
 int16_t tcp_recv(uint8_t *buf, uint16_t max) {
-  uint16_t n;
+  uint16_t n, waiting;
+  if (drained) { drained = 0; return 0; }
   if (!open || status() != 1) return -1;
-  n = st[0] | (uint16_t)st[1] << 8;
+  waiting = n = st[0] | (uint16_t)st[1] << 8;
   if (!n) return st[2] ? 0 : -1;          /* nothing waiting; closed when no longer connected */
   if (n > max) n = max;
   if (sio('R', SIO_IN, buf, n, n, 10) != 1) return -1;
+  drained = n == waiting;
   return (int16_t)n;
 }
 
