@@ -369,11 +369,14 @@ uint8_t net_poll(uint16_t frame, uint16_t *avail, uint8_t keys[NET_SLOTS * NET_B
   if (s_state != NETST_RUNNING && s_state != NETST_SPECTATOR) return E_NOROOM;
   av = avail_frame();
   *avail = av;
-  memset(keys, 0, NET_SLOTS * NET_BYTES);
   if (av != 0xffff && frame <= av && (uint16_t)(frame + WIN) > s_base) {
     i = (uint8_t)frame & (WIN - 1);
-    for (s = 0; s < s_slots && s < NET_SLOTS; s++) memcpy(keys + s * s_nbytes, data[i][s], s_nbytes);
-  }
+    /* the frame's slots as they lie, NET_BYTES apart: the seat table
+     * addresses the vector as slot * NET_BYTES + local index */
+    s = s_slots < NET_SLOTS ? s_slots : NET_SLOTS;
+    memcpy(keys, data[i], (uint16_t)s * NET_BYTES);
+    memset(keys + (uint16_t)s * NET_BYTES, 0, (uint16_t)(NET_SLOTS - s) * NET_BYTES);
+  } else memset(keys, 0, NET_SLOTS * NET_BYTES);
   return 0;
 }
 

@@ -52,8 +52,14 @@ void net_lockstep_poll(void) {
       }
     }
   }
-  for (i = 0; i < MAX_PLAYERS; i++)
-    players[i].keys = (!net_abort && i < net_total && net_table[i] != 0xff && players[i].active) ? keys[net_table[i]] : 0;
+  {                                               /* deal the vector out by the seat table */
+    static player_t *p;
+    static uint8_t t;
+    for (i = 0, p = players; i < MAX_PLAYERS; i++, p++) {
+      t = net_table[i];
+      p->keys = (!net_abort && i < net_total && t != 0xff && p->active) ? keys[t] : 0;
+    }
+  }
   if (!net_abort) net_waiting = 0;
   net_frame++;
 }
