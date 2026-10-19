@@ -40,6 +40,22 @@ atari_dli2:
         pla
         rti
 
+; The title's DLI, at the end of the logo (row 5): the rest is ANTIC mode 2
+; text, white on black.
+        .section .text.atari_dli_title,"ax",@progbits
+        .global atari_dli_title
+atari_dli_title:
+        pha
+        lda atari_title_page
+        sta 0xd40a              ; WSYNC
+        sta 0xd409              ; CHBASE
+        lda #0x00
+        sta 0xd018              ; COLPF2
+        lda #0x0e
+        sta 0xd017              ; COLPF1
+        pla
+        rti
+
 ; The vertical blank, in place of the OS's (VVBLKI): the OS's two stages
 ; cost about 1,000-2,000 cycles a TV frame, this a tenth of that. It does
 ; what the game needs of them: the clock, the hardware registers from the
@@ -77,9 +93,9 @@ atari_vbi:
         sta 0xd002
         lda atari_hpos+3
         sta 0xd003
-        lda #mos16lo(atari_dli) ; the first DLI next
+        lda atari_dli_vec       ; the screen's first DLI next
         sta 0x200
-        lda #mos16hi(atari_dli)
+        lda atari_dli_vec+1
         sta 0x201
         lda 0x2f1               ; KEYDEL: the keyboard IRQ ignores the same key until 0
         beq 3f
@@ -186,3 +202,31 @@ atari_flush_game:
 32:     dex
         bpl 31b
         rts
+
+; The keyboard IRQ (VKEYBD), chained before the OS's: counts key presses,
+; so plat_keys_a sees each new press (SPACE while an arrow is held) even
+; though the keyboard reports only one key at a time.
+        .section .text.atari_key_irq,"ax",@progbits
+        .global atari_key_install
+atari_key_install:
+        sei
+        lda 0x208
+        sta atari_key_os
+        lda 0x209
+        sta atari_key_os+1
+        lda #mos16lo(atari_key_irq)
+        sta 0x208
+        lda #mos16hi(atari_key_irq)
+        sta 0x209
+        cli
+        rts
+atari_key_irq:
+        inc atari_key_presses
+        jmp (atari_key_os)
+
+        .section .bss.atari_key,"aw",@nobits
+        .global atari_key_presses
+atari_key_os:
+        .zero 2
+atari_key_presses:
+        .zero 1

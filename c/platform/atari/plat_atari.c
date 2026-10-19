@@ -53,19 +53,25 @@
 #define FIELD_TOP 24                      /* the first scanline of row 0 (two blank blocks of 8) */
 #define HPOS(x) (uint8_t)(48 + (x) * 4)   /* a cell's left edge in colour clocks */
 
-/* palette (hue << 4 | luminance): field red, magenta, pale yellow, cyan;
- * players green, strong yellow, white, blue */
-static const uint8_t field_colours[5] = {0x34, 0x56, 0x1c, 0xa8, 0x00};
-static const uint8_t player_colours[4] = {0xc8, 0xea, 0x0e, 0x86};
+/* palette (hue << 4 | luminance), the MZ-700's colours as near as PAL has
+ * them: field red, magenta, pale yellow, cyan; players green, strong
+ * yellow, white, blue; and the MZ's eight inks (the title's icons) */
+static const uint8_t field_colours[5] = {0x36, 0x4a, 0xee, 0x9a, 0x00};
+static const uint8_t player_colours[4] = {0xba, 0xec, 0x0e, 0x78};
+static const uint8_t ink_colours[8] = {0x00, 0x78, 0x36, 0x4a, 0xba, 0x9a, 0xec, 0x0e};
 
-uint8_t atari_screen[SCREEN_CELLS] ATARI_ALIGN(1024);
-static uint8_t pmg[2048] ATARI_ALIGN(2048);
+/* At fixed addresses under the C stack (MEMTOP, $BC1F, down by 1 KB), so
+ * that their alignment wastes nothing (tools/build_atari.py places them
+ * and checks that the program ends below): */
+extern uint8_t atari_screen[SCREEN_CELLS];  /* $AC00, 1 KB aligned for ANTIC */
+extern uint8_t atari_pmg[2048];             /* $B000, sprites (single-line: 2 KB aligned) */
+#define pmg atari_pmg
 #define PLAYER_MEM(p) (pmg + 0x400 + ((uint16_t)(p) << 8))
 #ifdef ATARI_TEST
 uint16_t test_bad;                        /* the first record whose hash differs (its offset) */
 uint16_t test_late;                       /* game frames that took longer than 60 ms */
 static uint16_t t_start, t_n, t_max;      /* frame work in units of 2 scanlines (128 us; 60 ms = 469) */
-static uint32_t t_flush, t_work, t_spr;
+static uint32_t t_flush, t_work;
 static uint16_t now(void) { uint8_t t, v; do { t = RTCLOK; v = REG(0xd40b); } while (t != RTCLOK);
   return t * 156u + (v >= 124 ? v - 124 : v + 32); }   /* RTCLOK counts at VCOUNT 124 (the VBI) */
 static uint16_t since(uint16_t t) { uint16_t n = now(); return n >= t ? n - t : n + 39936u - t; }   /* RTCLOK wraps */
@@ -75,13 +81,16 @@ static void show3(uint16_t at, uint16_t n) {
   atari_screen[at + 2] = atari_text_code[n % 10];
 }
 #endif
-uint8_t atari_text_page, atari_hpos[4], atari_hud_hpos[4];
+uint8_t atari_text_page, atari_title_page, atari_hpos[4], atari_hud_hpos[4];
+void (*atari_dli_vec)(void);              /* the screen's first DLI (the VBI sets it) */
 static uint8_t shown_y[4] = {0xff, 0xff, 0xff, 0xff}, hud_set, hud_shown, mode = 0xff;
 static uint8_t hud_cells[4][2];           /* the codes each status-line sprite shows (0xff: none) */
+static uint8_t icon_cells[5][4];          /* the codes each title icon sprite shows (0xff: none) */
 
 /* display lists (they must not cross a 1 KB boundary) */
 static uint8_t dl_game[3 + 3 + 23 + 3 + 3] ATARI_ALIGN(64), dl_title[3 + 3 + 24 + 3] ATARI_ALIGN(64);
 void atari_dli(void);
+void atari_dli_title(void);
 void atari_vbi(void);
 void atari_flush_game(void);
 
@@ -97,8 +106,10 @@ static void build_lists(void) {
   *p++ = 0x41; *p++ = (uint8_t)(uint16_t)dl_game; *p++ = (uint8_t)((uint16_t)dl_game >> 8);
   p = dl_title; s = (uint16_t)atari_screen;
   *p++ = 0x70; *p++ = 0x70;
-  *p++ = 0x42; *p++ = (uint8_t)s; *p++ = (uint8_t)(s >> 8);
-  for (i = 1; i < 25; i++) *p++ = 0x02;
+  *p++ = 0x44; *p++ = (uint8_t)s; *p++ = (uint8_t)(s >> 8);   /* the logo: mode 4, in colour */
+  for (i = 1; i < 5; i++) *p++ = 0x04;
+  *p++ = 0x84;                                                /* row 5, DLI: text from here */
+  for (i = 6; i < 25; i++) *p++ = 0x02;
   *p++ = 0x41; *p++ = (uint8_t)(uint16_t)dl_title; *p++ = (uint8_t)((uint16_t)dl_title >> 8);
 }
 
@@ -111,13 +122,20 @@ static void set_mode(uint8_t title) {
   memset(pmg + 0x300, 0, 0x500);                              /* no sprites */
   for (i = 0; i < 4; i++) { shown_y[i] = 0xff; atari_hpos[i] = atari_hud_hpos[i] = 0; hud_cells[i][0] = 0xff; }
   hud_shown = 0;
-  if (title) {
-    CHBAS = (uint8_t)((uint16_t)atari_title_font >> 8);
-    COLOR0 = 0; REG(0x2c5) = 0x0e; REG(0x2c6) = 0x00; REG(0x2c7) = 0; REG(0x2c8) = 0;   /* mode 2: white on black */
+  for (i = 0; i < 5; i++) icon_cells[i][0] = 0xff;
+  if (title) {                                                /* the logo red and magenta, the rest white on black (DLI) */
+    CHBAS = (uint8_t)((uint16_t)atari_logo_font >> 8);
+    COLOR0 = field_colours[0]; REG(0x2c5) = field_colours[1]; REG(0x2c6) = 0x0e; REG(0x2c7) = 0; REG(0x2c8) = 0;
+    GPRIOR = 0x11;                                            /* players over the playfield, the missiles a fifth player (PF3) */
+    atari_dli_vec = atari_dli_title;
     SDLSTL = dl_title;
   } else {
     CHBAS = (uint8_t)((uint16_t)atari_field_font >> 8);
     for (i = 0; i < 5; i++) REG(0x2c4 + i) = field_colours[i];
+    for (i = 0; i < 4; i++) REG(0x2c0 + i) = player_colours[i];
+    for (i = 0; i < 4; i++) REG(0xd004 + i) = 0;              /* HPOSM: the missiles away */
+    GPRIOR = 0x01;
+    atari_dli_vec = atari_dli;
 #ifdef ATARI_TEST
     if (test_bad) REG(0x2c8) = 0x26;
 #endif
@@ -148,19 +166,31 @@ uint8_t plat_input_allowed(uint8_t input) {         /* one keyboard player: it r
 static uint16_t rec_pos = 16, frames;
 #endif
 
+/* The keyboard reports one key at a time: SPACE pressed while an arrow is
+ * held replaces it, and stays reported when released. So the direction is
+ * the last arrow pressed, held while any key is down, and SPACE fires for
+ * two frames at each press (counted by the keyboard IRQ, atari.s). SHIFT
+ * is a separate line: it fires as long as it is held. */
+extern volatile uint8_t atari_key_presses;
+void atari_key_install(void);
+static uint8_t key_seen, key_dir, key_fire;
 uint8_t plat_keys_a(void) {
-  uint8_t k = 0, c;
+  uint8_t k, c;
 #ifdef ATARI_TEST
   return title_mode && (frames & 1) ? KEY_SPACE : 0;
 #endif
-  if (!(SKSTAT & 0x04)) {                             /* a key is down */
-    c = KBCODE & 0x3f;
-    if (c == 0x0e) k = KEY_UP;
-    else if (c == 0x0f) k = KEY_DOWN;
-    else if (c == 0x06) k = KEY_LEFT;
-    else if (c == 0x07) k = KEY_RIGHT;
-    else if (c == 0x21) k = KEY_SPACE;
+  c = KBCODE & 0x3f;
+  if (SKSTAT & 0x04) key_dir = 0;                    /* no key down */
+  else if (c == 0x0e) key_dir = KEY_UP;
+  else if (c == 0x0f) key_dir = KEY_DOWN;
+  else if (c == 0x06) key_dir = KEY_LEFT;
+  else if (c == 0x07) key_dir = KEY_RIGHT;
+  if (key_seen != atari_key_presses) {               /* a new press: SPACE fires */
+    key_seen = atari_key_presses;
+    if (c == 0x21) key_fire = 2;
   }
+  k = key_dir;
+  if (key_fire) { key_fire--; k |= KEY_SPACE; }
   if (!(SKSTAT & 0x08)) k |= KEY_SPACE;               /* SHIFT */
   return k;
 }
@@ -278,6 +308,50 @@ static void sprites_field(void) {                     /* each player's shape whe
   }
 }
 
+/* two text cells (8 x 8 hi-res pixels each) as one sprite row of 8: two pixels become one */
+static void halve(uint8_t *m, const uint8_t *a, const uint8_t *b) {
+  uint8_t r, k, l, h, bit;
+  for (r = 0; r < 8; r++) {
+    h = 0; bit = 0x80;
+    for (k = 0, l = a[r]; k < 4; k++, l <<= 2, bit >>= 1) if (l & 0xc0) h |= bit;
+    for (k = 0, l = b[r]; k < 4; k++, l <<= 2, bit >>= 1) if (l & 0xc0) h |= bit;
+    m[r] = h;
+  }
+}
+
+/* The title's legend (rows 7-8): the player and the four enemies in their
+ * MZ colours, by the four sprites and the missiles as a fifth (PF3). */
+#define ICON_ROW 7
+static const uint8_t icon_x[5] = {2, 0x0b, 0x13, 0x1a, 0x22};
+static void title_icons(void) {
+  uint8_t k, r, c[4], *hc, shape[16];
+  const uint8_t *f = atari_title_font;
+  for (k = 0; k < 5; k++) {
+    const uint8_t *cell = shadow_vram + ICON_ROW * SCREEN_W + icon_x[k];
+    uint8_t col;
+    c[0] = cell[0]; c[1] = cell[1]; c[2] = cell[SCREEN_W]; c[3] = cell[SCREEN_W + 1];
+    hc = icon_cells[k];
+    if (hc[0] == c[0] && hc[1] == c[1] && hc[2] == c[2] && hc[3] == c[3]) continue;
+    memcpy(hc, c, 4);
+    halve(shape, f + (atari_title_code[c[0]] << 3), f + (atari_title_code[c[1]] << 3));
+    halve(shape + 8, f + (atari_title_code[c[2]] << 3), f + (atari_title_code[c[3]] << 3));
+    col = ink_colours[atari_title_ink[c[0] != C_SPACE ? c[0] : c[2]]];
+    if (k < 4) {
+      memcpy(PLAYER_MEM(k) + FIELD_TOP + ICON_ROW * 8, shape, 16);
+      atari_hpos[k] = HPOS(icon_x[k]);
+      REG(0x2c0 + k) = col;
+    } else {                                          /* missiles 0-3 side by side, two pixels each */
+      uint8_t *m = pmg + 0x300 + FIELD_TOP + ICON_ROW * 8;
+      for (r = 0; r < 16; r++) {
+        uint8_t b = shape[r];
+        m[r] = (uint8_t)((b >> 6) | ((b >> 2) & 0x0c) | ((b << 2) & 0x30) | (b << 6));
+      }
+      for (r = 0; r < 4; r++) REG(0xd004 + r) = (uint8_t)(HPOS(icon_x[k]) + 2 * r);
+      REG(0x2c7) = col;                               /* COLOR3: the fifth player */
+    }
+  }
+}
+
 void flush_screen(void) {
   uint16_t i;
 #ifdef ATARI_TEST
@@ -294,17 +368,15 @@ void flush_screen(void) {
       draw_buf[i] = C_SPACE;
       if (a == shadow_vram[i]) continue;
       shadow_vram[i] = a;
-      atari_screen[i] = atari_title_code[a];
+      atari_screen[i] = i < 240 ? atari_logo_code[a] : atari_title_code[a];
     }
+    title_icons();
     return;
   }
 #ifdef ATARI_TEST
   t_start = now();
 #endif
   sprites_field();
-#ifdef ATARI_TEST
-  if (rec_pos + 6 <= REC_LEN) t_spr += since(t_start);
-#endif
   atari_flush_game();
   if (hud_shown && !hud_set) {                        /* no lives shown this frame: away with them */
     for (i = 0; i < 4; i++) { memset(PLAYER_MEM(i) + FIELD_TOP + 192, 0, 8); atari_hud_hpos[i] = 0; hud_cells[i][0] = 0xff; }
@@ -320,7 +392,7 @@ void flush_screen(void) {
     memset(atari_screen + 960 + 20, 0, 20);           /* late frames, average work, its flush, the longest */
     memset(atari_hud_hpos, 0, 4);
     show3(960 + 24, test_late); show3(960 + 28, (uint16_t)(t_work / t_n));
-    show3(960 + 32, (uint16_t)(t_flush / t_n)); show3(960 + 36, t_max); show3(960 + 20, (uint16_t)(t_spr / t_n));
+    show3(960 + 32, (uint16_t)(t_flush / t_n)); show3(960 + 36, t_max);
   }
 #endif
 }
@@ -329,8 +401,7 @@ void plat_player_colour(uint8_t x, uint8_t y, uint8_t player) { (void)x; (void)y
 
 /* after the flush: a player's lives icon and count (two cells) by the player's sprite, in its colour */
 void plat_hud_colour(uint8_t x, uint8_t n, uint8_t player, uint8_t blank) {
-  uint8_t r, k, *m, c0 = shadow_vram[960 + x], c1 = shadow_vram[960 + x + 1], *hc = hud_cells[player];
-  const uint8_t *a, *b;
+  uint8_t c0 = shadow_vram[960 + x], c1 = shadow_vram[960 + x + 1], *hc = hud_cells[player];
   (void)n; (void)blank;
 #ifdef ATARI_TEST
   if (rec_pos + 6 > REC_LEN) return;                  /* the figures are on the status line now */
@@ -339,15 +410,8 @@ void plat_hud_colour(uint8_t x, uint8_t n, uint8_t player, uint8_t blank) {
   hud_set = hud_shown = 1;
   if (hc[0] == c0 && hc[1] == c1) return;
   hc[0] = c0; hc[1] = c1;
-  m = PLAYER_MEM(player) + FIELD_TOP + 192;
-  a = atari_text_font + (atari_text_code[c0] << 3);
-  b = atari_text_font + (atari_text_code[c1] << 3);
-  for (r = 0; r < 8; r++) {                           /* 8 text pixels -> 4 sprite pixels a cell */
-    uint8_t l = a[r], h = 0, bit = 0x80;
-    for (k = 0; k < 4; k++, l <<= 2, bit >>= 1) if (l & 0xc0) h |= bit;
-    for (k = 0, l = b[r]; k < 4; k++, l <<= 2, bit >>= 1) if (l & 0xc0) h |= bit;
-    m[r] = h;
-  }
+  halve(PLAYER_MEM(player) + FIELD_TOP + 192, atari_text_font + (atari_text_code[c0] << 3),
+        atari_text_font + (atari_text_code[c1] << 3));
 }
 
 void plat_init(void) {
@@ -355,6 +419,7 @@ void plat_init(void) {
   ntsc = (PALREG & 0x0e) != 0;
   build_lists();
   atari_text_page = (uint8_t)((uint16_t)atari_text_font >> 8);
+  atari_title_page = (uint8_t)((uint16_t)atari_title_font >> 8);
   memset(pmg, 0, sizeof(pmg));
   PMBASE = (uint8_t)((uint16_t)pmg >> 8);
   for (i = 0; i < 4; i++) { REG(0x2c0 + i) = player_colours[i]; REG(0xd008 + i) = 0; }
@@ -370,6 +435,7 @@ void plat_init(void) {
   joy_type = JOY_ATARI;
   BRKKEY = 0x80;
   CH = 0xff;
+  atari_key_install();
   set_mode(1);
 #ifdef ATARI_TEST
   match_seed = rec[4] | (uint16_t)(rec[5] << 8);

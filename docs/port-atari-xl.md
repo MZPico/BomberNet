@@ -130,15 +130,25 @@ list); the RAM under the OS ROM is there if needed. The build will be
 
 `c/platform/atari/` (`plat_atari.c`, `atari.s`, the generated `tables.c`),
 built by `tools/build_atari.py` (llvm-mos `mos-atari8-dos-clang -Os`, an
-`.xex` for DOS or an emulator, 24 KB; the program lies between $2000 and
-$9900, with BASIC off).
+`.xex` for DOS or an emulator, 27 KB, BASIC off). Memory: the program
+from $2000 to about $95A0; the screen at $AC00 and the sprites at $B000,
+fixed, under the C stack (MEMTOP $BC1F down by 1 KB), so that their
+alignment wastes nothing; the build checks that the program ends below
+the screen.
+
+Colours: the MZ-700's, as near as the PAL palette has them (measured in
+atari800): red $36, magenta $4A (hue 4: the MZ's magenta is pink, hue 5
+is violet), pale yellow $EE, cyan $9A; players green $BA, yellow $EC,
+white $0E, blue $78.
 
 - Screen, design D: one 40 x 25 screen memory. In a game a display list of
   24 rows of ANTIC mode 4 (the field) and one of mode 2 (the status line);
   a DLI at the end of row 22 moves the four sprites to the status line (row
   23, the wall, has no sprite data, so nothing shows half-way), one at the
-  end of row 23 switches font and colours. The title and lobby are 25 rows
-  of mode 2 with the title font.
+  end of row 23 switches font and colours. The title and lobby: the logo
+  (rows 0-5) in mode 4, red and magenta as on the MZ, the rest mode 2 text
+  (a DLI); the legend's five icons in their MZ colours by the four sprites
+  and the missiles as a fifth. Mode 2 cannot colour the menu's text.
 - Players: the four hardware sprites (single-line PMG), their shapes taken
   from the codes the core drew at their place, rebuilt only when these
   change. On the status line the same sprites colour each player's lives
@@ -150,9 +160,14 @@ $9900, with BASIC off).
   SIO's timer 1, a tenth of the OS's two stages. The OS stays on for the
   keyboard IRQ, BREAK and (step 4) SIO.
 - Input: two joysticks (PORTA, TRIG0/1); the keyboard as one player, the
-  arrow keys without CTRL, fire SPACE, or SHIFT (the keyboard reports one
-  key at a time, so SHIFT gives a direction and fire together). Text entry
-  from the OS's key code (CH).
+  arrow keys without CTRL, fire SPACE or SHIFT. The keyboard reports one
+  key at a time: SPACE pressed while an arrow is held replaces it and stays
+  reported after its release. So the direction is the last arrow pressed,
+  held while any key is down, and SPACE fires for two frames at each press,
+  counted by a keyboard IRQ chained before the OS's; SHIFT is a line of its
+  own and fires while held. (atari800 reports no key at all once any key
+  is released, so there the walk stops; real machines and Altirra keep
+  it.) Text entry from the OS's key code (CH).
 - Sound: POKEY voices 1-3, tones that do not stop the game, a voice per kind
   as on the CPC.
 - Timing: 3 TV frames (PAL), 4,3,4,3,4 on NTSC (60 ms on average).
@@ -160,8 +175,10 @@ $9900, with BASIC off).
   replayed from the title on, the state hash compared every game frame. At
   the end the background turns green (identical, no late frame), yellow
   (identical, some frames late) or red (a hash differed), and the status
-  line shows, in units of 128 us (two scanlines, 60 ms = 469): the sprites'
-  share, late frames, average frame work, its flush, the longest frame.
+  line shows, in units of 128 us (two scanlines, 60 ms = 469): late
+  frames, average frame work, its flush, the longest frame. `--frames n`
+  takes only the first n frames (500 frames do not fit beside the program
+  any more; 400 do).
   `CFLAGS_ATARI=-DTEST_HASH_OFF` times a standalone game (no hash, nothing
   checked).
 
