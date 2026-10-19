@@ -16,8 +16,9 @@
  * On the status line the same sprites show each player's lives icon and
  * count in the player's colour (plat_hud_colour).
  * Input: two joysticks; the keyboard's arrow keys (- = + *, no CTRL needed)
- * with SPACE or SHIFT as fire (the keyboard reports one key at a time, so
- * SHIFT gives a direction and fire together). Sound: POKEY voices 1-3,
+ * with SHIFT as fire (the keyboard reports one key at a time, so SHIFT, a
+ * line of its own, is the fire key that works while walking; SPACE fires
+ * too, standing). Sound: POKEY voices 1-3,
  * tones that do not stop the game (as on the CPC and the 128K). */
 #include <stdint.h>
 #include <string.h>
@@ -149,7 +150,7 @@ const char *const plat_kbd_a_alt_name = "ARROWS AND SHIFT";
 
 const char *plat_input_name(uint8_t input) {
   switch (input) {
-  case INPUT_KBD_A: return "ARROWS AND SPACE";
+  case INPUT_KBD_A: return "ARROWS AND SHIFT";
   case INPUT_JOY1:  return "JOYSTICK 1      ";
   case INPUT_JOY2:  return "JOYSTICK 2      ";
   }
@@ -166,31 +167,24 @@ uint8_t plat_input_allowed(uint8_t input) {         /* one keyboard player: it r
 static uint16_t rec_pos = 16, frames;
 #endif
 
-/* The keyboard reports one key at a time: SPACE pressed while an arrow is
- * held replaces it, and stays reported when released. So the direction is
- * the last arrow pressed, held while any key is down, and SPACE fires for
- * two frames at each press (counted by the keyboard IRQ, atari.s). SHIFT
- * is a separate line: it fires as long as it is held. */
-extern volatile uint8_t atari_key_presses;
-void atari_key_install(void);
-static uint8_t key_seen, key_dir, key_fire;
+/* The keyboard (POKEY) tracks one key at a time: while an arrow is held,
+ * SPACE is not seen at all on a real machine (emulators let it replace the
+ * arrow, and then report no key on its release). SHIFT has a line of its
+ * own, so it is the fire key that works while walking; SPACE fires too,
+ * standing. */
 uint8_t plat_keys_a(void) {
-  uint8_t k, c;
+  uint8_t k = 0, c;
 #ifdef ATARI_TEST
   return title_mode && (frames & 1) ? KEY_SPACE : 0;
 #endif
-  c = KBCODE & 0x3f;
-  if (SKSTAT & 0x04) key_dir = 0;                    /* no key down */
-  else if (c == 0x0e) key_dir = KEY_UP;
-  else if (c == 0x0f) key_dir = KEY_DOWN;
-  else if (c == 0x06) key_dir = KEY_LEFT;
-  else if (c == 0x07) key_dir = KEY_RIGHT;
-  if (key_seen != atari_key_presses) {               /* a new press: SPACE fires */
-    key_seen = atari_key_presses;
-    if (c == 0x21) key_fire = 2;
+  if (!(SKSTAT & 0x04)) {                             /* a key is down */
+    c = KBCODE & 0x3f;
+    if (c == 0x0e) k = KEY_UP;
+    else if (c == 0x0f) k = KEY_DOWN;
+    else if (c == 0x06) k = KEY_LEFT;
+    else if (c == 0x07) k = KEY_RIGHT;
+    else if (c == 0x21) k = KEY_SPACE;
   }
-  k = key_dir;
-  if (key_fire) { key_fire--; k |= KEY_SPACE; }
   if (!(SKSTAT & 0x08)) k |= KEY_SPACE;               /* SHIFT */
   return k;
 }
@@ -435,7 +429,6 @@ void plat_init(void) {
   joy_type = JOY_ATARI;
   BRKKEY = 0x80;
   CH = 0xff;
-  atari_key_install();
   set_mode(1);
 #ifdef ATARI_TEST
   match_seed = rec[4] | (uint16_t)(rec[5] << 8);

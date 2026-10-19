@@ -203,30 +203,3 @@ atari_flush_game:
         bpl 31b
         rts
 
-; The keyboard IRQ (VKEYBD), chained before the OS's: counts key presses,
-; so plat_keys_a sees each new press (SPACE while an arrow is held) even
-; though the keyboard reports only one key at a time.
-        .section .text.atari_key_irq,"ax",@progbits
-        .global atari_key_install
-atari_key_install:
-        sei
-        lda 0x208
-        sta atari_key_os
-        lda 0x209
-        sta atari_key_os+1
-        lda #mos16lo(atari_key_irq)
-        sta 0x208
-        lda #mos16hi(atari_key_irq)
-        sta 0x209
-        cli
-        rts
-atari_key_irq:
-        inc atari_key_presses
-        jmp (atari_key_os)
-
-        .section .bss.atari_key,"aw",@nobits
-        .global atari_key_presses
-atari_key_os:
-        .zero 2
-atari_key_presses:
-        .zero 1

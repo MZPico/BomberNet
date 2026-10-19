@@ -160,14 +160,13 @@ white $0E, blue $78.
   SIO's timer 1, a tenth of the OS's two stages. The OS stays on for the
   keyboard IRQ, BREAK and (step 4) SIO.
 - Input: two joysticks (PORTA, TRIG0/1); the keyboard as one player, the
-  arrow keys without CTRL, fire SPACE or SHIFT. The keyboard reports one
-  key at a time: SPACE pressed while an arrow is held replaces it and stays
-  reported after its release. So the direction is the last arrow pressed,
-  held while any key is down, and SPACE fires for two frames at each press,
-  counted by a keyboard IRQ chained before the OS's; SHIFT is a line of its
-  own and fires while held. (atari800 reports no key at all once any key
-  is released, so there the walk stops; real machines and Altirra keep
-  it.) Text entry from the OS's key code (CH).
+  arrow keys without CTRL, fire SHIFT. POKEY tracks one key at a time: on
+  a real machine SPACE is not seen while an arrow is held (emulators let it
+  replace the arrow and then report no key at its release, so the walk
+  stops). SHIFT has its own line and works while walking (checked in
+  Altirra 4.40: arrow and SHIFT are both seen; after SPACE is released
+  under an arrow, no key is); SPACE fires too, standing. Text entry from
+  the OS's key code (CH).
 - Sound: POKEY voices 1-3, tones that do not stop the game, a voice per kind
   as on the CPC.
 - Timing: 3 TV frames (PAL), 4,3,4,3,4 on NTSC (60 ms on average).
