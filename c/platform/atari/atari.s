@@ -69,7 +69,15 @@ atari_vbi:
         inc 0x13
         bne 1f
         inc 0x12
-1:      lda 0x230               ; SDLSTL -> DLISTL/H
+1:      lda 0x2f4               ; CHBAS -> CHBASE, COLOR1/2 -> COLPF1/2: the DLIs
+        sta 0xd409              ; change them for the text rows
+        lda 0x2c5
+        sta 0xd017
+        lda 0x2c6
+        sta 0xd018
+        lda sio_busy            ; during SIO no more than that, the clock and the
+        bne 7f                  ; sprites: bytes come every 174 us at 57,600 baud (sio.s)
+        lda 0x230               ; SDLSTL -> DLISTL/H
         sta 0xd402
         lda 0x231
         sta 0xd403
@@ -84,7 +92,7 @@ atari_vbi:
         sta 0xd012,x
         dex
         bpl 2b
-        lda atari_hpos+0        ; the sprites in the field
+7:      lda atari_hpos+0        ; the sprites in the field
         sta 0xd000
         lda atari_hpos+1
         sta 0xd001

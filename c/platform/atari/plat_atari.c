@@ -69,19 +69,28 @@ extern uint8_t atari_pmg[2048];             /* $B800, sprites (single-line: 2 KB
                                                first 0x300 bytes hold the network code's variables */
 #define pmg atari_pmg
 #define PLAYER_MEM(p) (pmg + 0x400 + ((uint16_t)(p) << 8))
-#ifdef ATARI_TEST
-uint16_t test_bad;                        /* the first record whose hash differs (its offset) */
-uint16_t test_late;                       /* game frames that took longer than 60 ms */
-static uint16_t t_start, t_n, t_max;      /* frame work in units of 2 scanlines (128 us; 60 ms = 469) */
-static uint32_t t_flush, t_work;
-static uint16_t now(void) { uint8_t t, v; do { t = RTCLOK; v = REG(0xd40b); } while (t != RTCLOK);
+#if defined(ATARI_TEST) || defined(NETTEST_TIME)
+/* time in units of 2 scanlines (128 us; 60 ms = 469) */
+uint16_t atari_now(void) { uint8_t t, v; do { t = RTCLOK; v = REG(0xd40b); } while (t != RTCLOK);
   return t * 156u + (v >= 124 ? v - 124 : v + 32); }   /* RTCLOK counts at VCOUNT 124 (the VBI) */
-static uint16_t since(uint16_t t) { uint16_t n = now(); return n >= t ? n - t : n + 39936u - t; }   /* RTCLOK wraps */
+uint16_t atari_since(uint16_t t) { uint16_t n = atari_now(); return n >= t ? n - t : n + 39936u - t; }   /* RTCLOK wraps */
+#define now atari_now
+#define since atari_since
 static void show3(uint16_t at, uint16_t n) {
   atari_screen[at] = atari_text_code[n / 100 % 10];
   atari_screen[at + 1] = atari_text_code[n / 10 % 10];
   atari_screen[at + 2] = atari_text_code[n % 10];
 }
+#endif
+#ifdef ATARI_TEST
+uint16_t test_bad;                        /* the first record whose hash differs (its offset) */
+uint16_t test_late;                       /* game frames that took longer than 60 ms */
+static uint16_t t_start, t_n, t_max;      /* frame work */
+static uint32_t t_flush, t_work;
+#endif
+#ifdef NETTEST_TIME
+extern uint16_t atari_sio_time;           /* tcp_fujinet.c: SIO time since the last frame */
+static uint16_t nt_sum, nt_max, nt_n;
 #endif
 uint8_t atari_text_page, atari_title_page, atari_hpos[4], atari_hud_hpos[4];
 void (*atari_dli_vec)(void);              /* the screen's first DLI (the VBI sets it) */
@@ -381,6 +390,10 @@ void flush_screen(void) {
       atari_screen[i] = i < 240 ? atari_logo_code[a] : atari_title_code[a];
     }
     title_icons();
+#ifdef NETTEST_HOST
+    { extern uint8_t sio_last; atari_screen[960] = atari_title_code['A' + (sio_last >> 4)];   /* nibbles as A-P */
+      atari_screen[961] = atari_title_code['A' + (sio_last & 15)]; }
+#endif
     return;
   }
 #ifdef ATARI_TEST
@@ -388,6 +401,14 @@ void flush_screen(void) {
 #endif
   sprites_field();
   atari_flush_game();
+#ifdef NETTEST_TIME
+  if (atari_sio_time > nt_max) nt_max = atari_sio_time;   /* SIO time a frame: average, longest of 16 */
+  nt_sum += atari_sio_time; atari_sio_time = 0;
+  if (++nt_n == 16) {
+    show3(960 + 32, nt_sum >> 4); show3(960 + 36, nt_max);
+    nt_sum = nt_max = nt_n = 0;
+  }
+#endif
   if (hud_shown && !hud_set) {                        /* no lives shown this frame: away with them */
     for (i = 0; i < 4; i++) { memset(PLAYER_MEM(i) + FIELD_TOP + 192, 0, 8); atari_hud_hpos[i] = 0; hud_cells[i][0] = 0xff; }
     hud_shown = 0;
@@ -445,6 +466,7 @@ void plat_init(void) {
   irq_taken(0x40); irq_taken(0x80);                   /* no key or BREAK from before */
 #ifdef NETTEST_HOST
   menu_net = NET_HOST; menu_players = 2;              /* test: SPACE hosts a 2-player room */
+  { uint8_t t = RTCLOK; while ((uint8_t)(RTCLOK - t) < 150) ; }   /* FujiNet-PC restarts on the reset */
 #endif
   set_mode(1);
 #ifdef ATARI_TEST

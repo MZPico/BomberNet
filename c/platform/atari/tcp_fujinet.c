@@ -18,6 +18,7 @@
 #define SIO_IN  0x40
 #define SIO_OUT 0x80
 #define DIV_STD 0x28                      /* POKEY divisor for 19,200 baud */
+#define CMD_HSIO '?'                      /* FujiNet's high-speed index (the POKEY divisor), then that speed */
 
 /* sio.s: one SIO command without the OS (its ROM is off) */
 extern uint8_t sio_dev, sio_cmd, sio_dir, sio_div, sio_wait, sio_btime;
@@ -25,21 +26,62 @@ extern uint16_t sio_aux, sio_len;
 extern void *sio_buf;
 uint8_t atari_sio(void);                  /* 1: done, 128 and up: error */
 
-static uint8_t open;
+static uint8_t open, div = DIV_STD;
+#ifdef NETTEST_TIME
+uint16_t atari_sio_time;                  /* time in SIO since plat_atari.c last took it, 128 us units */
+uint16_t atari_now(void);
+uint16_t atari_since(uint16_t t);
+#endif
 
+static uint8_t sio1(void) {
+  sio_div = div;
+  sio_btime = (uint8_t)(((div + 7) * 23 >> 8) + 2);   /* a byte's time and a little: VCOUNT steps */
+  return atari_sio();
+}
+
+/* One command. A failure that is not an answer (no answer, a garbled
+ * byte, a bad checksum; not a NAK or the device's error) is tried again,
+ * then at the other speed: FujiNet goes back to 19,200 baud after bad
+ * command frames, and starts there after a reset. */
+static uint8_t div_hs = DIV_STD;          /* the high speed, once FujiNet named it */
 static uint8_t sio(uint8_t cmd, uint8_t dir, void *buf, uint16_t len, uint16_t aux, uint8_t wait) {
+  uint8_t r;
+#ifdef NETTEST_TIME
+  uint16_t t = atari_now();
+#endif
   sio_dev = DEV_N; sio_cmd = cmd; sio_dir = dir;
   sio_buf = buf; sio_len = len; sio_aux = aux;
-  sio_div = DIV_STD; sio_wait = wait;      /* ticks of 20 ms for the device to complete */
-  sio_btime = (uint8_t)(((DIV_STD + 7) * 23 >> 8) + 2);   /* a byte's time and a little: VCOUNT steps */
-  return atari_sio();
+  sio_wait = wait;                         /* ticks of 20 ms for the device to complete */
+  r = sio1();
+  if (r != 1 && r != 0x8b && r != 0x90) r = sio1();   /* a byte lost: once more */
+  if (r != 1 && r != 0x8b && r != 0x90 && div_hs != DIV_STD) {
+    div = div == DIV_STD ? div_hs : DIV_STD;          /* then the other speed */
+    r = sio1();
+  }
+#ifdef NETTEST_TIME
+  atari_sio_time += atari_since(t);
+#endif
+  return r;
+}
+
+/* ask FujiNet for its high speed and use it (it answers at 19,200, then switches) */
+static void hsio(void) {
+#ifndef NET_NO_HSIO
+  uint8_t idx;
+  div = DIV_STD;
+  if (sio(CMD_HSIO, SIO_IN, &idx, 1, 0, 10) == 1 && idx < DIV_STD) div = div_hs = idx;
+#endif
 }
 
 static uint8_t st[4];                     /* waiting (2), connected, error */
 static uint8_t status(void) { return sio('S', SIO_IN, st, 4, 0, 10); }
 
 uint8_t tcp_present(void) {
-  return status() < 128;                  /* 138: no device answered */
+  uint8_t n = 3;                          /* a FujiNet that has just started may miss one */
+  while (status() >= 128)                 /* 138: no device answered */
+    if (!--n) return 0;
+  hsio();
+  return 1;
 }
 
 uint8_t tcp_open(const char *host, uint16_t port) {
@@ -54,6 +96,7 @@ uint8_t tcp_open(const char *host, uint16_t port) {
   while (n) *p++ = d[--n];
   *p = '/';
   if (open) tcp_close();
+  if (div == DIV_STD) hsio();             /* back at 19,200 (a reset, errors): fast again */
   if (sio('O', SIO_OUT, spec, 256, 12, 250) != 1) return 2;     /* FujiNet connects before it completes */
   open = 1;
   if (status() != 1 || !st[2]) { tcp_close(); return 3; }

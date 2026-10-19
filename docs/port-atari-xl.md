@@ -270,9 +270,34 @@ each NetSIO round trip). So this setup shows that the protocol is right;
 it cannot show the real cost of a frame. A real FujiNet answers a command
 within a few milliseconds.
 
-The cost estimate: a 4-player frame moves about 200 bytes (our input line
-out, three in), about 105 ms at the standard 19,200 baud, so a match needs
-FujiNet's high-speed SIO (`sio_div`; FujiNet's default index 8, about
-57,600 baud, or faster) and possibly a compact input message from the
-relay. Next: the high-speed rate, the cost per frame measured in emulated
-time, then a decision on the relay.
+**High speed.** `tcp_present` asks FujiNet for its high-speed index
+(command '?', answered at 19,200 baud) and switches to it (the POKEY
+divisor is the index; FujiNet's default 8 is about 57,600 baud). A failed
+command is tried again, then at the other speed (FujiNet drops back to
+19,200 after bad command frames and after a reset); an open renegotiates.
+During SIO the vertical blank is short (the clock, the sprites, the
+registers the DLIs change): at 57,600 baud a byte comes every 174 us, and
+the full one let a byte be lost. Hosting and joining work at high speed in
+the emulated chain.
+
+**The cost.** The emulated chain cannot measure it (the Atari makes about
+a frame a second there; a real-time Spectrum then gives up). From the
+protocol (command frame, 'A', data, checksum, 'C'; FujiNet answers within
+about a millisecond) and the byte time at 57,600 baud, a frame's SIO with
+the JSON input lines, the CPU waiting throughout:
+
+| | 2 players | 4 players |
+|---|---|---|
+| status (12 bytes on the bus) | 4.5 ms | 4.5 ms |
+| read the others' input lines (60 / 164 bytes) | 13 ms | 31 ms |
+| write ours (56 bytes) | 12 ms | 12 ms |
+| total, against about 20 ms left of the frame | 30 ms | 48 ms |
+
+So the JSON lines over SIO do not fit, not even for two. The ways out:
+a compact binary input message for the Atari from the relay (a few bytes
+a slot instead of about 50); SIO run by interrupts in the background, so
+that the CPU only pays about 50 cycles a byte; FujiNet's PROCEED line
+(data waiting) instead of a status command every frame. Test aids:
+`-DNETTEST_HOST` (the menu set to host 2 players, detection 3 s late for
+FujiNet-PC's restart), `-DNETTEST_TIME` (SIO time a frame on the status
+line).

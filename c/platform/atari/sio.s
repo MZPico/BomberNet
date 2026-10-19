@@ -44,8 +44,9 @@ sio_div:  .zero 1
 sio_wait: .zero 1
 sio_btime: .zero 1              ; a byte's time in VCOUNT steps (bytetime)
 atari_irqen: .zero 1            ; IRQEN's bits outside SIO (keyboard, BREAK)
-        .global sio_last
+        .global sio_last, sio_busy
 sio_last: .zero 1               ; the last call's result
+sio_busy: .zero 1               ; 1 while a command runs
 frame:    .zero 5
 sum:      .zero 1
 left:     .zero 2
@@ -56,6 +57,8 @@ ptr = 0x30                      ; zero page of the OS's own SIO (the OS is off)
         .section .text.atari_sio,"ax",@progbits
         .global atari_sio
 atari_sio:
+        lda #1
+        sta sio_busy            ; a short vertical blank meanwhile (atari.s)
         lda sio_div
         sta AUDF3
         lda #0
@@ -183,6 +186,8 @@ badsum: lda #0x8f
 fail:   ; A: the error
 leave:  sta sio_last             ; for a look in a debugger
         pha
+        lda #0
+        sta sio_busy
         lda #0x3c
         sta PBCTL
         lda atari_irqen
