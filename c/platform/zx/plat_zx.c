@@ -201,8 +201,11 @@ uint8_t plat_break(void) {                 /* CAPS SHIFT + SPACE */
 #ifdef ZX128
 static void tones_due(void);
 #define TONES_DUE() tones_due()
+#define TONE_FRAME()
 #else
 #define TONES_DUE()
+static uint8_t tone_played;
+#define TONE_FRAME() (tone_played = 0)             /* a new game frame: one tone again (network matches) */
 #endif
 
 /* ---- time ---- */
@@ -220,6 +223,7 @@ void plat_frame_sync(void) {                       /* a game frame is three TV f
 #endif
   while ((uint8_t)(*FRAMES_LO - last_tick) < 3) TONES_DUE();
   TONES_DUE();                                     /* also after a late frame, which does not wait */
+  TONE_FRAME();
   last_tick = *FRAMES_LO;
   /* A new TV frame has just begun: the beam is in the top border (64 lines,
    * 14,000 T-states) and the joystick ports can be read. After a frame that
@@ -420,12 +424,22 @@ bp_wait:
   __endasm;
 }
 
+/* The beeper stops the game while it sounds. In a network match, where a
+ * late frame holds up every machine, only the first tone of a game frame
+ * plays, at a third of its length: a busy 4-player match (FuseX) ran a
+ * quarter of its frames late, half of that the tones, about 16 ms a tone
+ * on top of 45-50 ms of work. Local games keep them whole. */
 void plat_tone(uint16_t ratio, uint8_t len) {
   uint16_t half;
+  if (net_active) {
+    if (tone_played) return;
+    tone_played = 1;
+  }
   if (ratio < 0x0100) ratio = 0x0100;
   half = (ratio >> 4) - (ratio >> 9);              /* ratio * 1.579 / 26 */
   tone_half = half > 3 ? half - 2 : 1;             /* less the T-states around the wait */
   tone_count = ((uint16_t)len * 529) / (ratio >> 2);
+  if (net_active) tone_count /= 3;
   if (tone_count < 2) tone_count = 2;
   beep();
 }
