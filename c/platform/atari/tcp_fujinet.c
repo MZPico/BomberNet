@@ -35,7 +35,13 @@ uint16_t atari_now(void);
 uint16_t atari_since(uint16_t t);
 #endif
 
+#ifdef SIO_BENCH
+uint16_t atari_sio_calls;                 /* SIO commands sent, repeats included */
+#endif
 static uint8_t sio1(void) {
+#ifdef SIO_BENCH
+  atari_sio_calls++;
+#endif
   sio_div = div;
   sio_btime = (uint8_t)(((div + 7) * 23 >> 8) + 2);   /* a byte's time and a little: VCOUNT steps */
   return atari_sio();
@@ -142,3 +148,9 @@ void tcp_close(void) {
   sio('C', 0, 0, 0, 0, 10);
   open = 0;
 }
+
+#ifdef SIO_BENCH
+/* the timing benchmark (sio_bench.c, tools/atari/fakefn.atdevice): the fake
+ * FujiNet makes n bytes wait after each write ('I', its own command) */
+void tcp_bench_in(uint16_t n) { sio('I', 0, 0, 0, n, 10); }
+#endif

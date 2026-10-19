@@ -470,7 +470,9 @@ void plat_init(void) {
   irq_taken(0x40); irq_taken(0x80);                   /* no key or BREAK from before */
 #ifdef NETTEST_HOST
   menu_net = NET_HOST; menu_players = 2;              /* test: SPACE hosts a 2-player room */
-  { uint8_t t = RTCLOK; while ((uint8_t)(RTCLOK - t) < 150) ; }   /* FujiNet-PC restarts on the reset */
+#endif
+#if defined(NETTEST_HOST) || defined(NET_WAIT_FUJINET)
+  { uint8_t t = RTCLOK; while ((uint8_t)(RTCLOK - t) < 150) ; }   /* FujiNet-PC restarts on the emulator's reset */
 #endif
   set_mode(1);
 #ifdef ATARI_TEST

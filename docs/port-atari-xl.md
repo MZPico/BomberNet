@@ -317,12 +317,33 @@ are received by a tight loop (about 45 cycles a byte: a byte comes every
 Atari (binary) and a Spectrum (JSON) played 840 frames through the local
 relay with no failed command.
 
-The cost per frame, estimated (the emulated chain still cannot time it:
-Altirra goes on emulating while it waits for the hub):
-2 players about 50 bytes on the bus, 4 players about 70, plus three
-command frames with their gaps: about 16 ms and 19 ms, against about 20 ms
-left of the frame. Tight for 4 players; a real FujiNet will tell. Further
-savings if needed: SIO in the background by interrupts.
+**The cost, measured.** `tools/build_atari.py --bench` builds
+`c/platform/atari/sio_bench.c`: the game's screen with its DMA and DLIs,
+and a network frame's SIO through `tcp_fujinet.c` and `sio.s` (our 12-byte
+input line out, a status, a read), 64 times each for 2 and 4 players. In
+Altirra with `tools/atari/fakefn.atdevice`, a FujiNet stand-in that answers
+in emulated time with the firmware's own delays (250 us before 'A' and 'C',
+1 ms from 'C' to a data frame at high speed, 850 us after our data frame),
+at FujiNet's default high speed (index 8):
+
+| SIO a network frame | 2 players | 4 players |
+|---|---|---|
+| gaps by the SIO spec (t0, t1 0.8 ms; t3 1.7 ms) | 27.1 ms | 30.5 ms |
+| t0 by the spec, t1 and t3 short (the build) | 24.8 ms | 28.9 ms |
+
+(the write alone 9.0 ms, a status alone 6.9 ms.) Three commands a frame
+cost most of it: a status cannot be skipped (FujiNet answers a read with
+nothing waiting with an error, and a short read with a short data frame),
+and t0 must stay (FujiNet's idle loop empties its serial input until it sees
+COMMAND). A command measures about 1.7 ms longer than its bytes and the
+firmware's delays add up to; part of that may be how Altirra feeds a
+device's bytes to POKEY.
+
+With the game's own work (37 ms a 2-player, 41 ms a 4-player network frame)
+that is about 63 ms and 71 ms against 60: a match with an Atari would run 5
+and 18 % slow (the Spectrum 48K in 4-player matches: 12-16 % late). The
+way to fit: SIO in the background, by interrupts, while the game computes
+(the CPU then pays about 50 cycles a byte, 3-4 ms a frame).
 
 Test aids: `-DNETTEST_HOST` (the menu set to host 2 players, detection
 3 s late for FujiNet-PC's restart), `-DNETTEST_TIME` (on the status line

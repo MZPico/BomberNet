@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """The Atari XL/XE build (llvm-mos, atari8-dos target): build/atari/bomber.xex.
 
-  tools/build_atari.py [--net] [--test recording.bnr [--frames n]] [-O2|-Os]
+  tools/build_atari.py [--net | --bench] [--test recording.bnr [--frames n]] [-O2|-Os]
 
 --net: the network over FujiNet (netdev_soft.c, ws.c, tcp_fujinet.c). The
 network device and WebSocket code live in the RAM under the OS ROM
 (c/platform/atari/ld/link.ld): this script appends them to the .xex as
 segments of at most 4 KB that load into a buffer and are copied up by
 atari_hicopy (atari.s) through INITAD.
+--bench: the SIO timing benchmark (c/platform/atari/sio_bench.c), for
+Altirra with tools/atari/fakefn.atdevice.
 
 --test: ATARI_TEST, the recording compiled in and replayed from the title
 on, with its figures shown at the end (docs/port-atari-xl.md, step 3);
@@ -35,6 +37,13 @@ src += [f'{c}/platform/atari/{n}' for n in ('plat_atari.c', 'tables.c', 'atari.s
 src += [f'{c}/cpu/6502/loops.s']
 inc = [f'-I{c}/core', f'-I{c}/common', f'-I{c}/platform/atari', f'-I{out}']
 CC = f'{SDK}/bin/mos-atari8-dos-clang'
+if '--bench' in sys.argv:                # the SIO timing benchmark (sio_bench.c): its own main
+    flags += ['-DNETTEST_TIME', '-DSIO_BENCH']
+    o = os.path.join(out, 'bomber_lib.o')
+    r = subprocess.run([CC, *flags, '-Dmain=bomber_main', *inc, '-c', f'{c}/core/bomber.c', '-o', o], capture_output=True, text=True)
+    if r.returncode: sys.exit(r.stderr[-4000:])
+    src[0] = o
+    src += [f'{c}/platform/atari/sio_bench.c', f'{c}/platform/atari/tcp_fujinet.c']
 if '--net' in sys.argv:                  # FujiNet (step 4): the network device in software over it
     src += [f'{c}/platform/atari/tcp_fujinet.c']
     for n in ('netdev_soft', 'ws'):      # under the ROM: plain objects, so the link script sees their names

@@ -31,6 +31,11 @@ PBCTL  = 0xd303
 RTCLOK = 0x14
 SENDWAIT = 50                   ; ticks a send may stall (an emulated bus pauses while it forwards)
 GETWAIT = 10                    ; ticks to wait for a byte (likewise)
+T0STEPS = 7                     ; 768-896 us (delay): FujiNet's idle loop empties its
+                                ; serial input until it sees COMMAND, so the spec's t0
+T1STEPS = 2                     ; 128-256 us: FujiNet waits for COMMAND high anyway
+T3STEPS = 2                     ; 128-256 us: after its ACK FujiNet reads our data
+                                ; frame from its UART buffer
 
         .section .bss.sio,"aw",@nobits
         .global sio_dev, sio_cmd, sio_aux, sio_buf, sio_len, sio_dir, sio_div, sio_wait, sio_btime, atari_irqen
@@ -95,6 +100,7 @@ atari_sio:
         sta SKRES               ; clear old serial errors
         lda #0x34               ; COMMAND low
         sta PBCTL
+        ldx #T0STEPS
         jsr delay               ; t0
         lda #5
         sta left
@@ -103,6 +109,7 @@ atari_sio:
         jmp fail
 9:
         jsr rxmode              ; the device may answer at once
+        ldx #T1STEPS
         jsr delay               ; t1
         lda #0x3c               ; COMMAND high
         sta PBCTL
@@ -147,8 +154,8 @@ atari_sio:
 9:
         lda #1
         jmp leave
-out:    jsr delay               ; t3: the device ready for the data frame, 1 ms
-        jsr delay
+out:    ldx #T3STEPS
+        jsr delay               ; t3: the device ready for our data frame
         jsr setbuf
         jsr checksum            ; the data's checksum after it
         sta sum
@@ -425,10 +432,12 @@ bytetime:
         bne 1b
         rts
 
-; the command frame's t0 (COMMAND low to the first byte, 750 us at least)
-; and t1 (the last byte to COMMAND high, 650 us): 7 changes of VCOUNT,
-; 768-896 us, whatever ANTIC's DMA does to the CPU's speed
-delay:  ldx #7
+; X changes of VCOUNT (128 us each), whatever ANTIC's DMA does to the
+; CPU's speed: the command frame's t0 (COMMAND low to the first byte) and
+; t1 (the last byte to COMMAND high), t3 (ACK to our data frame). The SIO
+; spec asks 750, 650 and 1000 us; FujiNet needs the first (see T0STEPS),
+; not the others, and the gaps are much of a short command's time
+delay:
 1:      lda VCOUNT
 2:      cmp VCOUNT
         beq 2b
