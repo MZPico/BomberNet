@@ -25,7 +25,7 @@ The first port to a processor other than the Z80, chosen before the C64
    then screenshots and play in atari800. Done, see below.
 4. **The network**: `tcp.h` over FujiNet `N:TCP`, emulated in a test harness;
    its cost per frame (the serial bus), lockstep and cross-play tests,
-   production relay, FujiNet-PC.
+   production relay, FujiNet-PC. In progress, see below.
 5. **Hardware test, release.** Then the C64 on the same 6502 work.
 
 ## Step 0: the core on a 6502
@@ -213,3 +213,66 @@ The flush is 14 ms of it. Late frames: only the round and stage starts
 (map generation), as on the Z80 machines. About 20 ms of the 60 are left
 for FujiNet in step 4. (The recordings that hash every frame, coop1, coop2s
 and dm2s, take 75-90 ms: a test setting, not a game.)
+
+## Step 4: the network over FujiNet (in progress)
+
+`tools/build_atari.py --net` builds the network version: the software
+network device and WebSocket client of the other machines
+(`netdev_soft.c`, `ws.c`) over `c/platform/atari/tcp_fujinet.c`, FujiNet's
+network device `N1:` (SIO device 71h: open `N:TCP://host:port/`, status,
+read, write, close).
+
+Two things had to change for it.
+
+**Memory.** The network code, and the lobby it brings in, add about 18 KB.
+The game now runs with the OS off, its ROM switched out, which makes the
+RAM under it usable (`c/platform/atari/hiram.ld`):
+
+| | |
+|---|---|
+| $2000-$B1FF | the program (network build: to about $AC10) |
+| $B200-$B3FF | the C stack (from $B400 down) |
+| $B400 | the screen |
+| $B800 | sprites; their unused first $300 bytes hold the network device's variables |
+| $C000-$CFFF | the four fonts |
+| $D800-$FFF9 | the network device and WebSocket code (13 KB with the fonts) |
+
+The `.xex` carries the code under the ROM as extra segments that load
+into a buffer and are copied up by `atari_hicopy` through INITAD, so any
+loader handles it. Nothing of the OS runs during the game:
+`atari_nmi` takes the DLIs and the vertical blank, interrupts stay
+masked, and the keyboard, BREAK and the serial port are polled (POKEY
+latches their requests). The sprite table is compressed (13 shapes and
+an index instead of 2 KB).
+
+**SIO.** The OS's SIO routine is in the ROM, so `c/platform/atari/sio.s`
+is our own, polled. What it took, found against FujiNet-PC:
+- POKEY latches a request only if it is enabled when it happens: "output
+  needed" is enabled before the first byte, and each one is acknowledged
+  before the next byte is written;
+- "output done" is not latched and was not reliable: the end of a send is
+  the last "needed" plus a byte's time, measured with VCOUNT (the CPU's
+  speed varies with ANTIC's DMA);
+- receiving must be on within 850 us of the last byte sent (the device's
+  earliest answer), and right after a command frame;
+- STIMER after setting the baud divisor, AUDCTL kept: a stale timer
+  garbled the first bits, and an emulated bus then told FujiNet another
+  baud rate;
+- tones on POKEY voices 1 and 2 only: 3 and 4 are the serial clock.
+
+**Tested** in Altirra 4.40 (under wine) with FujiNet-PC (the firmware's PC
+build) and the NetSIO hub (fujinet-emulator-bridge), against the local
+relay: the Atari hosts a room through FujiNet (the WebSocket upgrade, the
+JSON messages), a Spectrum (FuseX, Spectranet) joins it, both ready, and
+the match runs; it lost the connection after 40 frames, because the
+emulated chain is about ten times slower than real time (Altirra waits for
+each NetSIO round trip). So this setup shows that the protocol is right;
+it cannot show the real cost of a frame. A real FujiNet answers a command
+within a few milliseconds.
+
+The cost estimate: a 4-player frame moves about 200 bytes (our input line
+out, three in), about 105 ms at the standard 19,200 baud, so a match needs
+FujiNet's high-speed SIO (`sio_div`; FujiNet's default index 8, about
+57,600 baud, or faster) and possibly a compact input message from the
+relay. Next: the high-speed rate, the cost per frame measured in emulated
+time, then a decision on the relay.

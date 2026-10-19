@@ -12,7 +12,7 @@
  * - Title and lobby: 25 rows of mode 2 with the title font.
  * Players: the four hardware sprites (single-line player/missile graphics,
  * 2 KB), in their colours; their shapes come from the codes the core drew
- * at their places (atari_sprite), so their cells stay blank in the field.
+ * at their places (atari_sprite_shape), so their cells stay blank in the field.
  * On the status line the same sprites show each player's lives icon and
  * count in the player's colour (plat_hud_colour).
  * Input: two joysticks; the keyboard's arrow keys (- = + *, no CTRL needed)
@@ -27,7 +27,6 @@
 
 #define REG(a) (*(volatile uint8_t *)(a))
 /* OS shadows */
-#define BRKKEY  REG(0x11)
 #define RTCLOK  REG(0x14)                 /* +1 every vertical blank */
 #define SDMCTL  REG(0x22f)
 #define SDLSTL  (*(void *volatile *)0x230)
@@ -35,9 +34,7 @@
 #define PCOLR0  REG(0x2c0)
 #define COLOR0  REG(0x2c4)                /* COLOR0..COLOR4 at 2C4h-2C8h */
 #define CHBAS   REG(0x2f4)
-#define CH      REG(0x2fc)
 #define VDSLST  (*(void (*volatile *)(void))0x200)
-#define VVBLKI  (*(void (*volatile *)(void))0x222)
 /* hardware */
 #define SIZEP0  REG(0xd008)
 #define GRACTL  REG(0xd01d)
@@ -47,6 +44,8 @@
 #define AUDF1   REG(0xd200)               /* AUDFn at D200h + 2(n-1), AUDCn one above */
 #define AUDCTL  REG(0xd208)
 #define KBCODE  REG(0xd209)
+#define IRQEN   REG(0xd20e)                /* write */
+#define IRQST   REG(0xd20e)                /* read */
 #define SKSTAT  REG(0xd20f)
 #define PMBASE  REG(0xd407)
 #define NMIEN   REG(0xd40e)
@@ -61,11 +60,13 @@ static const uint8_t field_colours[5] = {0x36, 0x4a, 0xee, 0x9a, 0x00};
 static const uint8_t player_colours[4] = {0xba, 0xec, 0x0e, 0x78};
 static const uint8_t ink_colours[8] = {0x00, 0x78, 0x36, 0x4a, 0xba, 0x9a, 0xec, 0x0e};
 
-/* At fixed addresses under the C stack (MEMTOP, $BC1F, down by 1 KB), so
- * that their alignment wastes nothing (tools/build_atari.py places them
- * and checks that the program ends below): */
-extern uint8_t atari_screen[SCREEN_CELLS];  /* $AC00, 1 KB aligned for ANTIC */
-extern uint8_t atari_pmg[2048];             /* $B000, sprites (single-line: 2 KB aligned) */
+/* At fixed addresses at the top of RAM (the OS's screen is not needed),
+ * so that their alignment wastes nothing; the C stack below them
+ * (tools/build_atari.py places them and checks the program's end; atari.s
+ * sets the stack): */
+extern uint8_t atari_screen[SCREEN_CELLS];  /* $B400 */
+extern uint8_t atari_pmg[2048];             /* $B800, sprites (single-line: 2 KB aligned); its
+                                               first 0x300 bytes hold the network code's variables */
 #define pmg atari_pmg
 #define PLAYER_MEM(p) (pmg + 0x400 + ((uint16_t)(p) << 8))
 #ifdef ATARI_TEST
@@ -173,12 +174,13 @@ static uint16_t rec_pos = 16, frames;
  * own, so it is the fire key that works while walking; SPACE fires too,
  * standing. Fire is a press, not a level: one bomb each time (held, the
  * core would drop one every two cells). */
-static uint8_t fire_held;
+static uint8_t fire_held, keys_frame = 0xff, keys_now, flushes;   /* flushes: +1 a frame (flush_screen) */
 uint8_t plat_keys_a(void) {
   uint8_t k = 0, c, f;
 #ifdef ATARI_TEST
   return title_mode && (frames & 1) ? KEY_SPACE : 0;
 #endif
+  if (keys_frame == flushes) return keys_now;         /* once a frame: every caller sees the same press */
   if (!(SKSTAT & 0x04)) {                             /* a key is down */
     c = KBCODE & 0x3f;
     if (c == 0x0e) k = KEY_UP;
@@ -191,6 +193,7 @@ uint8_t plat_keys_a(void) {
   f = k & KEY_SPACE;
   if (fire_held) k &= (uint8_t)~KEY_SPACE;            /* still the same press */
   fire_held = f;
+  keys_frame = flushes; keys_now = k;
   return k;
 }
 
@@ -212,21 +215,27 @@ static const char keyletter[64] = {
   'V', 0, 'C', 0, 0, 'B', 'X', 'Z', 0, 0, 0, 0, 0, 0, 0, 0,
   0, 0, 0, 'N', 0, 'M', 0, 0, 'R', 0, 'E', 'Y', 0, 'T', 'W', 'Q',
   0, 0, 0, 0, 0, 0, 0, 0, 'F', 'H', 'D', 0, 0, 'G', 'S', 'A'};
+/* POKEY latches a key press and BREAK as interrupt requests (IRQST bits 6
+ * and 7 low); interrupts stay masked, so they are polled and acknowledged
+ * here (atari_irqen: IRQEN's bits outside SIO, sio.s) */
+extern uint8_t atari_irqen;
+static uint8_t irq_taken(uint8_t bit) {
+  if (IRQST & bit) return 0;
+  IRQEN = (uint8_t)(atari_irqen & ~bit);
+  IRQEN = atari_irqen;
+  return 1;
+}
+
 uint8_t plat_key_char(void) {
-  uint8_t c = CH;
-  if (c == 0xff) return 0;
-  CH = 0xff;
-  c &= 0x3f;
+  uint8_t c;
+  if (!irq_taken(0x40)) return 0;
+  c = KBCODE & 0x3f;
   if (c == 0x34) return 8;                            /* BACK SPACE */
   if (c == 0x1c) return 0x1b;                         /* ESC */
   return (uint8_t)keyletter[c];
 }
 
-uint8_t plat_break(void) {                            /* BREAK: the OS clears BRKKEY */
-  if (BRKKEY) return 0;
-  BRKKEY = 0x80;
-  return 1;
-}
+uint8_t plat_break(void) { return irq_taken(0x80); }
 
 /* ---- time ---- */
 static uint8_t last_tick, ntsc, ntsc_step;
@@ -256,13 +265,13 @@ void plat_delay(void) {
 
 /* ---- sound: the MZ's tones on POKEY, the game running on ----
  * frequency = 1108400 / ratio; POKEY (64 kHz clock): f = 63921 / (2 (AUDF + 1)),
- * so AUDF = ratio * 0.02883 - 1. A voice per kind, as on the CPC: 14 (steps,
- * menus) voice 1, 12 (bombs) voice 2, the rest voice 3. */
-static uint8_t tone_on, tone_end[3];
+ * so AUDF = ratio * 0.02883 - 1. Voices 1 and 2 (3 and 4 are the serial
+ * port's clock, sio.s): 14 (steps, menus) voice 1, the rest voice 2. */
+static uint8_t tone_on, tone_end[2];
 static void tones_due(void) {
   uint8_t v;
   if (!tone_on) return;
-  for (v = 0; v < 3; v++)
+  for (v = 0; v < 2; v++)
     if ((tone_on & (1 << v)) && (int8_t)(RTCLOK - tone_end[v]) >= 0) {
       REG(0xd201 + 2 * v) = 0;
       tone_on &= (uint8_t)~(1 << v);
@@ -270,7 +279,7 @@ static void tones_due(void) {
 }
 
 void plat_tone(uint16_t ratio, uint8_t len) {
-  uint8_t v = len == 14 ? 0 : len == 12 ? 1 : 2;
+  uint8_t v = len == 14 ? 0 : 1;
   uint16_t f = (ratio >> 5) - (ratio >> 9) - (ratio >> 11);    /* ratio * 0.0288 */
   REG(0xd200 + 2 * v) = (uint8_t)(f ? f - 1 : 0);
   REG(0xd201 + 2 * v) = 0xa8;                                  /* pure tone, volume 8 */
@@ -279,6 +288,7 @@ void plat_tone(uint16_t ratio, uint8_t len) {
 }
 
 /* ---- screen ---- */
+#define SPRITE(c) (atari_sprite_shape + (atari_sprite_index[c] << 3))
 static uint8_t shown_cells[4][4];                     /* the codes each sprite shows now */
 static void sprites_field(void) {                     /* each player's shape where the core drew it */
   uint8_t p, r, *m, *sc, c0, c1, c2, c3;
@@ -300,9 +310,9 @@ static void sprites_field(void) {                     /* each player's shape whe
     sc[0] = c0; sc[1] = c1; sc[2] = c2; sc[3] = c3;
     shown_y[p] = pl->y;
     m += pl->y << 3;
-    a = atari_sprite + (c0 << 3); b = atari_sprite + (c1 << 3);
+    a = SPRITE(c0); b = SPRITE(c1);
     for (r = 0; r < 8; r++) m[r] = (uint8_t)(a[r] << 4 | b[r]);
-    a = atari_sprite + (c2 << 3); b = atari_sprite + (c3 << 3);
+    a = SPRITE(c2); b = SPRITE(c3);
     for (r = 0; r < 8; r++) m[8 + r] = (uint8_t)(a[r] << 4 | b[r]);
   }
 }
@@ -353,6 +363,7 @@ static void title_icons(void) {
 
 void flush_screen(void) {
   uint16_t i;
+  flushes++;
 #ifdef ATARI_TEST
   frames++;
   if (!title_mode && rec_pos + 6 <= REC_LEN) {     /* the hash checked: a mismatch turns the border red */
@@ -428,12 +439,13 @@ void plat_init(void) {
   AUDCTL = 0;
   REG(0xd20f) = 3;                                    /* SKCTL: keyboard scanning on */
   NMIEN = 0;
-  VDSLST = atari_dli;
-  VVBLKI = atari_vbi;                                 /* in place of the OS's vertical blank (atari.s) */
+  VDSLST = atari_dli;                                 /* the vertical blank: atari_nmi (atari.s) */
   NMIEN = 0xc0;
   joy_type = JOY_ATARI;
-  BRKKEY = 0x80;
-  CH = 0xff;
+  irq_taken(0x40); irq_taken(0x80);                   /* no key or BREAK from before */
+#ifdef NETTEST_HOST
+  menu_net = NET_HOST; menu_players = 2;              /* test: SPACE hosts a 2-player room */
+#endif
   set_mode(1);
 #ifdef ATARI_TEST
   match_seed = rec[4] | (uint16_t)(rec[5] << 8);

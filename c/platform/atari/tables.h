@@ -6,6 +6,7 @@
 #define ATARI_ALIGN(n) __attribute__((aligned(n)))
 #endif
 extern const uint8_t atari_field_font[1024], atari_text_font[1024], atari_title_font[1024];
-extern const uint8_t atari_field_code[256], atari_text_code[256], atari_title_code[256], atari_sprite[2048];
+extern const uint8_t atari_field_code[256], atari_text_code[256], atari_title_code[256];
+extern const uint8_t atari_sprite_index[256], atari_sprite_shape[104];
 extern const uint8_t atari_logo_font[1024], atari_logo_code[256], atari_title_ink[256];
 #endif

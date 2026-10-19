@@ -56,12 +56,11 @@ atari_dli_title:
         pla
         rti
 
-; The vertical blank, in place of the OS's (VVBLKI): the OS's two stages
-; cost about 1,000-2,000 cycles a TV frame, this a tenth of that. It does
-; what the game needs of them: the clock, the hardware registers from the
-; OS's shadows (set by plat_atari.c), the key debounce delay, SIO's timeout
-; timer 1 (for the network), and the sprites back to the players' places in
-; the field.
+; The vertical blank, in place of the OS's: the OS's two stages cost about
+; 1,000-2,000 cycles a TV frame, this a tenth of that. It does what the game
+; needs of them: the clock, the hardware registers from the OS's shadows
+; (set by plat_atari.c), and the sprites back to the players' places in the
+; field.
         .section .text.atari_vbi,"ax",@progbits
         .global atari_vbi
 atari_vbi:
@@ -97,21 +96,117 @@ atari_vbi:
         sta 0x200
         lda atari_dli_vec+1
         sta 0x201
-        lda 0x2f1               ; KEYDEL: the keyboard IRQ ignores the same key until 0
+        pla                     ; Y, X, A were pushed (atari_nmi)
+        tay
+        pla
+        tax
+        pla
+        rti
+
+; The OS is off while the game runs: its ROM is switched out (the RAM
+; under it, 0xc000-0xcfff and 0xd800-0xfff9, holds fonts and the network
+; code: see hiram.ld and tools/build_atari.py) and nothing of it is called.
+; The CPU takes its vectors from RAM then:
+; - NMI: ours, as the OS's: a DLI through VDSLST, else the vertical blank;
+; - IRQ: none, interrupts stay masked; the keyboard, BREAK and the serial
+;   port are polled (plat_atari.c, atari_sio).
+        .section .text.atari_nmi,"ax",@progbits
+        .global atari_nmi
+atari_nmi:
+        bit 0xd40f              ; NMIST: a DLI?
+        bpl 1f
+        jmp (0x200)
+1:      pha
+        txa
+        pha
+        tya
+        pha
+        sta 0xd40f              ; NMIRES
+        jmp atari_vbi
+atari_rti:
+        rti
+
+; At start (before the C runtime clears its variables): interrupts masked,
+; the ROM off, the RAM vectors; POKEY's keyboard and BREAK requests latched
+; for polling. Inline in the start-up sequence (no RTS).
+        .section .init.150,"ax",@progbits
+        sei
+        lda #0
+        sta 0xd40e              ; NMIEN: none while the ROM goes
+        lda 0xd301
+        and #0xfe
+        sta 0xd301
+        lda #mos16lo(atari_nmi)
+        sta 0xfffa
+        lda #mos16hi(atari_nmi)
+        sta 0xfffb
+        lda #mos16lo(atari_rti)
+        sta 0xfffe
+        sta 0xfffc
+        lda #mos16hi(atari_rti)
+        sta 0xffff
+        sta 0xfffd
+        lda #0xc0               ; IRQEN: BREAK and keyboard
+        sta atari_irqen
+        sta 0xd20e
+        lda #0x40               ; the vertical blank again (plat_init adds the DLIs)
+        sta 0xd40e
+        lda #0x00               ; the C stack from below the screen (0xb400), not MEMTOP
+        sta __rc0
+        lda #0xb4
+        sta __rc1
+
+; While the program loads: a segment of the code that lives under the ROM,
+; loaded into a buffer (4 bytes: destination, length; then the bytes), and
+; this routine run by the loader (INITAD) to copy it there. The OS stays
+; quiet meanwhile: no interrupts, the ROM back on at the end.
+        .section .text.atari_hicopy,"ax",@progbits
+        .global atari_hicopy
+atari_hicopy:
+        php
+        sei
+        lda 0xd40e
+        pha
+        lda #0
+        sta 0xd40e
+        lda 0xd301
+        pha
+        and #0xfe
+        sta 0xd301
+        lda 0xb400              ; HIBUF (tools/build_atari.py): destination, length, bytes
+        sta 0x80                ; zero page __rc0..3 (the C runtime's, free while loading)
+        lda 0xb401
+        sta 0x81
+        lda #0x04
+        sta 0x82
+        lda #0xb4
+        sta 0x83
+        ldx 0xb403              ; whole pages
+        ldy #0
+1:      cpx #0
         beq 3f
-        dec 0x2f1
-3:      lda 0x218               ; CDTMV1, SIO's timeout: count down, at 0 call CDTMA1
-        bne 4f
-        lda 0x219
-        beq 6f
-        dec 0x219
-4:      dec 0x218
-        lda 0x218
-        ora 0x219
-        bne 6f
-        jsr 5f
-6:      jmp 0xe462              ; XITVBV
-5:      jmp (0x226)
+2:      lda (0x82),y
+        sta (0x80),y
+        iny
+        bne 2b
+        inc 0x81
+        inc 0x83
+        dex
+        jmp 1b
+3:      ldx 0xb402              ; the rest
+        beq 5f
+4:      lda (0x82),y
+        sta (0x80),y
+        iny
+        dex
+        bne 4b
+5:      pla
+        sta 0xd301
+        pla
+        sta 0xd40e
+        plp
+        rts
+
 
 ; flush in game mode: every changed cell of draw_buf to the screen, the
 ; field (960 cells, not cleared: composite_frame overwrites them, see
@@ -202,4 +297,5 @@ atari_flush_game:
 32:     dex
         bpl 31b
         rts
+
 

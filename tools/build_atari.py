@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """The Atari XL/XE build (llvm-mos, atari8-dos target): build/atari/bomber.xex.
 
-  tools/build_atari.py [--test recording.bnr [--frames n]] [-O2|-Os]
+  tools/build_atari.py [--net] [--test recording.bnr [--frames n]] [-O2|-Os]
+
+--net: the network over FujiNet (netdev_soft.c, ws.c, tcp_fujinet.c). The
+network device and WebSocket code live in the RAM under the OS ROM
+(c/platform/atari/ld/link.ld): this script appends them to the .xex as
+segments of at most 4 KB that load into a buffer and are copied up by
+atari_hicopy (atari.s) through INITAD.
 
 --test: ATARI_TEST, the recording compiled in and replayed from the title
 on, with its figures shown at the end (docs/port-atari-xl.md, step 3);
@@ -25,16 +31,47 @@ if '--test' in sys.argv:
     flags.append('-DATARI_TEST')
 c = os.path.join(ROOT, 'c')
 src = [f'{c}/core/{n}.c' for n in ('bomber', 'netplay', 'data', 'map', 'game', 'input', 'video', 'enemy', 'bomb', 'player')]
-src += [f'{c}/platform/atari/{n}' for n in ('plat_atari.c', 'tables.c', 'atari.s')]
-src += [f'{c}/cpu/6502/loops.s', f'{c}/common/netdev_none.c']
+src += [f'{c}/platform/atari/{n}' for n in ('plat_atari.c', 'tables.c', 'atari.s', 'sio.s')]
+src += [f'{c}/cpu/6502/loops.s']
 inc = [f'-I{c}/core', f'-I{c}/common', f'-I{c}/platform/atari', f'-I{out}']
+CC = f'{SDK}/bin/mos-atari8-dos-clang'
+if '--net' in sys.argv:                  # FujiNet (step 4): the network device in software over it
+    src += [f'{c}/platform/atari/tcp_fujinet.c']
+    for n in ('netdev_soft', 'ws'):      # under the ROM: plain objects, so the link script sees their names
+        o = os.path.join(out, f'hi_{n}.o')
+        r = subprocess.run([CC, *flags, '-fno-lto', *inc, '-c', f'{c}/common/{n}.c', '-o', o], capture_output=True, text=True)
+        if r.returncode: sys.exit(r.stderr[-4000:])
+        src.append(o)
+else: src += [f'{c}/common/netdev_none.c']
 xex = os.path.join(out, 'bomber.xex')
-SCREEN, PMG = 0xac00, 0xb000     # under the C stack (MEMTOP $BC1F, 1 KB): see plat_atari.c
-r = subprocess.run([f'{SDK}/bin/mos-atari8-dos-clang', *flags, *inc, *src, '-o', xex, '-Wl,--gc-sections',
+SCREEN, PMG = 0xb400, 0xb800     # the top of RAM: see plat_atari.c, hiram.ld
+LIMIT = SCREEN - 512             # the C stack below the screen (atari.s)
+r = subprocess.run([CC, *flags, *inc, *src, '-o', xex, '-Wl,--gc-sections', '-Wl,--undefined=atari_hicopy', f'-Wl,-T,{c}/platform/atari/hiram.ld',
                     f'-Wl,--defsym=atari_screen={SCREEN}', f'-Wl,--defsym=atari_pmg={PMG}'],
                    capture_output=True, text=True)
 if r.returncode: sys.exit(r.stderr[-4000:])
 nm = subprocess.run([f'{SDK}/bin/llvm-nm', xex + '.elf'], capture_output=True, text=True).stdout
 end = int(re.search(r'^([0-9a-f]+) \w __heap_start$', nm, re.M).group(1), 16)
-if end > SCREEN: sys.exit(f'the program ends at ${end:04X}, over the screen at ${SCREEN:04X}')
-print(f'{xex}: {os.path.getsize(xex)} bytes, $2000-${end:04X} ({" ".join(flags)})')
+if end > LIMIT: sys.exit(f'the program ends at ${end:04X}, over its limit ${LIMIT:04X} (the C stack, the screen)')
+HIBUF, HICHUNK = 0xb400, 2048 - 4      # the screen's place, free while loading (atari_hicopy)
+hi = 0                                 # code and fonts under the ROM (hiram.ld): segments copied up
+dump = subprocess.run([f'{SDK}/bin/llvm-objdump', '-h', xex + '.elf'], capture_output=True, text=True).stdout
+copier = int(re.search(r'^([0-9a-f]+) \w atari_hicopy$', nm, re.M).group(1), 16)
+segs = b''
+for sec in ('.hifont', '.hitext'):
+    m = re.search(r'^\s*\d+\s+' + re.escape(sec) + r'\s+([0-9a-f]+)\s+([0-9a-f]+)', dump, re.M)
+    if not m or not int(m.group(1), 16): continue
+    vma = int(m.group(2), 16)
+    hb = f'{xex}{sec}'
+    subprocess.run([f'{SDK}/bin/llvm-objcopy', '-O', 'binary', '-j', sec, xex + '.elf', hb], check=True)
+    data = open(hb, 'rb').read(); hi += len(data)
+    for i in range(0, len(data), HICHUNK):
+        part = data[i:i + HICHUNK]
+        body = (vma + i).to_bytes(2, 'little') + len(part).to_bytes(2, 'little') + part
+        segs += HIBUF.to_bytes(2, 'little') + (HIBUF + len(body) - 1).to_bytes(2, 'little') + body
+        segs += (0x2e2).to_bytes(2, 'little') + (0x2e3).to_bytes(2, 'little') + copier.to_bytes(2, 'little')
+dend = int(re.search(r'^([0-9a-f]+) \w __data_end$', nm, re.M).group(1), 16)
+if dend > HIBUF: sys.exit(f'the loaded program ends at ${dend:04X}, over the load buffer ${HIBUF:04X}')
+open(xex, 'ab').write(segs)
+print(f'{xex}: {os.path.getsize(xex)} bytes, $2000-${end:04X}, under the ROM {hi} bytes'
+      + f' ({" ".join(flags)})')
