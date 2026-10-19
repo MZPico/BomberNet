@@ -62,8 +62,11 @@ atari_dli_title:
 ; (set by plat_atari.c), and the sprites back to the players' places in the
 ; field.
         .section .bss.fire_tv,"aw",@nobits
-        .global fire_tv
+        .global fire_tv, fire_bad
 fire_tv: .zero 1
+fire_bad: .zero 1
+last_kb: .zero 1
+kb_age:  .zero 1
 
         .section .text.atari_vbi,"ax",@progbits
         .global atari_vbi
@@ -96,28 +99,53 @@ atari_vbi:
         sta 0xd012,x
         dex
         bpl 2b
-7:      lda 0xd20f              ; SKSTAT: SHIFT (bit 3 low), counted in fire_tv
-        and #0x08               ; (plat_keys_a: fire needs 2 vertical blanks,
-        bne 8f                  ; 40 ms: an emulator's short SHIFT does not
-        lda fire_tv             ; drop a bomb)
+; Fire (SHIFT, or SPACE: KBCODE 21h with a key down), sampled every
+; vertical blank: fire_tv counts the blanks it is down (plat_keys_a wants
+; 2, 40 ms), fire_bad marks a press that began as another direction key
+; came (kb_age: blanks since KBCODE's key, without its SHIFT/CTRL bits,
+; changed). Altirra's arrow key mode "Ctrl/Shift states mapped directly"
+; asserts SHIFT again while an arrow pressed with SHIFT is held and the
+; next arrow goes down: a bomb at every quick turn after a bomb.
+7:      lda 0xd209              ; KBCODE: a new key?
+        and #0x3f
+        cmp last_kb
+        beq 11f
+        sta last_kb
+        lda #0
+        sta kb_age
+        beq 12f
+11:     lda kb_age
         cmp #255
-        beq 9f
-        inc fire_tv
-        jmp 9f
-8:      lda 0xd20f              ; else SPACE down (KBCODE 21h): counted alike
+        beq 12f
+        inc kb_age
+12:     lda 0xd20f              ; SKSTAT: SHIFT down (bit 3 low)?
+        and #0x08
+        beq 13f
+        lda 0xd20f              ; a key down (bit 2 low) that is SPACE?
         and #0x04
         bne 10f
-        lda 0xd209
-        and #0x3f
+        lda last_kb
         cmp #0x21
         bne 10f
-        lda fire_tv
+13:     lda fire_tv
+        bne 14f
+        lda #0                  ; the press begins: suspect if a key other than
+        sta fire_bad            ; SPACE came in this blank or the one before
+        lda kb_age
+        cmp #2
+        bcs 14f
+        lda last_kb
+        cmp #0x21
+        beq 14f
+        inc fire_bad
+14:     lda fire_tv
         cmp #255
         beq 9f
         inc fire_tv
         jmp 9f
 10:     lda #0
         sta fire_tv
+        sta fire_bad
 9:      lda atari_hpos+0        ; the sprites in the field
         sta 0xd000
         lda atari_hpos+1

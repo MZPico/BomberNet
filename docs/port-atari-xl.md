@@ -160,18 +160,17 @@ white $0E, blue $78.
   SIO's timer 1, a tenth of the OS's two stages. The OS stays on for the
   keyboard IRQ, BREAK and (step 4) SIO.
 - Input: two joysticks (PORTA, TRIG0/1); the keyboard as one player, the
-  arrow keys without CTRL, fire SHIFT. POKEY tracks one key at a time: on
-  a real machine SPACE is not seen while an arrow is held (emulators let it
-  replace the arrow and then report no key at its release, so the walk
-  stops). SHIFT has its own line and works while walking (checked in
-  Altirra 4.40: arrow and SHIFT are both seen; after SPACE is released
-  under an arrow, no key is); SPACE fires too, standing. Fire is a press:
-  one bomb each (held, the core drops one every two cells, as on the other
-  machines). Altirra's default arrow key mode ("Ctrl inverted") does not
-  pass SHIFT held first and Left/Right pressed after; its mode "Ctrl/Shift
-  states mapped directly" does, and its input map "Arrow Keys -> Joystick"
-  avoids the keyboard's limits altogether. Text entry from the OS's key
-  code (CH).
+  arrow keys without CTRL, fire SHIFT (or SPACE). POKEY tracks one key at a
+  time: on a real machine SPACE is not seen while an arrow is held; SHIFT
+  has its own line and works while walking. Fire is a press (one bomb
+  each), sampled in the vertical blank: down for 2 blanks (40 ms), up for
+  2 frames before the next, and not a press that began as another
+  direction key came. That last rule is for Altirra's arrow key mode
+  "Ctrl/Shift states mapped directly" (needed for SHIFT held before an
+  arrow): it asserts SHIFT again while an arrow pressed with SHIFT is held
+  and the next goes down, which dropped a bomb at each quick turn after a
+  bomb (found with `-DFIREDEBUG`: fire count, SHIFT, KBCODE on the status
+  line). Text entry from the OS's key code (CH).
 - Sound: POKEY voices 1-3, tones that do not stop the game, a voice per kind
   as on the CPC.
 - Timing: 3 TV frames (PAL), 4,3,4,3,4 on NTSC (60 ms on average).

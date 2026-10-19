@@ -184,10 +184,11 @@ static uint16_t rec_pos = 16, frames;
  * standing. Fire is a press, not a level: one bomb each time (held, the
  * core would drop one every two cells), and a press counts only after
  * fire was up for two frames, and fire is down only after 2 vertical
- * blanks (40 ms): an emulator's keyboard mapping can drop or add SHIFT
- * for a moment while one arrow gives way to another, which made a bomb
- * at a turn. */
-extern volatile uint8_t fire_tv;
+ * blanks (40 ms) and not if it began as a new direction key came:
+ * Altirra's keyboard mapping can drop SHIFT for a moment, or assert it
+ * while one arrow gives way to another (atari.s), which made a bomb at a
+ * turn. */
+extern volatile uint8_t fire_tv, fire_bad;
 #ifdef FIREDEBUG
 static uint8_t fire_count;                /* fires so far, SHIFT's line, KBCODE: on the status line */
 #endif
@@ -205,7 +206,8 @@ uint8_t plat_keys_a(void) {
     else if (c == 0x06) k = KEY_LEFT;
     else if (c == 0x07) k = KEY_RIGHT;
   }
-  if (fire_tv >= 2) k |= KEY_SPACE;                   /* SHIFT or SPACE, down for 2 vertical blanks (atari.s) */
+  if (fire_tv >= 2 && !fire_bad) k |= KEY_SPACE;      /* SHIFT or SPACE, down for 2 vertical blanks, not
+                                                         begun with a turn (atari.s) */
   f = k & KEY_SPACE;
   if (f) {
     if (fire_up < 2) k &= (uint8_t)~KEY_SPACE;        /* still the same press, or one up for only a frame */
