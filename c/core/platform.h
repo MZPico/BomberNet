@@ -4,7 +4,9 @@
  *
  * Screen contract: the core draws logical codes into draw_buf, 40 x 25 cells.
  * Rows 0..23 are the field (row 23 is the bottom wall), row 24 is the status
- * line. flush_screen() shows draw_buf and clears it; a machine with 24 text
+ * line. flush_screen() shows draw_buf and clears it (in a game, title_mode 0,
+ * clearing the status line is enough: every game frame starts with
+ * composite_frame, which overwrites rows 0-23); a machine with 24 text
  * rows (PLAT_ROWS 24) shows row 24 on top of row 23, the wall, without
  * touching draw_buf, because the logic reads the wall cells there. */
 #ifndef PLATFORM_H

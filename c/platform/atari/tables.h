@@ -2,6 +2,9 @@
 #ifndef TABLES_H
 #define TABLES_H
 #include <stdint.h>
-extern const uint8_t atari_field_font[1024], atari_field_code[256], atari_text_font[1024], atari_text_code[256];
-extern const uint8_t atari_sprite[2048];
+#ifndef ATARI_ALIGN
+#define ATARI_ALIGN(n) __attribute__((aligned(n)))
+#endif
+extern const uint8_t atari_field_font[1024], atari_text_font[1024], atari_title_font[1024];
+extern const uint8_t atari_field_code[256], atari_text_code[256], atari_title_code[256], atari_sprite[2048];
 #endif

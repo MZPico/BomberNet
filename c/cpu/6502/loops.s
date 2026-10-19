@@ -3,7 +3,7 @@
 ; reference, see docs/portability.md. The screen is 1000 cells, done in four
 ; quarters of 250 with absolute,x addressing.
 
-; composite_frame: the start of a frame, rows 0-23 of draw_buf blank: the
+; composite_frame: the start of a frame, only the status row drawn: the
 ; playfield (960 cells) is a copy of the map, the status row a merge.
         .section .text.composite_frame,"ax",@progbits
         .global composite_frame

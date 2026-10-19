@@ -172,14 +172,11 @@ void composite_map(void) {
     if (map_layer[i] != C_SPACE) draw_buf[i] = map_layer[i];
 }
 
-/* composite_map at the start of a frame: the flush has emptied draw_buf and
- * only the status row is drawn, so the playfield is a copy of the map (the
- * idea: Milan Stava's ESP-01 port) */
+/* composite_map at the start of a frame: only the status row is drawn yet,
+ * so the playfield is a copy of the map (the idea: Milan Stava's ESP-01
+ * port); the flush need not have cleared rows 0-23 (platform.h) */
 void composite_frame(void) {
   uint16_t i;
-#ifdef HOST
-  for (i = 0; i < HUD_ROW * SCREEN_W; i++) assert(draw_buf[i] == C_SPACE);
-#endif
   memcpy(draw_buf, map_layer, HUD_ROW * SCREEN_W);
   for (i = HUD_ROW * SCREEN_W; i < SCREEN_CELLS; i++)
     if (map_layer[i] != C_SPACE) draw_buf[i] = map_layer[i];

@@ -18,11 +18,11 @@ The first port to a processor other than the Z80, chosen before the C64
    relay inside the program. Done, see below.
 2. **The screen**: 40 x 25 cells (a display list for the 25th row), colours
    per cell against hardware sprites for the players; mock-ups to choose
-   from, then the cell tables from the MZ characters.
+   from, then the cell tables from the MZ characters. Done: design D
+   (`tools/make_atari_tables.py`).
 3. **The platform layer**: display list, character set, flush, keyboard and
-   two joysticks, POKEY tones, frame timing (PAL: 3 TV frames; NTSC: a POKEY
-   timer, 59.9 ms), memory map; replays identical, then screenshots and play
-   in atari800 / Altirra.
+   two joysticks, POKEY tones, frame timing, memory map; replays identical,
+   then screenshots and play in atari800. Done, see below.
 4. **The network**: `tcp.h` over FujiNet `N:TCP`, emulated in a test harness;
    its cost per frame (the serial bus), lockstep and cross-play tests,
    production relay, FujiNet-PC.
@@ -125,3 +125,70 @@ about 3 KB of tables and constants and 4 KB of variables: about 37 KB at
 with BASIC off ($0700-$BFFF, less the screen, character set and display
 list); the RAM under the OS ROM is there if needed. The build will be
 `-Os`, 2 ms slower than `-O2`.
+
+## Step 3: the platform layer
+
+`c/platform/atari/` (`plat_atari.c`, `atari.s`, the generated `tables.c`),
+built by `tools/build_atari.py` (llvm-mos `mos-atari8-dos-clang -Os`, an
+`.xex` for DOS or an emulator, 24 KB; the program lies between $2000 and
+$9900, with BASIC off).
+
+- Screen, design D: one 40 x 25 screen memory. In a game a display list of
+  24 rows of ANTIC mode 4 (the field) and one of mode 2 (the status line);
+  a DLI at the end of row 22 moves the four sprites to the status line (row
+  23, the wall, has no sprite data, so nothing shows half-way), one at the
+  end of row 23 switches font and colours. The title and lobby are 25 rows
+  of mode 2 with the title font.
+- Players: the four hardware sprites (single-line PMG), their shapes taken
+  from the codes the core drew at their place, rebuilt only when these
+  change. On the status line the same sprites colour each player's lives
+  icon and count (`plat_hud_colour`). The player's number before the score
+  stays white: it is not next to the icon, and four sprites have no room
+  for a second piece each.
+- The vertical blank is ours (VVBLKI), not the OS's: the clock, the
+  hardware registers from the OS's shadows, the key debounce delay and
+  SIO's timer 1, a tenth of the OS's two stages. The OS stays on for the
+  keyboard IRQ, BREAK and (step 4) SIO.
+- Input: two joysticks (PORTA, TRIG0/1); the keyboard as one player, the
+  arrow keys without CTRL, fire SPACE, or SHIFT (the keyboard reports one
+  key at a time, so SHIFT gives a direction and fire together). Text entry
+  from the OS's key code (CH).
+- Sound: POKEY voices 1-3, tones that do not stop the game, a voice per kind
+  as on the CPC.
+- Timing: 3 TV frames (PAL), 4,3,4,3,4 on NTSC (60 ms on average).
+- `--test recording.bnr` (`ATARI_TEST`): the recording compiled in and
+  replayed from the title on, the state hash compared every game frame. At
+  the end the background turns green (identical, no late frame), yellow
+  (identical, some frames late) or red (a hash differed), and the status
+  line shows, in units of 128 us (two scanlines, 60 ms = 469): the sprites'
+  share, late frames, average frame work, its flush, the longest frame.
+  `CFLAGS_ATARI=-DTEST_HASH_OFF` times a standalone game (no hash, nothing
+  checked).
+
+Correct: dm4, coop4, dm2, coop1, coop2s and dm2s replay with identical
+hashes in atari800 (800XL, PAL); coop2-score does not fit in memory with the
+program.
+
+The CPU is slower than the 1.5 MHz assumed in steps 0-1: ANTIC's character
+modes take 40 font bytes every scanline and the names on each row's first,
+so about 1.1 MHz is left. The first build took 62 ms a frame (coop4). Three
+changes brought it to 41:
+
+- the flush no longer clears the playfield in a game: `composite_frame`
+  overwrites rows 0-23 at the start of every game frame anyway (the
+  contract in `core/platform.h` says so now; the Z80 machines can drop
+  their clearing too);
+- our own vertical blank instead of the OS's;
+- sprite shapes rebuilt only when they change.
+
+Frame work in atari800 (PAL), average (longest):
+
+| | 4 players (coop4) | 2 players (dm2) |
+|---|---|---|
+| hash every 16 frames, as in a network match | 40.6 ms (52) | 37.2 ms (24) |
+| standalone, no hash | 34.7 ms | 33.7 ms |
+
+The flush is 14 ms of it. Late frames: only the round and stage starts
+(map generation), as on the Z80 machines. About 20 ms of the 60 are left
+for FujiNet in step 4. (The recordings that hash every frame, coop1, coop2s
+and dm2s, take 75-90 ms: a test setting, not a game.)
