@@ -28,6 +28,14 @@ and version is measured the same way:
          host chose from its own round trips (read from both after the game).
   game   the interval between a machine's input lines (a frame is 60 ms; a
          longer interval means it waited for the other one or was busy).
+
+Busy 4-player matches on the Spectrum (local relay):
+  ZX_TEST=<dir> PLAYERS=4 LOCAL=2 [QUIET=1] tools/netbench.py zx zx 1
+<dir> is a Spectrum build with -DZX_TEST (plat_zx.c): its local key sets play
+a 128-frame loop from a recording (ZX_KEYS, default tests/recordings/dm4.bnr:
+the host plays its players 1-2, the joiner 3-4) and it counts the game
+frames that ran over their 3 TV frames, which the report shows. QUIET=1
+silences the tones.
 """
 import base64, json, os, re, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -44,8 +52,11 @@ LOBBY_S, GAME_S = 12, 20
 BUILDS = {'mz': ('build/c/bomber.mzf', 'build/c/bomber.map'),
           'mz011': ('build/v011/build/c/bomber.mzf', 'build/v011/build/c/bomber.map'),
           'zx': ('build/zx/bomber', 'build/zx/bomber.map')}
+ZX_TEST = os.environ.get('ZX_TEST')                            # a ZX_TEST build dir (plat_zx.c): busy keys, late frames counted
+if ZX_TEST: BUILDS['zx'] = (os.path.join(ZX_TEST, 'bomber'), os.path.join(ZX_TEST, 'bomber.map'))
+PLAYERS, LOCAL = int(os.environ.get('PLAYERS', 2)), int(os.environ.get('LOCAL', 1))   # players, local ones per machine
 NAMES = ('_menu_net', '_menu_mode', '_menu_players', '_menu_local', '_net_code', '_net_delay', '_title_mode', '_plat_keys_a',
-         '_net_frame')
+         '_net_frame') + (('_test_frames', '_test_late', '_test_lost', '_test_keys', '_plat_tone') if ZX_TEST else ())
 
 
 class MZ:
@@ -149,8 +160,14 @@ def run_once(hk, jk):
     for m in (host, join):
         if m.kind == 'zx': m.boot()
     time.sleep(3)                                                  # titles up
-    host.wr('_menu_mode', [1]); host.wr('_menu_players', [2]); host.wr('_menu_net', [1]); host.wr('_menu_local', [1])
-    join.wr('_menu_net', [2]); join.wr('_menu_local', [1])
+    host.wr('_menu_mode', [1]); host.wr('_menu_players', [PLAYERS]); host.wr('_menu_net', [1]); host.wr('_menu_local', [LOCAL])
+    join.wr('_menu_net', [2]); join.wr('_menu_local', [LOCAL])
+    if ZX_TEST:                                                    # the key loops: host plays records' players 1-2, joiner 3-4
+        d = open(os.environ.get('ZX_KEYS', os.path.join(ROOT, 'tests/recordings/dm4.bnr')), 'rb').read()
+        recs = [d[16 + i * 6:20 + i * 6] for i in range(60, 188)]
+        for m, first in ((host, 0), (join, 2)):
+            if m.kind == 'zx': m.wr('_test_keys', bytes(b for r in recs for b in r[first:first + 2]))
+            if m.kind == 'zx' and os.environ.get('QUIET'): m.wr('_plat_tone', [0xc9])      # tones off
     host.tap()
     relay.wait(lambda ev: [e for e in ev if e['op'] == 'create'], 30, 'room created')
     code = None
@@ -173,6 +190,11 @@ def run_once(hk, jk):
     c1 = (host.clock(), join.clock(), time.time())
     ev = relay.poll()
     delays = (host.rd('_net_delay')[0], join.rd('_net_delay')[0])
+    late = {}
+    if ZX_TEST:
+        for name, m in (('host', host), ('join', join)):
+            if m.kind == 'zx':
+                late[name] = tuple(int.from_bytes(m.rd(n, 2), 'little') for n in ('_test_frames', '_test_late', '_test_lost'))
     host.close(); join.close()
     lobby = [e for e in ev if e['room'] == room and lobby_from <= e['t'] <= lobby_to]
     game = [e for e in ev if e['room'] == room and t_start + 1 <= e['t'] <= t_start + GAME_S - 1]
@@ -189,7 +211,7 @@ def run_once(hk, jk):
     dt = c1[2] - c0[2]
     speed = tuple(((c1[i] - c0[i]) % (65536 / 50 if m.kind == 'zx' else 1e9)) / dt * 100 for i, m in enumerate((host, join)))
     return {'host': hk, 'join': jk, 'room': room, 'delay': delays, 'turn': turn, 'pace': pace, 'speed': speed,
-            'seconds': time.time() - t0}
+            'seconds': time.time() - t0, 'late': late}
 
 
 def report(r):
@@ -198,6 +220,9 @@ def report(r):
     print(f"{r['host']} hosts, {r['join']} joins (room {r['room']}): input delay {r['delay'][0]} / {r['delay'][1]} frames "
           f"({r['delay'][0] * 60} ms); emulators at {r['speed'][0]:.0f} % / {r['speed'][1]:.0f} % of real time", flush=True)
     print(f"  lobby turnaround of the joiner ({r['join']}): {stats(r['turn'])}", flush=True)
+    for name, (n, l, lost) in r.get('late', {}).items():
+        print(f"  {name}: {n} game frames, {l} over their 3 TV frames ({l / max(1, n) * 100:.1f} %), "
+              f"{lost} TV frames lost ({lost / max(1, 3 * n) * 100:.1f} % slower)", flush=True)
     for s, k in ((0, r['host']), (1, r['join'])):
         print(f"  game input interval, {k} (slot {s}): {stats(r['pace'][s])}; over 90 ms: {late(r['pace'][s]):.1f} %", flush=True)
 

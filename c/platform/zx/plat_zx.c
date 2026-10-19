@@ -82,8 +82,22 @@ static uint8_t zx_in(uint16_t port) __z88dk_fastcall __naked {
  *   FEFEh CAPS Z X C V      FDFEh A S D F G      FBFEh Q W E R T
  *   F7FEh 1 2 3 4 5         EFFEh 0 9 8 7 6      DFFEh P O I U Y
  *   BFFEh ENTER L K J H     7FFEh SPACE SYM M N B */
+#ifdef ZX_TEST
+/* Test build only (tools/netbench.py with ZX_TEST): in a network match the
+ * two local key sets play a loop of 128 frames written to test_keys (two
+ * bytes a frame) before the match, and the frame sync counts the game
+ * frames that ran over their three TV frames. */
+uint8_t test_keys[256];
+#define TEST_KEYS test_keys
+static uint8_t test_idx;
+uint16_t test_frames, test_late, test_lost;   /* frames, late ones, TV frames they lost */
+#endif
+
 uint8_t plat_keys_a(void) {               /* Q up, A down, O left, P right, SPACE (or M) */
   uint8_t k = 0, r;
+#ifdef ZX_TEST
+  if (net_active) return TEST_KEYS[test_idx];
+#endif
   if (!(zx_in(0xfbfe) & 0x01)) k |= KEY_UP;
   if (!(zx_in(0xfdfe) & 0x01)) k |= KEY_DOWN;
   r = zx_in(0xdffe);
@@ -105,6 +119,9 @@ static uint8_t sinclair(uint8_t r) {      /* bits: fire, up, down, right, left *
 }
 
 uint8_t plat_keys_b(void) {               /* 6 left, 7 right, 8 down, 9 up, 0 fire */
+#ifdef ZX_TEST
+  if (net_active) return TEST_KEYS[(uint8_t)(test_idx + 1)];
+#endif
   return sinclair(zx_in(0xeffe));
 }
 
@@ -194,6 +211,13 @@ static uint8_t last_tick;
 
 void plat_frame_sync(void) {                       /* a game frame is three TV frames */
   uint8_t late = (uint8_t)(*FRAMES_LO - last_tick) >= 3;
+#ifdef ZX_TEST
+  if (net_active && !title_mode) {
+    uint8_t d = (uint8_t)(*FRAMES_LO - last_tick);
+    test_frames++; test_idx += 2;
+    if (d > 3) { test_late++; test_lost += d - 3; }
+  }
+#endif
   while ((uint8_t)(*FRAMES_LO - last_tick) < 3) TONES_DUE();
   TONES_DUE();                                     /* also after a late frame, which does not wait */
   last_tick = *FRAMES_LO;
