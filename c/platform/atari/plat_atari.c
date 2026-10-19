@@ -359,6 +359,9 @@ static void halve(uint8_t *m, const uint8_t *a, const uint8_t *b) {
 #define ICON_ROW 7
 #define ICON(c) (atari_icon_shape + (atari_icon_index[c] << 3))
 static const uint8_t icon_x[5] = {2, 0x0b, 0x13, 0x1a, 0x22};
+static const uint8_t icon_col[SCREEN_W] = {      /* the columns of icon_x and the one after */
+  0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0, 0,
+  0, 0, 0, 0, 1, 1, 0, 0, 0, 0};
 static void title_icons(void) {
   uint8_t k, r, c[4], *hc, shape[16];
   const uint8_t *a, *b;
@@ -367,8 +370,6 @@ static void title_icons(void) {
     const uint8_t *cell = shadow_vram + at;
     uint8_t col;
     c[0] = cell[0]; c[1] = cell[1]; c[2] = cell[SCREEN_W]; c[3] = cell[SCREEN_W + 1];
-    atari_screen[at] = atari_screen[at + 1] = 0;      /* the sprite alone draws the icon */
-    atari_screen[at + SCREEN_W] = atari_screen[at + SCREEN_W + 1] = 0;
     hc = icon_cells[k];
     if (hc[0] == c[0] && hc[1] == c[1] && hc[2] == c[2] && hc[3] == c[3]) continue;
     memcpy(hc, c, 4);
@@ -410,6 +411,8 @@ void flush_screen(void) {
       draw_buf[i] = C_SPACE;
       if (a == shadow_vram[i]) continue;
       shadow_vram[i] = a;
+      if ((uint16_t)(i - ICON_ROW * SCREEN_W) < 2 * SCREEN_W && icon_col[(uint8_t)(i - ICON_ROW * SCREEN_W) % SCREEN_W])
+        continue;                                     /* a legend icon's cell: its sprite draws it (no white flash) */
       atari_screen[i] = i < 240 ? atari_logo_code[a] : atari_title_code[a];
     }
     title_icons();
