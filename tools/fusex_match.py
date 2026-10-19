@@ -39,9 +39,8 @@ def start():
 def boot(fx, port=None):
     fx.boot_program('build/zx/bomber')
     if port:                                                  # the local relay or the forwarder: an IP, no DNS
-        fx.write(0x5b70, b'127.0.0.1\x00')             # printer buffer, after the start stub
-        fx.write(S('_net_relay_host'), bytes([0x70, 0x5b]))
-        fx.write(S('_net_relay_port'), port.to_bytes(2, 'little'))
+        cfg = S('_net_relay_cfg')                             # the field tools/set_relay.py rewrites
+        fx.write(cfg + 8, b'127.0.0.1'.ljust(46, b'\x00') + port.to_bytes(2, 'little'))
     fx.cont()
 
 

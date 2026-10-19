@@ -107,7 +107,10 @@ measured.
 |---|---|---|
 | MZPico, NET extension | Sharp MZ-800 | WebSocket from the card's firmware (WiFi), production relay |
 | Browser player | mzpico.com | the page's WebSocket, production relay |
-| Spectranet / Spectranext | ZX Spectrum | WebSocket from the Spectrum itself (`netdev_soft.c`) |
+| Spectranet / Spectranext | ZX Spectrum 48K, 128K | WebSocket from the Spectrum itself (`netdev_soft.c`) |
+| ESP-01 (eLeMeNt ZX) | ZX Spectrum 128K | the same, over the ESP-01's AT commands |
+| M4 board | Amstrad CPC | the same, over the M4's sockets |
+| FujiNet | Atari XL/XE | the same, over FujiNet's N: device on SIO |
 | Unicard, NET firmware | Sharp MZ-800 | JSON lines over TCP: a self-hosted `relay/relay.py` (LAN), not the production relay |
 
 The production relay is `ws://api.mzpico.com/net` (Cloudflare, one Durable
@@ -118,6 +121,26 @@ self-hosting: WebSocket on 8765, JSON lines over TCP on 8766
 ```
 cd relay && uvicorn relay:app --host 0.0.0.0 --port 8765
 ```
+
+### A relay of your own
+
+Every machine can play through a `relay/relay.py` on a LAN (the Unicard
+only there). Start it on a PC with both ports open to the LAN:
+
+```
+cd relay && RELAY_TCP_HOST=0.0.0.0 uvicorn relay:app --host 0.0.0.0 --port 8765
+```
+
+Then point each machine at that PC (192.168.1.10 here):
+
+| Machine | Where the relay is set |
+|---|---|
+| ZX Spectrum, CPC, Atari | `tools/set_relay.py bomber.tap 192.168.1.10` rewrites the release file (`.tap`, `.dsk`, `.cpc`, `.xex`; the port is 8765 unless given as `host:port`); without an address it shows the file's relay; `api.mzpico.com:80` sets production again |
+| MZ-800 with an MZPico | `mzpico.ini`: `[cloud]` `net_relay = 192.168.1.10`, `net_port = 8765` |
+| MZ-800 with a Unicard | `/unicard/network.cfg`: `NETRELAYADDR`, `NETRELAYPORT` (8766, the TCP port) |
+
+The browser player stays on mzpico.com's relay. On a LAN the input delay
+is the shortest one (2 frames).
 
 A match is lockstep: every frame each machine sends its keys for frame F + d
 and waits for everybody's keys of frame F. The host chooses d from the lobby's
@@ -137,6 +160,7 @@ measurements and the reasoning behind the delay rule: `docs/net-timing.md`.
 | `tools/crossplay.py` | two different machines in one match: MZ-800, Spectrum, CPC, or the 128K with its ESP-01 (`esp`) |
 | `tools/fusex_match.py` | two FuseX with the real Spectranet firmware (`tools/fusex.py` drives FuseX through its GDB server) |
 | `tools/softnet_test.sh` | the software network device on a PC: two processes in one room |
+| `tools/set_relay.py` | not a test: points a release file (Spectrum, CPC, Atari) at another relay |
 | `tools/test_portable.sh` | the PC simulator natively and on big-endian PowerPC (qemu), replaying `tests/recordings`: the core's byte-order check |
 | `tools/sim6502.py` | the core on a 6502 (llvm-mos and its simulator, `c/platform/sim6502`): a recording replayed with its hashes checked, frames timed in cycles |
 | `tools/netbench.py` | network timing of a real-time match, local relay or production, including the play page (`tools/web_join.mjs`, `tools/netproxy.py`) |

@@ -91,7 +91,7 @@ class ZX:
 
     def __init__(self, kind, port=None):
         self.kind = kind
-        self.S = {n: sym_from_map(os.path.join(ROOT, BUILDS[kind][1]), n) for n in NAMES + ('_net_relay_host', '_net_relay_port')}
+        self.S = {n: sym_from_map(os.path.join(ROOT, BUILDS[kind][1]), n) for n in NAMES + ('_net_relay_cfg',)}
         os.environ.setdefault('FUSEX_HOME', make_fusex_home(os.path.join(ROOT, 'build', 'fxhome')))
         self.f = FuseX(os.path.join(ROOT, 'build', 'zx', 'bomber.tap'))
         self.f.attach(); self.f.cont()
@@ -102,9 +102,8 @@ class ZX:
 
     def boot(self):
         self.f.boot_program(os.path.join(ROOT, BUILDS[self.kind][0]))
-        self.f.write(0x5b70, b'127.0.0.1\x00')                 # the local relay: an IP, no DNS
-        self.f.write(self.S['_net_relay_host'], bytes([0x70, 0x5b]))
-        self.f.write(self.S['_net_relay_port'], self.port.to_bytes(2, 'little'))
+        self.f.write(self.S['_net_relay_cfg'] + 8,               # the local relay: an IP, no DNS
+                     b'127.0.0.1'.ljust(46, b'\x00') + self.port.to_bytes(2, 'little'))
         self.f.cont()
 
     def _peek(self, fn):

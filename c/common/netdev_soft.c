@@ -13,8 +13,13 @@
 #define NET_RELAY_HOST "api.mzpico.com"     /* plain ws:// host of mzpico.com */
 #define NET_RELAY_PORT 80
 #endif
-const char *net_relay_host = NET_RELAY_HOST;
-uint16_t net_relay_port = NET_RELAY_PORT;
+/* The relay: tools/set_relay.py finds the marker in a release file (.tap,
+ * .dsk, .cpc, .xex) and rewrites the host and the port, for a relay of
+ * one's own (relay/relay.py on a LAN). */
+struct relay_cfg { char mark[8]; char host[46]; uint16_t port; };
+struct relay_cfg net_relay_cfg = { "BNRELAY", NET_RELAY_HOST, NET_RELAY_PORT };
+const char *net_relay_host = net_relay_cfg.host;
+uint16_t net_relay_port;         /* 0: net_relay_cfg's */
 
 uint8_t net_device;
 
@@ -291,6 +296,7 @@ static uint8_t send_line(void) { return ws_send(out); }   /* out has WS_HDR byte
 static uint8_t room_request(const char *path) {
   uint16_t t;
   if (!net_device) return E_NOLINK;
+  if (!net_relay_port) net_relay_port = net_relay_cfg.port;
   pend = 1; pend_done = 0; pend_err = 0;
   s_state = NETST_READY;
   if (ws_open(net_relay_host, net_relay_port, path) || send_line()) { pend = 0; return E_NOLINK; }
