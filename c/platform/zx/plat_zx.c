@@ -195,6 +195,7 @@ static uint8_t last_tick;
 void plat_frame_sync(void) {                       /* a game frame is three TV frames */
   uint8_t late = (uint8_t)(*FRAMES_LO - last_tick) >= 3;
   while ((uint8_t)(*FRAMES_LO - last_tick) < 3) TONES_DUE();
+  TONES_DUE();                                     /* also after a late frame, which does not wait */
   last_tick = *FRAMES_LO;
   /* A new TV frame has just begun: the beam is in the top border (64 lines,
    * 14,000 T-states) and the joystick ports can be read. After a frame that

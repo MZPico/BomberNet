@@ -141,12 +141,14 @@ static uint8_t last_tick;
 
 void plat_frame_sync(void) {               /* a game frame is three TV frames: 18 interrupts */
   while ((uint8_t)(cpc_ticks - last_tick) < 18) tones_due();
+  tones_due();                             /* also after a late frame, which does not wait */
   last_tick = cpc_ticks;
 }
 
 void plat_delay(void) {                    /* one TV frame */
   uint8_t t = cpc_ticks;
   while ((uint8_t)(cpc_ticks - t) < 6) tones_due();
+  tones_due();
 }
 
 /* ---- sound: the MZ's tones on the AY, the game running on ----
