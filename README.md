@@ -138,6 +138,7 @@ measurements and the reasoning behind the delay rule: `docs/net-timing.md`.
 | `tools/fusex_match.py` | two FuseX with the real Spectranet firmware (`tools/fusex.py` drives FuseX through its GDB server) |
 | `tools/softnet_test.sh` | the software network device on a PC: two processes in one room |
 | `tools/test_portable.sh` | the PC simulator natively and on big-endian PowerPC (qemu), replaying `tests/recordings`: the core's byte-order check |
+| `tools/sim6502.py` | the core on a 6502 (llvm-mos and its simulator, `c/platform/sim6502`): a recording replayed with its hashes checked, frames timed in cycles |
 | `tools/netbench.py` | network timing of a real-time match, local relay or production, including the play page (`tools/web_join.mjs`, `tools/netproxy.py`) |
 | `tools/browser_match.mjs` | two browser tabs play a match on the site |
 | `tools/emu.py` | drives a headless mz800emu over its MCP pipe: load, keys, frame benchmarks, screenshots |
@@ -171,6 +172,7 @@ changed on purpose and how fast it runs: `docs/original.md`.
 | `docs/net-timing.md` | network timing measurements and the 0.2.0 fixes |
 | `docs/port-zx-spectrum.md` | the ZX Spectrum port: feasibility, plan, measurements, FuseX |
 | `docs/port-amstrad-cpc.md` | the Amstrad CPC port with the M4 board: feasibility and plan |
+| `docs/port-atari-xl.md` | the Atari XL/XE port, the first 6502 one: plan and progress |
 | `docs/portability.md` | the rules that keep one C game for Z80, 6502 and 68000 machines |
 | `docs/port-zx128-esp01.md` | the 128K Spectrum with an ESP-01 (Milan Stava's port, brought in step by step): plan and progress |
 | `PLAN.md` | the multiplayer plan the C port followed |
