@@ -6,6 +6,8 @@
 #define JOY_CPC 1               /* the joystick port (matrix line 9), a second stick on line 6 through a splitter */
 #define PLAT_ASM_COMPOSITE 1    /* cpu/z80/loops.c */
 #define PLAT_ASM_HASH 1
-#define CPU_ASM_NETLINE 1       /* the input lines of common/netdev_soft.c in cpu/z80/netline.c */
+#define CPU_ASM_NETLINE 1       /* the input lines of common/netdev_soft.c in cpu/z80/netline.c
+                                   (unused with NET_BINARY_INPUT) */
+#define NET_BINARY_INPUT 1      /* input lines as binary messages (the relay's bin=1): about 7 bytes, not 50 */
 #define PLAT_ASM_TEXT 1         /* print_string, hud_text, title_text* in cpu/z80/loops.c */
 #endif

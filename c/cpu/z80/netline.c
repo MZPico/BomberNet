@@ -3,10 +3,12 @@
  * line into the input window, fmt_input writes ours. The C versions in
  * netdev_soft.c are the reference; this does the same on the variables
  * named there (fi_frame, fi_keys, data, have, s_base, s_nbytes, outbuf).
- * See docs/portability.md. */
+ * Not needed with NET_BINARY_INPUT (the relay's binary input lines). See
+ * docs/portability.md. */
 #include <stdint.h>
 #include "game.h"
 #include "cpu.h"
+#ifndef NET_BINARY_INPUT                  /* with the binary input lines there are no text ones */
 
 
 uint8_t fast_input(const char *l) __z88dk_fastcall __naked {
@@ -269,3 +271,4 @@ fm_mid: defb 44, 34, 100, 97, 116, 97, 34, 58, 34   ; ,data:
 fm_pow: defw 10000, 1000, 100, 10
   __endasm;
 }
+#endif

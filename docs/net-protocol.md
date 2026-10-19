@@ -113,10 +113,11 @@ One socket per device. JSON frames:
 Rooms die 10 minutes after their last message (a host may wait a while). Codes are 4 letters from a
 26-letter alphabet without I/O. A room is bound to (game, build).
 
-**Binary input lines** (`&bin=1` in the URL; staging since 2026-10-19, not
-yet production): for machines on a slow serial bus (the Atari's FujiNet),
-the per-frame input lines go as binary WebSocket messages, about 7 bytes
-instead of about 50; every other message stays JSON, and JSON clients in
+**Binary input lines** (`&bin=1` in the URL; both relays since
+2026-10-19): the per-frame input lines go as binary WebSocket messages,
+about 7 bytes instead of about 50, which matters on a slow link (the Atari's
+FujiNet on SIO, the 128K Spectrum's ESP-01 at 115,200 baud) and saves the
+Z80 machines parsing JSON every frame; every other message stays JSON, and JSON clients in
 the same room see nothing different:
 
 ```
@@ -127,7 +128,9 @@ the same room see nothing different:
 Both relays (`relay/relay.py`, mz-catalog `workers/site/net.js`) translate
 between the two; `relay/test_relay.py` checks a mixed room. In BomberNet the
 platform's `plat_config.h` asks for it with `NET_BINARY_INPUT`
-(`c/common/netdev_soft.c`, `c/common/ws.c`).
+(`c/common/netdev_soft.c`, `c/common/ws.c`): the Atari, the Spectrums (48K,
+128K with ESP-01 or Spectranet) and the CPC. The MZ-800 (`netdev_card.c`: the
+card holds the WebSocket and its input-line rule) stays on JSON lines; the two kinds play in one room.
 
 ## Frame budget
 

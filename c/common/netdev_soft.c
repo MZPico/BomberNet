@@ -143,7 +143,8 @@ static uint16_t avail_frame(void) {
  * generic parser above costs several milliseconds a line on a 3.5 MHz Z80.
  * Input lines are therefore built and read in one pass, on static data. */
 
-#ifndef CPU_ASM_NETLINE                    /* cpu/z80/netline.c on the Z80 machines */
+#if defined(NET_BINARY_INPUT)              /* the input lines are binary messages: no text */
+#elif !defined(CPU_ASM_NETLINE)            /* cpu/z80/netline.c on the Z80 machines */
 static const char *fp;
 static uint16_t fv;
 
@@ -207,7 +208,9 @@ static void link_lost(void) {
 static void handle_line(const char *l) {
   char op[10], hex[34];
   uint16_t v;
+#ifndef NET_BINARY_INPUT
   if (fast_input(l)) return;
+#endif
   jstr(l, "\"op\"", op, sizeof(op));
   if (!strcmp(op, "input")) {                          /* the frequent one first */
     jstr(l, "\"data\"", hex, sizeof(hex));
