@@ -39,8 +39,10 @@ void c64_flush_game(void);
 static const uint8_t player_colours[MAX_PLAYERS] = {5, 7, 1, 14};
 
 /* ---- the cycle clock: CIA 2's timer A counts cycles, timer B its underflows ---- */
-#if defined(C64_TEST)
-static uint32_t cycles(void) {
+#if defined(C64_TEST) || defined(C64_NETTIME)
+uint32_t c64_cycles(void);
+#define cycles c64_cycles
+uint32_t c64_cycles(void) {
   uint8_t bl, bh, al, ah;
   do { bl = REG(0xdd06); bh = REG(0xdd07); ah = REG(0xdd05); al = REG(0xdd04); }
   while (bl != REG(0xdd06) || ah != REG(0xdd05));
@@ -168,8 +170,21 @@ uint8_t plat_break(void) {                      /* RUN/STOP, quickly: row 7 alon
 static uint8_t last_tick, ntsc, ntsc_step;
 static void tones_due(void);
 
+#ifdef C64_NETTIME
+/* frames in a match (tools/crossplay.py reads them): the work from one
+ * frame sync to the next (the network's waits included), the wait in it,
+ * frames that came late */
+__attribute__((used)) struct { uint32_t busy, idle; uint16_t n, late; } c64_frames;
+static uint32_t f_end;
+#endif
+
 void plat_frame_sync(void) {                    /* 60 ms: 3 PAL frames, or 4,3,4,3,4 NTSC ones (3.6) */
   uint8_t need = 3;
+#ifdef C64_NETTIME
+  uint32_t f_in = cycles();
+  if (f_end && !title_mode) { c64_frames.busy += f_in - f_end; c64_frames.n++;
+                              if ((uint8_t)(c64_ticks - last_tick) > need) c64_frames.late++; }
+#endif
   if (ntsc) { need = (ntsc_step & 1) ? 3 : 4; if (++ntsc_step == 5) ntsc_step = 0; }
 #ifdef C64_TEST
   if (t_start && c64_test.n < TEST_FRAMES) {
@@ -182,6 +197,10 @@ void plat_frame_sync(void) {                    /* 60 ms: 3 PAL frames, or 4,3,4
   while ((uint8_t)(c64_ticks - last_tick) < need) tones_due();
   tones_due();
   last_tick = c64_ticks;
+#ifdef C64_NETTIME
+  f_end = cycles();
+  if (!title_mode) c64_frames.idle += f_end - f_in;
+#endif
 }
 
 void plat_delay(void) {

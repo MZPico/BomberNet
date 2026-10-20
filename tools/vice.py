@@ -5,6 +5,7 @@ headless, controlled through its text remote monitor.
   v.mem(addr, n); v.poke(addr, data)
   v.key('SPACE', 1); v.joy(2, 'up', 'fire')     # held until changed
   v.run(seconds); v.screenshot('x.png'); v.close()
+  Vice(prg, wic64=True, log='vice.log')          # a WiC64 on the user port (its trace to log)
 
 Keys go into the keyboard matrix through a local patch of the monitor's
 keybuf command (keybuf "#row col value", see docs/port-c64.md), as the
@@ -34,14 +35,17 @@ def symbols(prg):
 
 
 class Vice:
-    def __init__(self, prg, warp=False, ntsc=False, port=None):
+    def __init__(self, prg, warp=False, ntsc=False, port=None, wic64=False, log=None):
         self.port = port or int(os.environ.get('VICE_MON_PORT', 6510))
         self.prg = os.path.abspath(prg)
         self.sym = symbols(self.prg)
         cmd = [X64, '+logcolorize', '-default', '-sounddev', 'dummy', '-remotemonitor', '-remotemonitoraddress',
                f'ip4://127.0.0.1:{self.port}',
-               '-autostartprgmode', '1', '-ntsc' if ntsc else '-pal', *(['-warp'] if warp else []), '-autostart', self.prg]
-        self.p = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+               '-autostartprgmode', '1', '-ntsc' if ntsc else '-pal', *(['-warp'] if warp else []),
+               *(['-userportdevice', '23'] if wic64 else []),     # USERPORT_DEVICE_WIC64
+               *(['-wic64trace', '-wic64tracelevel', '1'] if wic64 and log else []), '-autostart', self.prg]
+        out = open(log, 'w') if log else subprocess.DEVNULL
+        self.p = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT)
         self.s = None
         for _ in range(100):
             try: self._connect(); break

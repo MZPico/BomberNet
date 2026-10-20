@@ -1,14 +1,16 @@
 #!/usr/bin/env python3
 """Two different machines in one network match: a Sharp MZ-800, a ZX
-Spectrum and an Amstrad CPC, any two of them.
+Spectrum, an Amstrad CPC and a Commodore 64, any two of them.
 
 The MZ runs in mz800emu with its MZPico card emulated (JSON-lines TCP to the
 relay), the Spectrum in tools/zxemu.py with a Spectranet and the CPC in
 tools/cpcemu.py with an M4 board (both WebSocket to the relay). They go
 through the same relay and meet in one room; the driver advances them side
-by side, one TV frame each in turn, and compares their state hashes.
+by side, one TV frame each in turn, and compares their state hashes. The
+C64 runs in VICE with a WiC64 (tools/vice.py), in real time on its own: its
+TV frame is 20 ms of waiting, and it stands still while it is read.
 
-  tools/crossplay.py [steps] [host] [joiner]   machines: mz, zx, cpc, esp; default mz zx
+  tools/crossplay.py [steps] [host] [joiner]   machines: mz, zx, cpc, esp, c64; default mz zx
                                                (esp: build/zx128, an eLeMeNt with its ESP-01)
                                                (the second argument alone: mz or zx hosts the other)
   PLAYERS=3 LOCAL_HOST=2 LOCAL_JOIN=1   seats: players in total, local players per machine
@@ -22,6 +24,8 @@ os.environ.setdefault('MZ800EMU_CFG', os.path.join(HERE, '..', 'build', 'emucfg_
 from emu import Emu, sym_from_map
 from zxemu import ZX
 from cpcemu import CPC
+from vice import Vice
+import set_relay
 
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 80
 HOST = sys.argv[2] if len(sys.argv) > 2 else 'mz'
@@ -116,6 +120,55 @@ class Amstrad:
     def close(self): pass
 
 
+class Commodore:
+    """VICE with a WiC64 (tools/vice.py), running in real time; a copy of
+    build/c64/bomber.prg pointed at the local relay (tools/set_relay.py)."""
+    kind = 'C64'
+    keys = {'fire': 'SPACE', 'walk': 'CRSR_RIGHT'}
+
+    def __init__(self):
+        build = os.environ.get('C64_BUILD', 'build/c64')
+        out = build + '/net'; os.makedirs(out, exist_ok=True)
+        for ext in ('', '.elf'):
+            open(f'{out}/bomber.prg{ext}', 'wb').write(open(f'{build}/bomber.prg{ext}', 'rb').read())
+        set_relay.main([f'{out}/bomber.prg', '127.0.0.1:8765'])
+        self.v = Vice(f'{out}/bomber.prg', wic64=True, log=f'{out}/vice.log')
+        self.v.run()
+
+    def rd(self, n, k=1): return self.v.mem(n.lstrip('_'), k)
+    def r8(self, n): return self.rd(n)[0]
+    def r16(self, n): return int.from_bytes(self.rd(n, 2), 'little')
+    def wr(self, n, bs): self.v.poke(n.lstrip('_'), bytes(bs))
+    def tv_frame(self): self.v.run(0.02)
+    def press(self, k): self.v.key(self.keys.get(k, k), 1)
+    def release(self, k): self.v.key(self.keys.get(k, k), 0)
+    def close(self): self.v.close()
+
+    def reset_net(self):
+        """the driver's counters from the game's start on (a C64_NETTIME build)"""
+        if 'c64_net' in self.v.sym:
+            self.v.poke('c64_net', bytes(20)); self.v.poke('c64_frames', bytes(12)); self.f0 = self.r16('_frame_no')
+
+    def report(self, frames):
+        """the WiC64 driver's cost (a C64_NETTIME build): per game frame"""
+        if 'c64_net' not in self.v.sym: return
+        frames -= self.f0
+        d = self.v.mem('c64_net', 20)
+        total, waits = int.from_bytes(d[0:4], 'little'), int.from_bytes(d[4:8], 'little')
+        t_out, t_in = int.from_bytes(d[12:16], 'little'), int.from_bytes(d[16:20], 'little')
+        cmds, nbytes = d[8] | d[9] << 8, d[10] | d[11] << 8
+        ms = lambda c: c / frames / 985.248
+        print(f'C64 WiC64 driver per frame ({frames} frames): {cmds / frames:.2f} commands, {nbytes / frames:.1f} bytes, '
+              f'{ms(total):.2f} ms in the driver, of it {ms(waits):.2f} ms waiting for replies (VICE: a TV frame for a TCP '
+              f'read or write), so {ms(total - waits):.2f} ms of the C64\'s own work: sending bytes {ms(t_out):.2f} ms, '
+              f'receiving {ms(t_in):.2f} ms', flush=True)
+        d = self.v.mem('c64_frames', 12)
+        busy, idle = int.from_bytes(d[0:4], 'little'), int.from_bytes(d[4:8], 'little')
+        n, late = d[8] | d[9] << 8, d[10] | d[11] << 8
+        print(f'C64 frames ({n}): {busy / n / 985.248:.1f} ms of work (the waits for the WiC64 in it), '
+              f'{idle / n / 985.248:.1f} ms idle; {late} late (over 60 ms)', flush=True)
+
+
 def run(n, *ms):
     for _ in range(n):
         for m in ms: m.tv_frame()
@@ -129,7 +182,7 @@ def until(cond, limit, *ms):
 
 
 t0 = time.time()
-MACHINES = {'mz': MZ, 'zx': Spectrum, 'cpc': Amstrad, 'esp': Element}
+MACHINES = {'mz': MZ, 'zx': Spectrum, 'cpc': Amstrad, 'esp': Element, 'c64': Commodore}
 host, join = MACHINES[HOST](), MACHINES[JOIN]()
 both = (host, join)
 run(90, *both)                                                    # both titles up and settled
@@ -145,7 +198,8 @@ print(f'{host.kind} hosts room {code.decode()}, {join.kind} joins', flush=True)
 join.wr('_net_code', code)
 join.press('fire'); run(TAP, *both); join.release('fire'); run(TAP, *both)   # code screen
 join.press('fire'); run(TAP, *both); join.release('fire')                    # join
-if not until(lambda: join.r8('_net_slot') == 1, 1500, *both):
+joined = (lambda: join.r8('_s_state') >= 2) if join.kind == 'C64' else (lambda: join.r8('_net_slot') == 1)   # C64: LTO keeps no net_slot
+if not until(joined, 1500, *both):
     if hasattr(join, 'z'): join.z.screenshot('build/cross_join.png')
     sys.exit(f'join failed: title_mode {join.r8("_title_mode")} menu_net {join.r8("_menu_net")} code {join.rd("_net_code", 4)}')
 run(120, *both)                                                       # lobby: delay measured, seat table
@@ -155,6 +209,8 @@ if not until(lambda: host.r8('_title_mode') == 0 and join.r8('_title_mode') == 0
     sys.exit(f'did not start: title_mode {host.kind} {host.r8("_title_mode")} {join.kind} {join.r8("_title_mode")}')
 print(f'in game: net_active {host.kind} {host.r8("_net_active")} {join.kind} {join.r8("_net_active")}, delay {host.kind} {host.r8("_net_delay")} '
       f'{join.kind} {join.r8("_net_delay")}, seats {host.kind} {host.rd("_net_table", 4).hex()} {join.kind} {join.rd("_net_table", 4).hex()}', flush=True)
+for m in both:
+    if m.kind == 'C64': m.reset_net()
 host.press('walk'); join.press('walk')                                # inputs cross between the machines
 seen = {m.kind: {} for m in both}
 start = [m.r16('_frame_no') for m in both]
@@ -186,7 +242,10 @@ print(f'done: frames {H} {host.r16("_frame_no")} {J} {join.r16("_frame_no")}, {l
 fh, fj = host.rd('_map_layer', 1000), join.rd('_map_layer', 1000)
 print(f'fields identical: {fh == fj} (read at frames {H} {host.r16("_frame_no")}, {J} {join.r16("_frame_no")})')
 for m in both:
+    if m.kind == 'C64': m.report(m.r16('_frame_no'))
+for m in both:
     if hasattr(m, 'z'): m.z.screenshot(f'build/cross_{m.kind.lower()}.png')
+    elif m.kind == 'C64': m.v.screenshot('build/cross_c64.png')
     elif m.kind == 'CPC': m.c.screenshot('build/cross_cpc.png')
     else: m.e.screenshot('build/cross_mz.png')
 for m in both: m.close()

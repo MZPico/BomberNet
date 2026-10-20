@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """The Commodore 64 build (llvm-mos, c64 target): build/c64/bomber.prg, and
 build/c64/bomber.d64 with it as BOMBERNET (VICE's c1541, when there is one).
+The network is always in: a WiC64 on the user port (tcp_wic64.c).
 
-  tools/build_c64.py [--test recording.bnr [--frames n]] [-O2|-Os]
+  tools/build_c64.py [--test recording.bnr [--frames n]] [-O2|-Os] [--out dir]
 
 --test: C64_TEST, the recording compiled in and replayed from the title on;
 each game frame's work is timed in cycles (tools/c64_test.py reads the
@@ -14,9 +15,10 @@ import os, re, subprocess, sys
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 SDK = os.environ.get('LLVM_MOS', os.path.expanduser('~/src/llvm-mos-dl/llvm-mos'))
-out = os.path.join(ROOT, 'build', 'c64'); os.makedirs(out, exist_ok=True)
+out = sys.argv[sys.argv.index('--out') + 1] if '--out' in sys.argv else os.path.join(ROOT, 'build', 'c64')
+os.makedirs(out, exist_ok=True)
 opts = [a for a in sys.argv[1:] if a.startswith('-O')] or ['-Os']
-flags = list(opts) + os.environ.get('CFLAGS_C64', '').split()
+flags = list(opts) + ['-mlto-zp=108'] + os.environ.get('CFLAGS_C64', '').split()   # 2 bytes of zero page for c64.s (wic64_ptr)
 if '--test' in sys.argv:
     data = open(sys.argv[sys.argv.index('--test') + 1], 'rb').read()
     if '--frames' in sys.argv: data = data[:16 + 6 * int(sys.argv[sys.argv.index('--frames') + 1])]
@@ -28,7 +30,7 @@ if '--test' in sys.argv:
 c = os.path.join(ROOT, 'c')
 src = [f'{c}/core/{n}.c' for n in ('bomber', 'netplay', 'data', 'map', 'game', 'input', 'video', 'enemy', 'bomb', 'player')]
 src += [f'{c}/platform/c64/{n}' for n in ('plat_c64.c', 'tables.c', 'c64.s')]
-src += [f'{c}/cpu/6502/loops.s', f'{c}/common/netdev_none.c']
+src += [f'{c}/cpu/6502/loops.s', f'{c}/platform/c64/tcp_wic64.c', f'{c}/common/netdev_soft.c', f'{c}/common/ws.c']
 inc = [f'-I{c}/core', f'-I{c}/common', f'-I{c}/platform/c64', f'-I{out}']
 prg = os.path.join(out, 'bomber.prg')
 r = subprocess.run([f'{SDK}/bin/mos-c64-clang', *flags, *inc, *src, '-o', prg, '-Wl,--gc-sections'], capture_output=True, text=True)

@@ -24,7 +24,9 @@ the same work: llvm-mos (its `c64` target), the 6502 helpers in
    letters), the title and lobby screens, tones, joysticks; play in VICE.
    Done, see below; play on a real C64 or by people in VICE still to come.
 2. **The network**: the device's `tcp.h`, its cost per frame, lockstep and
-   cross-play tests, the production relay.
+   cross-play tests, the production relay. The WiC64 driver works in VICE
+   with every other machine; its cost on real hardware decides what comes
+   next, see below.
 3. **Hardware test, release.** `set_relay.py` learns `.d64` (the sector
    chain); a `.prg` already works as a plain file.
 
@@ -129,6 +131,53 @@ the KERNAL's buffer, which the game does not read) and its joystick
 simulation device did not work, so VICE carries a small local patch
 (`tools/c64/vice-3.9-keybuf.patch`): `keybuf "#row col 1|0"` holds a
 matrix key down or lets it go, `keybuf "#J port bits"` sets a joystick.
+
+## Step 2: the WiC64
+
+`c/platform/c64/tcp_wic64.c`: `tcp.h` over a WiC64's TCP commands (open
+"host:port", read, write, close; the firmware's version to find it), its
+"revised" protocol as VICE 3.9 emulates it and as the official library
+(github.com/WiC64-Team/wic64-library) does it: PA2 high and port B out to
+send ('R', the command, the length, the payload), each byte answered by
+FLAG2; PA2 low and port B in to receive (FLAG2, a dummy read, then the
+status, the length, the payload, each byte after FLAG2). The bytes go by
+`wic64_out` / `wic64_in` (`c64.s`, about 25 cycles a byte). A TCP read
+answers at once with what is waiting, nothing when nothing is
+(wic64-firmware `TcpClient::read`, up to 8 KB), so a frame needs no
+"available" command; after a read that took everything the next
+`tcp_recv` answers "nothing" without asking, as on the Atari. The network
+is in every build (38.5 KB); without a WiC64 the game finds none.
+
+Tested in VICE with its WiC64 (`-userportdevice 23`), against the local
+relay (`tools/crossplay.py`, machine `c64`): the C64 hosting a Spectrum
+(1+1 and 2+2 players), the CPC and the 128K with its ESP-01, and joining
+a Spectrum and an MZ-800 (JSON lines): 200-300 frames each, every hash
+equal, no aborts.
+
+**The cost.** VICE's WiC64 answers a TCP read or write a TV frame later
+(its alarms) and its byte handshakes do not follow the hardware either:
+its times vary from run to run and say nothing about a real WiC64. From
+the firmware's source (`userport.cpp`, `service.cpp`), every request
+passes pauses of its own (FreeRTOS at 1 kHz): 3 ms after a transfer
+completes, 1 ms before it sends, 5 ms between the parts of a split
+transfer. Per network frame:
+
+| | estimate |
+|---|---|
+| the C64's own transfers (about 65 bytes) | about 2 ms |
+| TCP write, our input line: 3 + 5 + 1 + 3 + 1 ms of pauses | about 13 ms |
+| TCP read, the others' lines: 3 + 1 + 5, then 3 + 1 + 5 ms | about 18 ms |
+| the 3 ms after each before the next request is taken | about 6 ms |
+| together, the C64 waiting throughout | about 39 ms |
+
+With 43 ms of game work that is about 82 ms a frame: a match with a C64
+would run at about 73 % speed (lockstep: all machines with it). To be
+measured on a real WiC64.
+
+`C64_NETTIME` (`CFLAGS_C64=-DC64_NETTIME tools/build_c64.py --out
+build/c64nt`; `C64_BUILD=build/c64nt tools/crossplay.py ... c64 ...`)
+counts the driver's commands, bytes and cycles and the frames' work: on a
+real C64 it would show these figures measured.
 
 VICE: built from source into `~/src/vice/dist` (`--enable-headlessui
 --with-libcurl`; it needs `xa` and `dos2unix`), with
