@@ -68,6 +68,12 @@ c64_irq:
         inc c64_ticks
         jmp 0xea81
 
+; RESTORE's NMI (through $0318): nothing
+        .section .text.c64_nmi,"ax",@progbits
+        .global c64_nmi
+c64_nmi:
+        rti
+
         .section .bss.c64_ticks,"aw",@nobits
         .global c64_ticks
 c64_ticks:

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""The Commodore 64 build (llvm-mos, c64 target): build/c64/bomber.prg.
+"""The Commodore 64 build (llvm-mos, c64 target): build/c64/bomber.prg, and
+build/c64/bomber.d64 with it as BOMBERNET (VICE's c1541, when there is one).
 
   tools/build_c64.py [--test recording.bnr [--frames n]] [-O2|-Os]
 
@@ -7,7 +8,8 @@
 each game frame's work is timed in cycles (tools/c64_test.py reads the
 figures through VICE's monitor); --frames: only its first n frames.
 CFLAGS_C64: more compiler flags (-DTEST_HASH_OFF: a standalone game).
-LLVM_MOS: the SDK (default ~/src/llvm-mos-dl/llvm-mos)."""
+LLVM_MOS: the SDK (default ~/src/llvm-mos-dl/llvm-mos); C1541: VICE's disk
+tool (default ~/src/vice/dist/bin/c1541)."""
 import os, re, subprocess, sys
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
@@ -34,3 +36,9 @@ if r.returncode: sys.exit(r.stderr[-4000:])
 nm = subprocess.run([f'{SDK}/bin/llvm-nm', prg + '.elf'], capture_output=True, text=True).stdout
 end = int(re.search(r'^([0-9a-f]+) \w __heap_start$', nm, re.M).group(1), 16)
 print(f'{prg}: {os.path.getsize(prg)} bytes, $0801-${end:04X} ({" ".join(flags)})')
+C1541 = os.environ.get('C1541', os.path.expanduser('~/src/vice/dist/bin/c1541'))
+if os.path.exists(C1541):
+    d64 = os.path.join(out, 'bomber.d64')
+    if os.path.exists(d64): os.remove(d64)
+    subprocess.run([C1541, '-format', 'bombernet,bn', 'd64', d64, '-write', prg, 'bombernet'],
+                   check=True, capture_output=True)

@@ -22,6 +22,7 @@ the same work: llvm-mos (its `c64` target), the 6502 helpers in
    replaying recordings in VICE, its frames timed. Done, see below.
 1. **The platform layer**: keyboard (two key sets, the room code's
    letters), the title and lobby screens, tones, joysticks; play in VICE.
+   Done, see below; play on a real C64 or by people in VICE still to come.
 2. **The network**: the device's `tcp.h`, its cost per frame, lockstep and
    cross-play tests, the production relay.
 3. **Hardware test, release.** `set_relay.py` learns `.d64` (the sector
@@ -85,6 +86,52 @@ the hash in assembly (`PLAT_ASM_HASH`, about 6 ms of the 43 are the
 hash's frames), or the core tracking changed cells instead of comparing
 all 960 every frame.
 
+## Step 1: the platform layer
+
+Input (`plat_c64.c`): the program scans CIA 1's keyboard matrix itself (the
+KERNAL's scan is off).
+
+| Source | Keys |
+|---|---|
+| key set A, "CURSOR AND SPACE" | the two cursor keys for right and down, with either SHIFT for left and up; SPACE fires (RETURN when another player has key set B: "CURSOR AND RET", as the CPC's COPY) |
+| key set B, "WASD AND E" | W A S D, E fires |
+| joysticks 1 and 2 | the two control ports |
+| text entry (the room code) | the letters; INST/DEL deletes, RUN/STOP cancels |
+
+RUN/STOP leaves a network match, as BREAK does elsewhere; RESTORE does
+nothing (its NMI goes to an RTI: the KERNAL's would stop the program).
+Joystick 1 shares its lines with the matrix's columns: what it holds down
+is left out of the scan, so it makes no phantom keys. Joystick 2 shares
+the rows, which a scan cannot tell apart (as in most C64 games): a
+keyboard player and a joystick in port 2 can disturb each other's keys,
+so beside a keyboard player a joystick player best uses port 1.
+
+The title and the lobby are the MZ's screens as they are (the title
+table's characters in its colours), and so is the game's status line, with
+the players' numbers, lives and scores in their colours.
+
+Tested in VICE (`tools/c64_play.py`, real time): the title, the menu by the
+cursor keys (down, SHIFT + down for up), SPACE to start, then a 4-player
+deathmatch where every input moves its player: key set A in all four
+directions, key set B, joystick 1 and joystick 2; bombs from all four. A
+scratch program checked text entry: all 26 letters, INST/DEL, RUN/STOP, and
+joystick 1 held without phantom keys. `tools/build_c64.py` also writes
+`build/c64/bomber.d64` (VICE's `c1541`), which autostarts from the drive.
+The recordings still replay with equal hashes (dm4: median 42.5 ms).
+
+Tones: the MZ's tone dividers on the SID (triangle, voices 1 and 2), the
+game running on, as on the CPC and the Atari; not yet heard by anyone.
+
+`tools/vice.py` drives VICE: start it headless, read and write memory
+through the remote monitor, hold keys and joysticks, take screenshots. The
+monitor has no command for the keyboard matrix (its `keybuf` types into
+the KERNAL's buffer, which the game does not read) and its joystick
+simulation device did not work, so VICE carries a small local patch
+(`tools/c64/vice-3.9-keybuf.patch`): `keybuf "#row col 1|0"` holds a
+matrix key down or lets it go, `keybuf "#J port bits"` sets a joystick.
+
 VICE: built from source into `~/src/vice/dist` (`--enable-headlessui
---with-libcurl`; it needs `xa` and `dos2unix`). VICE 3.9 crashes when it
-logs in colour to a pipe, so it runs with `+logcolorize`.
+--with-libcurl`; it needs `xa` and `dos2unix`), with
+`tools/c64/vice-3.9-keybuf.patch` applied to `src/monitor/monitor.c`. VICE
+3.9 crashes when it logs in colour to a pipe, so it runs with
+`+logcolorize`.

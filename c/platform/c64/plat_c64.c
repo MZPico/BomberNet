@@ -10,7 +10,13 @@
  * Time: a raster interrupt once a TV frame (c64.s); a frame is 3 PAL
  * frames, or 4,3,4,3,4 NTSC ones. The KERNAL stays mapped; its CIA 1 timer
  * interrupt (keyboard scan, clock) is off.
- * Input (for now): the two joysticks; SPACE and RUN/STOP. */
+ * Input: the keyboard (CIA 1's matrix, scanned here: the KERNAL's scan is
+ * off) with two key sets, and the two joysticks. Key set A is the cursor
+ * keys, SHIFT with them for up and left, and SPACE (RETURN when two players
+ * share the keyboard); key set B is W A S D and E. Joystick 1's lines are
+ * the matrix's columns: what it holds down is left out of the scan.
+ * Joystick 2's lines are its rows, which a scan cannot tell apart (as in
+ * most C64 games). RUN/STOP cancels, INST/DEL deletes, RESTORE does nothing. */
 #include <stdint.h>
 #include <string.h>
 #include "game.h"
@@ -25,6 +31,7 @@
 
 extern volatile uint8_t c64_ticks;        /* c64.s: +1 every TV frame */
 void c64_irq(void);
+void c64_nmi(void);
 void c64_flush_game(void);
 
 /* the MZ players' colours (green, yellow, white, blue; the blue light, to be
@@ -59,11 +66,12 @@ struct {
 
 /* ---- menus and input ---- */
 const char *const plat_joy_names[PLAT_JOY_TYPES] = {"NONE    ", "C64     "};
-const char *const plat_kbd_a_alt_name = "SPACE           ";
+const char *const plat_kbd_a_alt_name = "CURSOR AND RET  ";
 
 const char *plat_input_name(uint8_t input) {
   switch (input) {
-  case INPUT_KBD_A: return "SPACE           ";
+  case INPUT_KBD_A: return "CURSOR AND SPACE";
+  case INPUT_KBD_B: return "WASD AND E      ";
   case INPUT_JOY1:  return "JOYSTICK 1      ";
   case INPUT_JOY2:  return "JOYSTICK 2      ";
   }
@@ -72,28 +80,57 @@ const char *plat_input_name(uint8_t input) {
 
 uint8_t plat_input_allowed(uint8_t input) {
   if (input == INPUT_JOY1 || input == INPUT_JOY2) return joy_type != JOY_NONE;
-  return input == INPUT_KBD_A;
+  return 1;
 }
 
-static uint8_t row(uint8_t sel) {         /* a keyboard matrix row (0 bits: keys down) */
-  uint8_t v;
-  CIA1_PRA = sel;
-  v = CIA1_PRB;
+/* The matrix, rows 0-7 (a 0 bit of CIA 1's port A selects one) by columns
+ * 0-7 (port B, 0 bits: keys down). The keys used:
+ *   row 0: INST/DEL 0, RETURN 1, CRSR right 2, CRSR down 7
+ *   row 1: W 1, A 2, Z 4, S 5, E 6, left SHIFT 7
+ *   row 2: R 1, D 2, C 4, F 5, T 6, X 7     row 3: Y 1, G 2, B 4, H 5, U 6, V 7
+ *   row 4: I 1, J 2, M 4, K 5, O 6, N 7     row 5: P 1, L 2
+ *   row 6: right SHIFT 4                    row 7: SPACE 4, Q 6, RUN/STOP 7 */
+static uint8_t kb[8];                           /* keys down: 1 bits */
+static void scan(void) {
+  uint8_t r, sel = 0xfe, joy1;
   CIA1_PRA = 0xff;
-  return v;
+  joy1 = (uint8_t)~CIA1_PRB;                    /* joystick 1 alone: its columns */
+  for (r = 0; r < 8; r++, sel = (uint8_t)(sel << 1 | 1)) {
+    CIA1_PRA = sel;
+    kb[r] = (uint8_t)(~CIA1_PRB & ~joy1);
+  }
+  CIA1_PRA = 0xff;
 }
+#define DOWN(r, c) (kb[r] & (1 << (c)))
 
 uint8_t plat_keys_a(void) {
+  uint8_t k = 0, shift;
 #ifdef C64_TEST
   return title_mode && (frames & 1) ? KEY_SPACE : 0;
 #endif
-  return (row(0x7f) & 0x10) ? 0 : KEY_SPACE;        /* SPACE: row 7, column 4 */
+  scan();
+  shift = DOWN(1, 7) || DOWN(6, 4);
+  if (DOWN(0, 2)) k |= shift ? KEY_LEFT : KEY_RIGHT;
+  if (DOWN(0, 7)) k |= shift ? KEY_UP : KEY_DOWN;
+  if (kbd_alt_fire ? DOWN(0, 1) : DOWN(7, 4)) k |= KEY_SPACE;
+  return k;
 }
 
-uint8_t plat_keys_b(void) { return 0; }
+uint8_t plat_keys_b(void) {
+  uint8_t k = 0;
+  scan();
+  if (DOWN(1, 1)) k |= KEY_UP;
+  if (DOWN(1, 5)) k |= KEY_DOWN;
+  if (DOWN(1, 2)) k |= KEY_LEFT;
+  if (DOWN(2, 2)) k |= KEY_RIGHT;
+  if (DOWN(1, 6)) k |= KEY_SPACE;
+  return k;
+}
 
 uint8_t plat_joy(uint8_t n) {               /* port 1 (n 0) and port 2: up, down, left, right, fire low */
-  uint8_t s = n ? CIA1_PRA : CIA1_PRB, k = 0;
+  uint8_t s, k = 0;
+  CIA1_PRA = 0xff;
+  s = n ? CIA1_PRA : CIA1_PRB;
   if (!(s & 1)) k |= KEY_UP;
   if (!(s & 2)) k |= KEY_DOWN;
   if (!(s & 4)) k |= KEY_LEFT;
@@ -102,9 +139,30 @@ uint8_t plat_joy(uint8_t n) {               /* port 1 (n 0) and port 2: up, down
   return k;
 }
 
-uint8_t plat_key_char(void) { return plat_break() ? 0x1b : 0; }   /* letters: step 1 */
+/* text entry: letters, INST/DEL deletes, RUN/STOP cancels */
+static const char letters[6][8] = {             /* rows 1 to 5 and 7, by column */
+  {0, 'W', 'A', 0, 'Z', 'S', 'E', 0}, {0, 'R', 'D', 0, 'C', 'F', 'T', 'X'}, {0, 'Y', 'G', 0, 'B', 'H', 'U', 'V'},
+  {0, 'I', 'J', 0, 'M', 'K', 'O', 'N'}, {0, 'P', 'L', 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 'Q', 0}};
+uint8_t plat_key_char(void) {
+  uint8_t r, c, row;
+  scan();
+  if (DOWN(7, 7)) return 0x1b;
+  if (DOWN(0, 0)) return 8;
+  for (r = 0; r < 6; r++) {
+    row = kb[r == 5 ? 7 : r + 1];
+    for (c = 0; c < 8; c++)
+      if ((row & (1 << c)) && letters[r][c]) return (uint8_t)letters[r][c];
+  }
+  return 0;
+}
 
-uint8_t plat_break(void) { return !(row(0x7f) & 0x80); }           /* RUN/STOP: row 7, column 7 */
+uint8_t plat_break(void) {                      /* RUN/STOP, quickly: row 7 alone */
+  uint8_t v;
+  CIA1_PRA = 0x7f;
+  v = CIA1_PRB;
+  CIA1_PRA = 0xff;
+  return !(v & 0x80);
+}
 
 /* ---- time ---- */
 static uint8_t last_tick, ntsc, ntsc_step;
@@ -241,6 +299,7 @@ void plat_init(void) {
   REG(0xd418) = 0x0f;
   /* the frame clock: a raster interrupt at line 251 */
   *(void (**)(void))0x314 = c64_irq;
+  *(void (**)(void))0x318 = c64_nmi;             /* RESTORE: nothing (the KERNAL would stop the program) */
   REG(0xd012) = 251;
   REG(0xd011) &= 0x7f;
   REG(0xd019) = 1;
