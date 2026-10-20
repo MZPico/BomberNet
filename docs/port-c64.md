@@ -160,8 +160,15 @@ the next byte in. The WiC64 answers a byte within microseconds, so the next
 FLAG2 comes while the handler still runs: that nested NMI only notes it,
 and the first handler takes the step before it leaves (at most two deep).
 `tcp_send` appends to one of two buffers, and one write command sends all
-that was queued; `tcp_recv` hands out what the last read brought and asks
-for the next (it answers "nothing" meanwhile). A command starts 2 ms after
+that was queued; reads go into a 2 KB ring, from which `tcp_recv` hands
+out; a read starts when `tcp_recv` finds the ring empty (it answers
+"nothing" meanwhile), and by itself 8 TV frames after the last one: between
+stages the game does not poll the network for seconds (the time bonus),
+and stock VICE then answers a read nobody asked for and drops its bytes.
+That froze a co-op match at its second stage (reported with the browser
+player); `tools/crossplay.py` with `GAP=n` stops the C64's polling for 5 s
+at game frame n, the partner sending on: the previous driver stuck at the
+gap, this one plays on. A command starts 2 ms after
 the last one ended (CIA 1's timer B), as VICE's WiC64 sends one more FLAG2
 after a reply's last byte; the raster interrupt starts whatever was missed.
 An error status, a read bigger than its 2 KB buffer, or a command stuck for

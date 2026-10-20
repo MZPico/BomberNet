@@ -14,6 +14,8 @@ TV frame is 20 ms of waiting, and it stands still while it is read.
                                                (esp: build/zx128, an eLeMeNt with its ESP-01)
                                                (the second argument alone: mz or zx hosts the other)
   PLAYERS=3 LOCAL_HOST=2 LOCAL_JOIN=1   seats: players in total, local players per machine
+  MODE=0                                co-op (default 1, deathmatch)
+  GAP=100                               the C64 stops polling the network for 5 s at game frame 100
 Needs the local relay (relay/relay.py) on 8765 (WebSocket) and 8766 (TCP),
 and the MZ build (build/c) and the Spectrum build (build/zx).
 """
@@ -144,6 +146,19 @@ class Commodore:
     def release(self, k): self.v.key(self.keys.get(k, k), 0)
     def close(self): self.v.close()
 
+    def gap(self, secs, *others):
+        """the game stops polling the network for secs (as between stages):
+        its main program waits in a JMP * at $033C, interrupts running; the
+        others run on (their input lines arrive meanwhile)"""
+        r = self.v.cmd('r')
+        pc = r.split('.;')[1][:4]
+        self.v.poke(0x033c, [0x4c, 0x3c, 0x03])
+        self.v.cmd('r pc = 033c')
+        self.v.run()
+        t = time.time()
+        while time.time() - t < secs: run(1, *others)
+        self.v.cmd(f'r pc = {pc}')
+
     def reset_net(self):
         """the counters from the game's start on (a C64_NETTIME build)"""
         if 'c64_frames' in self.v.sym:
@@ -182,7 +197,7 @@ host, join = MACHINES[HOST](), MACHINES[JOIN]()
 both = (host, join)
 run(90, *both)                                                    # both titles up and settled
 PLAYERS, LOCAL_H, LOCAL_J = int(os.environ.get('PLAYERS', 2)), int(os.environ.get('LOCAL_HOST', 1)), int(os.environ.get('LOCAL_JOIN', 1))
-host.wr('_menu_mode', [1]); host.wr('_menu_players', [PLAYERS]); host.wr('_menu_net', [1]); host.wr('_menu_local', [LOCAL_H])
+host.wr('_menu_mode', [int(os.environ.get('MODE', 1))]); host.wr('_menu_players', [PLAYERS]); host.wr('_menu_net', [1]); host.wr('_menu_local', [LOCAL_H])
 join.wr('_menu_net', [2]); join.wr('_menu_local', [LOCAL_J])
 run(3, *both)
 before = host.rd('_net_code', 4)
@@ -223,8 +238,13 @@ def collect(m):
         if f % HP: seen[m.kind][(f // HP) * HP] = m.r16('_state_hash')
 
 
+GAP = int(os.environ.get('GAP', 0))       # GAP=n: at game frame n the C64 stops polling for 5 s
 while min(m.r16('_frame_no') - s0 for m, s0 in zip(both, start)) < N:
     run(1, *both)
+    for m in both:
+        if GAP and m.kind == 'C64' and m.r16('_frame_no') >= GAP:
+            print(f'C64 at frame {m.r16("_frame_no")}: 5 s without polling', flush=True)
+            m.gap(5, *[o for o in both if o is not m]); GAP = 0
     for m in both: collect(m)
     if host.r8('_net_abort') or join.r8('_net_abort'): break
 H, J = host.kind, join.kind

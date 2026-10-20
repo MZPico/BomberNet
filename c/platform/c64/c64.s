@@ -166,8 +166,11 @@ wic64_tmo:
 ; port B in and PA2 low; then the reply is there (FLAG2): the dummy read;
 ; then the status and the length, then the payload, a byte each FLAG2.
 ; Writes: tcp_send appends to one of two buffers, and a write command sends
-; all that was queued. Reads: tcp_recv asks (eng_wantread), the reply's
-; payload goes to eng_rx. A command starts 2 ms after the last one ended
+; all that was queued. Reads: when tcp_recv asks (eng_wantread), or by
+; themselves 8 TV frames after the last one (the game does not poll the
+; network between stages, for seconds; stock VICE then answers a read
+; nobody asked for and drops its bytes), into the ring eng_rx: the NMI
+; moves eng_head when a read ends, tcp_recv moves eng_tail. A command starts 2 ms after the last one ended
 ; (CIA 1 timer B, c64_irq): VICE's WiC64 sends one more FLAG2 after a
 ; reply's last byte, which must not answer the next command's first byte.
 
@@ -177,7 +180,7 @@ wic64_tmo:
         .set E_HDR, 3
         .set E_DATA, 4
         .set WMAX, 512           ; a write buffer's payload
-        .set RXMAX, 2048         ; a read's payload (more: taken as lost)
+        .set RXMAX, 2048         ; the ring (a read is started with 1 KB free; one that does not fit: lost)
 
 ; NMI (the KERNAL's entry $FE43: SEI, JMP ($0318)): FLAG2, or RESTORE
 ; (nothing). The WiC64 answers a byte within microseconds, so the next
@@ -223,6 +226,11 @@ nmi_step:
         inc wic64_ptr
         bne 2f
         inc wic64_ptr+1
+        lda wic64_ptr+1
+        cmp #>(eng_rx + RXMAX)
+        bne 2f
+        lda #>eng_rx            ; the ring's end: its start
+        sta wic64_ptr+1
 2:      lda eng_left
         bne 3f
         dec eng_left+1
@@ -300,17 +308,25 @@ st_hdr:                         ; the status, the length (low, high)
         sta eng_discard
         lda eng_job
         beq 7f                  ; a write's payload: dropped
-        lda eng_left+1
-        cmp #RXMAX >> 8
-        bcc 8f
-        lda #1                  ; a read too big for eng_rx: lost
+        jsr rx_free             ; free bytes (high) in A, with a page to spare for tcp_recv's moving tail
+        sec
+        sbc #1
+        bcc 9f
+        cmp eng_left+1
+        beq 9f
+        bcs 8f
+9:      lda #1                  ; a read that does not fit: lost
         sta eng_failed
         jmp 7f
 8:      lda #0
         sta eng_discard
-        lda #<eng_rx
+        lda #1
+        sta eng_got
+        lda eng_head            ; eng_rx is page-aligned
         sta wic64_ptr
-        lda #>eng_rx
+        lda eng_head+1
+        clc
+        adc #>eng_rx
         sta wic64_ptr+1
 7:      lda #E_DATA
         sta eng_state
@@ -321,14 +337,16 @@ job_done:
         beq 1f
         lda #1                  ; an error: the connection is lost
         sta eng_failed
-1:      lda eng_job
+1:      lda eng_got
         beq 2f
-        lda eng_hdr+1           ; a read: its bytes are there
-        sta eng_rxlen
-        lda eng_hdr+2
-        sta eng_rxlen+1
-        lda #1
-        sta eng_rxready
+        lda #0                  ; a read's bytes are in the ring: the head moves past them
+        sta eng_got
+        lda wic64_ptr+1
+        sec
+        sbc #>eng_rx
+        sta eng_head+1
+        lda wic64_ptr
+        sta eng_head
 2:      lda #E_IDLE
         sta eng_state
         lda #1
@@ -359,9 +377,17 @@ wic64_kick:
         ora eng_wlenh,x
         bne kick_write
         lda eng_wantread
-        beq 9f
-        lda eng_rxready
-        bne 9f
+        bne 1f
+        lda c64_ticks           ; not asked for: after 8 TV frames
+        sec
+        sbc eng_lastread
+        cmp #8
+        bcc 9f
+1:      jsr rx_free
+        cmp #4                  ; 1 KB free
+        bcc 9f
+        lda c64_ticks
+        sta eng_lastread
         lda #0                  ; a read
         sta eng_wantread
         lda #1
@@ -376,6 +402,16 @@ wic64_kick:
         sta eng_left+1
         jmp kick_start
 9:      plp
+        rts
+
+; the ring's free bytes, high byte in A (tail - head - 1, 11 bits); X kept
+rx_free:
+        lda eng_tail
+        clc                     ; - head - 1
+        sbc eng_head
+        lda eng_tail+1
+        sbc eng_head+1
+        and #(RXMAX >> 8) - 1
         rts
 
 kick_write:                     ; all that was queued in buffer x, its header in front
@@ -451,7 +487,7 @@ eng_whdr:
         .byte 0x52, 0x23, 0, 0  ; 'R', TCP write, the length
 
         .section .bss.eng,"aw",@nobits
-        .global eng_state, eng_open, eng_failed, eng_gap, eng_wantread, eng_rxready, eng_rxlen, eng_rx
+        .global eng_state, eng_open, eng_failed, eng_gap, eng_wantread, eng_head, eng_tail, eng_rx
         .global eng_fill, eng_wlen, eng_wlenh, eng_wbuf0, eng_wbuf1, eng_tick, eng_cmds, eng_flags
 eng_state:      .zero 1
 eng_open:       .zero 1         ; the engine runs (tcp_open .. tcp_close)
@@ -463,8 +499,10 @@ eng_hdr:        .zero 3
 eng_hdri:       .zero 1
 eng_discard:    .zero 1
 eng_wantread:   .zero 1
-eng_rxready:    .zero 1
-eng_rxlen:      .zero 2
+eng_got:        .zero 1         ; the read in progress stores its bytes
+eng_head:       .zero 2         ; the ring: written up to here (the NMI)
+eng_tail:       .zero 2         ; taken up to here (tcp_recv)
+eng_lastread:   .zero 1         ; c64_ticks at the last read's start
 eng_fill:       .zero 1         ; the buffer tcp_send fills
 eng_wlen:       .zero 2         ; its bytes (low; buffers 0, 1)
 eng_wlenh:      .zero 2         ; (high)
@@ -475,6 +513,7 @@ nmi_busy:       .zero 1         ; the NMI handler runs
 nmi_pend:       .zero 1         ; FLAG2s that came meanwhile
 eng_wbuf0:      .zero 4 + WMAX
 eng_wbuf1:      .zero 4 + WMAX
+        .balign 256
 eng_rx:         .zero RXMAX
 
         .section .bss.c64_ticks,"aw",@nobits

@@ -43,9 +43,9 @@
 extern volatile uint8_t c64_ticks;        /* c64.s: +1 every TV frame (20 ms PAL) */
 
 /* the background engine (c64.s) */
-extern volatile uint8_t eng_state, eng_open, eng_failed, eng_gap, eng_wantread, eng_rxready, eng_fill, eng_tick;
+extern volatile uint8_t eng_state, eng_open, eng_failed, eng_gap, eng_wantread, eng_fill, eng_tick;
 extern volatile uint8_t eng_wlen[2], eng_wlenh[2];
-extern volatile uint16_t eng_rxlen, eng_cmds, eng_flags;
+extern volatile uint16_t eng_head, eng_tail, eng_cmds, eng_flags;
 extern uint8_t eng_wbuf0[4 + 512], eng_wbuf1[4 + 512], eng_rx[2048];
 void wic64_kick(void);
 #define WMAX 512
@@ -53,7 +53,6 @@ void wic64_kick(void);
 #define CLI() __asm__ volatile ("cli")
 
 static uint8_t open;
-static uint16_t rx_pos;                   /* taken so far of the last read's bytes (eng_rx) */
 
 /* FLAG2 within ticks TV frames: 1, else 0 */
 static uint8_t wait_flag(uint8_t ticks) {
@@ -122,9 +121,10 @@ uint8_t tcp_open(const char *host, uint16_t port) {
   st = request(CMD_OPEN, (const uint8_t *)spec, (uint16_t)(p - spec), 250);   /* up to 5 s to connect */
   if (st == 0xff || !take(0, 0)) return 2;
   if (st) return 3;
-  open = 1; rx_pos = 0;
+  open = 1;
   SEI();
-  eng_state = eng_gap = eng_failed = eng_wantread = eng_rxready = eng_fill = 0;
+  eng_state = eng_gap = eng_failed = eng_wantread = eng_fill = 0;
+  eng_head = eng_tail = 0;
   eng_wlen[0] = eng_wlen[1] = eng_wlenh[0] = eng_wlenh[1] = 0;
   eng_open = 1;
   (void)ICR;
@@ -162,18 +162,21 @@ uint8_t tcp_send(const uint8_t *buf, uint16_t n) {
   return 0;
 }
 
-/* what the last read brought; else ask for a read (the engine does it
- * soon) and say "nothing" for now */
+/* what the reads brought (the ring eng_rx); else ask for a read (the
+ * engine does it soon) and say "nothing" for now */
 int16_t tcp_recv(uint8_t *buf, uint16_t max) {
-  uint16_t n;
+  uint16_t h, t, n;
   if (lost()) return -1;
   if (!open) return -1;
-  if (eng_rxready) {
-    n = eng_rxlen - rx_pos;
+  do h = eng_head; while (h != eng_head);   /* the NMI writes it a byte at a time */
+  t = eng_tail;
+  if (h != t) {
+    n = (h - t) & 2047;
+    if (n > 2048 - t) n = 2048 - t;         /* up to the ring's end */
     if (n > max) n = max;
-    memcpy(buf, eng_rx + rx_pos, n); rx_pos += n;
-    if (rx_pos >= eng_rxlen) { rx_pos = 0; eng_rxready = 0; }
-    if (n) return (int16_t)n;
+    memcpy(buf, eng_rx + t, n);
+    eng_tail = (t + n) & 2047;
+    return (int16_t)n;
   }
   eng_wantread = 1;                         /* (still) wanted: start it if the WiC64 is free */
   wic64_kick();
