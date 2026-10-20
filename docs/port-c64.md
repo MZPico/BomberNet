@@ -45,8 +45,13 @@ the same work: llvm-mos (its `c64` target), the 6502 helpers in
   glyphs for the game and the title together) and each logical code's
   screen code and colour.
 
-The players are characters in their own colours (`plat_player_colour`
-writes colour RAM), as on the MZ: no sprites are needed for them.
+The players are characters in their own colours, as on the MZ: no
+sprites are needed for them. Their colours are the C64's own, not the
+MZ's: light green, orange, light blue and light red, none of which the
+field uses (the MZ's yellow is also the fire and an enemy here, its white
+the walls, its blue the bombs), so four players stay apart
+(`tools/make_c64_tables.py` gives the players' codes and their numbers on
+the status line these colours; `plat_player_colour` the death frames).
 
 `tools/build_c64.py --test recording.bnr` builds it (24.9 KB with a
 500-frame recording); `tools/c64_test.py` runs it in VICE (x64sc 3.9,
@@ -122,7 +127,14 @@ joystick 1 held without phantom keys. `tools/build_c64.py` also writes
 The recordings still replay with equal hashes (dm4: median 42.5 ms).
 
 Tones: the MZ's tone dividers on the SID (triangle, voices 1 and 2), the
-game running on, as on the CPC and the Atari; not yet heard by anyone.
+game running on, as on the CPC and the Atari. Their lengths are the MZ's
+(about 0.93 ms a unit: a step 13 ms), counted down by the raster
+interrupt, which comes four times a TV frame (about 5 ms apart) and
+switches a finished tone off whatever the game is doing. They were first
+switched off only while a frame waited for its end, so a frame that ran
+long, or waited for the network, made a step's beep longer (heard in
+play). Measured, the program busy: the step 14 ms, the others 8-42 ms
+(the MZ 9-45).
 
 `tools/vice.py` drives VICE: start it headless, read and write memory
 through the remote monitor, hold keys and joysticks, take screenshots. The

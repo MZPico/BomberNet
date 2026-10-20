@@ -57,10 +57,13 @@ c64_flush_game:
         rts
 
 ; The interrupts: the KERNAL's entry saves the registers and jumps through
-; $0314 here; $EA81 restores them. The raster interrupt once a TV frame
-; (line 251, below the text) counts c64_ticks; CIA 1's timer B ends the
-; pause between two WiC64 commands; both start the next one (wic64_kick). CIA 1's timer A interrupt
-; (the KERNAL's keyboard scan and clock) is off.
+; $0314 here; $EA81 restores them. The raster interrupt comes four times a
+; TV frame (lines 10, 88, 166, 244: about 5 ms apart on PAL): each counts
+; down the tones (c64_tone_q, plat_c64.c) and switches a finished one off,
+; whatever the game is doing; at line 244, below the text, it counts
+; c64_ticks. CIA 1's timer B ends the pause between two WiC64 commands;
+; both start the next one (wic64_kick). CIA 1's timer A interrupt (the
+; KERNAL's keyboard scan and clock) is off.
         .section .text.c64_irq,"ax",@progbits
         .global c64_irq
 c64_irq:
@@ -74,9 +77,41 @@ c64_irq:
         and #0x01
         beq 2f
         sta 0xd019              ; acknowledge the raster interrupt
+        lda #0x10               ; the tones: a quarter of a TV frame less; at 0, gate off
+        ldx c64_tone_q
+        beq 3f
+        dec c64_tone_q
+        bne 3f
+        sta 0xd404              ; voice 1
+3:      ldx c64_tone_q+1
+        beq 4f
+        dec c64_tone_q+1
+        bne 4f
+        sta 0xd40b              ; voice 2
+4:      lda irq_quarter         ; the next line
+        clc
+        adc #1
+        and #3
+        sta irq_quarter
+        tax
+        lda irq_lines,x
+        sta 0xd012
+        cpx #0
+        bne 2f                  ; this one was line 244: a TV frame
         inc c64_ticks
         jsr wic64_kick          ; and once a TV frame, whatever was missed
 2:      jmp 0xea81
+
+        .section .rodata.irq_lines,"a",@progbits
+irq_lines:
+        .byte 10, 88, 166, 244
+
+        .section .bss.irq_quarter,"aw",@nobits
+irq_quarter:
+        .zero 1
+        .global c64_tone_q
+c64_tone_q:
+        .zero 2                 ; the tones' remaining quarters (voices 1, 2)
 
 ; WiC64 bytes over the user port (tcp_wic64.c): wic64_out sends wic64_n
 ; bytes from (wic64_ptr), each answered by FLAG2; wic64_in receives

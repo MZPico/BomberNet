@@ -7,8 +7,8 @@
  * ($E800) and the character set ($F000) are in the RAM under the KERNAL ROM
  * (VIC bank 3), written only. The players are characters too, in their own
  * colours (plat_player_colour), as on the MZ.
- * Time: a raster interrupt once a TV frame (c64.s); a frame is 3 PAL
- * frames, or 4,3,4,3,4 NTSC ones. The KERNAL stays mapped; its CIA 1 timer
+ * Time: a raster interrupt four times a TV frame (c64.s: the clock, the
+ * tones); a frame is 3 PAL frames, or 4,3,4,3,4 NTSC ones. The KERNAL stays mapped; its CIA 1 timer
  * interrupt (keyboard scan, clock) is off.
  * Input: the keyboard (CIA 1's matrix, scanned here: the KERNAL's scan is
  * off) with two key sets, and the two joysticks. Key set A is the cursor
@@ -34,9 +34,11 @@ void c64_irq(void);
 void c64_nmi(void);
 void c64_flush_game(void);
 
-/* the MZ players' colours (green, yellow, white, blue; the blue light, to be
- * seen on black) */
-static const uint8_t player_colours[MAX_PLAYERS] = {5, 7, 1, 14};
+/* the players: light green, orange, light blue, light red. The MZ's green,
+ * yellow, white and blue are in the field too here (yellow fire and an
+ * enemy, white walls, blue bombs); these four C64 colours are in none of
+ * it, and far apart from each other */
+static const uint8_t player_colours[MAX_PLAYERS] = {13, 8, 14, 10};
 
 /* ---- the cycle clock: CIA 2's timer A counts cycles, timer B its underflows ---- */
 #if defined(C64_TEST) || defined(C64_NETTIME)
@@ -168,7 +170,6 @@ uint8_t plat_break(void) {                      /* RUN/STOP, quickly: row 7 alon
 
 /* ---- time ---- */
 static uint8_t last_tick, ntsc, ntsc_step;
-static void tones_due(void);
 
 #ifdef C64_NETTIME
 /* frames in a match (tools/crossplay.py reads them): the work from one
@@ -194,8 +195,7 @@ void plat_frame_sync(void) {                    /* 60 ms: 3 PAL frames, or 4,3,4
   }
   t_start = 0;
 #endif
-  while ((uint8_t)(c64_ticks - last_tick) < need) tones_due();
-  tones_due();
+  while ((uint8_t)(c64_ticks - last_tick) < need) ;
   last_tick = c64_ticks;
 #ifdef C64_NETTIME
   f_end = cycles();
@@ -205,32 +205,27 @@ void plat_frame_sync(void) {                    /* 60 ms: 3 PAL frames, or 4,3,4
 
 void plat_delay(void) {
   uint8_t t = c64_ticks;
-  while (c64_ticks == t) tones_due();
+  while (c64_ticks == t) ;
 }
 
 /* ---- sound: the MZ's tones on the SID, the game running on ----
  * frequency = 1108400 / ratio Hz; the SID's register is f * 2^24 / 985248
  * (PAL), so 18874368 / ratio. Voice 1 for the steps and menus (length 14),
- * voice 2 for the rest; triangle waves. */
-static uint8_t tone_on, tone_end[2];
-static void tones_due(void) {
-  uint8_t v;
-  if (!tone_on) return;
-  for (v = 0; v < 2; v++)
-    if ((tone_on & (1 << v)) && (int8_t)(c64_ticks - tone_end[v]) >= 0) {
-      REG(0xd404 + 7 * v) = 0x10;                     /* gate off */
-      tone_on &= (uint8_t)~(1 << v);
-    }
-}
+ * voice 2 for the rest; triangle waves. The MZ's length is about 0.93 ms a
+ * unit (the step 13 ms); the raster interrupt counts the tones down in
+ * quarters of a TV frame (about 5 ms) and switches them off (c64.s), so a
+ * tone lasts as long however long the frame takes. */
+extern volatile uint8_t c64_tone_q[2];
 
 void plat_tone(uint16_t ratio, uint8_t len) {
-  uint8_t v = len == 14 ? 0 : 1;
+  uint8_t v = len == 14 ? 0 : 1, q = (uint8_t)(((uint16_t)len * 3 + 8) >> 4);
   uint16_t f = ratio ? (uint16_t)(18874368UL / ratio) : 0;
+  __asm__ volatile ("sei");
   REG(0xd400 + 7 * v) = (uint8_t)f;
   REG(0xd401 + 7 * v) = (uint8_t)(f >> 8);
   REG(0xd404 + 7 * v) = 0x11;                         /* triangle, gate on */
-  tone_end[v] = (uint8_t)(c64_ticks + 1 + (((uint16_t)len * 3) >> 6));
-  tone_on |= (uint8_t)(1 << v);
+  c64_tone_q[v] = q ? q : 1;
+  __asm__ volatile ("cli");
 }
 
 /* ---- screen ---- */
@@ -318,10 +313,10 @@ void plat_init(void) {
   REG(0xd405) = REG(0xd40c) = 0x00;              /* attack 0, decay 0 */
   REG(0xd406) = REG(0xd40d) = 0xf0;              /* sustain 15, release 0 */
   REG(0xd418) = 0x0f;
-  /* the frame clock: a raster interrupt at line 251 */
+  /* the frame clock and the tones: raster interrupts (c64.s) */
   *(void (**)(void))0x314 = c64_irq;
   *(void (**)(void))0x318 = c64_nmi;             /* RESTORE: nothing (the KERNAL would stop the program) */
-  REG(0xd012) = 251;
+  REG(0xd012) = 10;                              /* the first of four a TV frame (c64.s) */
   REG(0xd011) &= 0x7f;
   REG(0xd019) = 1;
   REG(0xd01a) = 1;

@@ -10,7 +10,8 @@ tables, and each logical code becomes a screen code and a colour.
 Tables written to c/platform/c64/tables.[ch]:
   c64_font          256 x 8 bytes: the character set (bit 7 leftmost)
   c64_game_code     logical code (game) -> screen code
-  c64_game_colour   logical code (game) -> colour (0-15)
+  c64_game_colour   logical code (game) -> colour (0-15); the players' own
+                    codes in the players' C64 colours
   c64_title_code    logical code (title mode) -> screen code
   c64_title_colour  logical code (title mode) -> colour
 """
@@ -23,6 +24,16 @@ src = open(os.path.join(here, '..', 'c', 'platform', 'mz', 'tables.c')).read()
 
 # the MZ's eight inks (black, blue, red, magenta, green, cyan, yellow, white) as C64 colours
 C64_INK = [0, 6, 2, 4, 5, 3, 7, 1]
+# the players' own codes in the game (as tools/make_atari_tables.py has them):
+# light green, orange, light blue, light red (plat_c64.c's player_colours):
+# none of these is in the field, and they are far apart
+PLAYER_COLOURS = [13, 8, 14, 10]
+
+
+def player_of(code):
+    for p, base in ((0, 0x8a), (1, 0xa0), (2, 0xa4), (3, 0xa8)):
+        if base <= code <= base + 3 or base + 0x10 <= code <= base + 0x13: return p
+    return None
 
 
 def table(name):
@@ -45,6 +56,11 @@ for name in ('game', 'title'):
     t = table(name + '_table')
     codes[name] = [screen_code(t[2 * c]) for c in range(256)]
     colours[name] = [C64_INK[(t[2 * c + 1] >> 4) & 7] for c in range(256)]
+    if name == 'game':
+        for c in range(256):
+            if player_of(c) is not None: colours[name][c] = PLAYER_COLOURS[player_of(c)]
+        for p, c in enumerate((0xae, 0xaf, 0xbc, 0xbd)):   # the status line's '1'..'4' (core/game.c: player_digit_codes)
+            colours[name][c] = PLAYER_COLOURS[p]
 assert len(font) <= 256, len(font)
 
 
