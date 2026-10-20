@@ -296,7 +296,9 @@ static uint8_t is_ntsc(void) {
 
 void plat_init(void) {
   __asm__ volatile ("sei");
-  REG(0xdc0d) = 0x7f; (void)REG(0xdc0d);         /* CIA 1: no timer interrupt (the KERNAL's) */
+  REG(0xdc0d) = 0x7f; (void)REG(0xdc0d);         /* CIA 1: no timer A interrupt (the KERNAL's) */
+  REG(0xdc0f) = 0;                               /* timer B stopped: the WiC64's pauses (c64.s) */
+  REG(0xdc0d) = 0x82;                            /* its interrupt */
   REG(0xdd0d) = 0x7f; (void)REG(0xdd0d);         /* CIA 2: no NMI */
   ntsc = is_ntsc();
   /* the cycle clock: timer A counts cycles from $FFFF, timer B its underflows */

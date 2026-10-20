@@ -48,7 +48,10 @@ try:
     hold(['RSHIFT', 'CRSR_DOWN'], t=0.2)
     check(f'menu: CRSR down {item} -> {down}, SHIFT+CRSR back to {v.u8("menu_item")}', down > item and v.u8('menu_item') == item)
     v.poke('menu_mode', [1]); v.poke('menu_players', [4]); v.poke('menu_inputs', [1, 2, 3, 4])   # deathmatch: A, B, joy 1, joy 2
-    hold(['SPACE'], t=0.3); v.run(4)
+    hold(['SPACE'], t=0.3)
+    for _ in range(60):                      # the round under way (game frames, not seconds: VICE may lag)
+        v.run(0.25)
+        if v.u8('title_mode') == 0 and v.u16('frame_no') >= 40: break
     check('SPACE starts the game', v.u8('title_mode') == 0)
     v.screenshot(os.path.join(OUT, 'game.png'))
     start = [pos(i) for i in range(4)]       # the corners: (1,1), (37,21), (37,1), (1,21)

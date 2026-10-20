@@ -15,8 +15,13 @@
  * up to 8 KB), 0x23 TCP write, 0x2e TCP close, 0x26 the firmware's version
  * (to see that a WiC64 is there). The official library
  * (github.com/WiC64-Team/wic64-library) does the same handshakes.
- * The CPU waits throughout; CIA 2's interrupts are off (plat_init), so the
- * FLAG2 bit is polled, and reading the ICR clears it. */
+ * Opening, closing and finding the WiC64 wait for it here (FLAG2 polled;
+ * reading the ICR clears it). Once a connection is open, writes and reads
+ * run in the background (c64.s: FLAG2 as an NMI, a step of the command
+ * each): the firmware's own pauses, about 13-18 ms a command, then overlap
+ * the game's work instead of stopping it (docs/port-c64.md: 62 % speed
+ * waiting, full speed in the background). The engine's counters
+ * (eng_cmds, eng_flags) and C64_NETTIME's frame times show the cost. */
 #include <stdint.h>
 #include <string.h>
 #include "tcp.h"
@@ -37,20 +42,18 @@
 
 extern volatile uint8_t c64_ticks;        /* c64.s: +1 every TV frame (20 ms PAL) */
 
-#ifdef C64_NETTIME
-/* the driver's cost (tools/crossplay.py reads it): cycles in tcp_send and
- * tcp_recv, of them the waits for a reply (in VICE a TV frame for a TCP
- * read or write: its alarm), commands and bytes over the user port */
-uint32_t c64_cycles(void);
-__attribute__((used)) struct { uint32_t total, waits; uint16_t commands, bytes; uint32_t t_out, t_in; } c64_net;   /* used: kept whole (LTO would split it) */
-#define NT(x) x
-#else
-#define NT(x)
-#endif
+/* the background engine (c64.s) */
+extern volatile uint8_t eng_state, eng_open, eng_failed, eng_gap, eng_wantread, eng_rxready, eng_fill, eng_tick;
+extern volatile uint8_t eng_wlen[2], eng_wlenh[2];
+extern volatile uint16_t eng_rxlen, eng_cmds, eng_flags;
+extern uint8_t eng_wbuf0[4 + 512], eng_wbuf1[4 + 512], eng_rx[2048];
+void wic64_kick(void);
+#define WMAX 512
+#define SEI() __asm__ volatile ("sei")
+#define CLI() __asm__ volatile ("cli")
 
-static uint8_t open, drained;
-static uint8_t rx[2048];                  /* a read's bytes not yet taken (more: a stall of seconds, taken as lost) */
-static uint16_t rx_pos, rx_len;
+static uint8_t open;
+static uint16_t rx_pos;                   /* taken so far of the last read's bytes (eng_rx) */
 
 /* FLAG2 within ticks TV frames: 1, else 0 */
 static uint8_t wait_flag(uint8_t ticks) {
@@ -66,20 +69,8 @@ extern const uint8_t *wic64_ptr;
 extern uint16_t wic64_n;
 uint8_t wic64_out(void);
 uint8_t wic64_in(void);
-static uint8_t out(const uint8_t *p, uint16_t n) {
-  uint8_t r;
-  NT(uint32_t t = c64_cycles(); c64_net.bytes += n;)
-  wic64_ptr = p; wic64_n = n; r = wic64_out();
-  NT(c64_net.t_out += c64_cycles() - t;)
-  return r;
-}
-static uint8_t in(uint8_t *p, uint16_t n) {
-  uint8_t r;
-  NT(uint32_t t = c64_cycles(); c64_net.bytes += n;)
-  wic64_ptr = p; wic64_n = n; r = wic64_in();
-  NT(c64_net.t_in += c64_cycles() - t;)
-  return r;
-}
+static uint8_t out(const uint8_t *p, uint16_t n) { wic64_ptr = p; wic64_n = n; return wic64_out(); }
+static uint8_t in(uint8_t *p, uint16_t n) { wic64_ptr = p; wic64_n = n; return wic64_in(); }
 
 static uint16_t reply_len;                /* the reply's payload, after request() */
 
@@ -95,9 +86,7 @@ static uint8_t request(uint8_t cmd, const uint8_t *data, uint16_t n, uint8_t wai
   if (!out(h, 4) || !out(data, n)) return 0xff;
   DDRB = 0x00;
   PA &= (uint8_t)~0x04;                   /* the WiC64 sends */
-  NT(uint32_t t0 = c64_cycles(); c64_net.commands++;)
   if (!wait_flag(wait)) return 0xff;      /* the reply is there */
-  NT(c64_net.waits += c64_cycles() - t0;)
   (void)PB;                               /* the dummy read: it fetches the first byte */
   if (!in(h, 3)) return 0xff;             /* the status, the length */
   reply_len = h[1] | (uint16_t)h[2] << 8;
@@ -133,47 +122,71 @@ uint8_t tcp_open(const char *host, uint16_t port) {
   st = request(CMD_OPEN, (const uint8_t *)spec, (uint16_t)(p - spec), 250);   /* up to 5 s to connect */
   if (st == 0xff || !take(0, 0)) return 2;
   if (st) return 3;
-  open = 1; drained = 0; rx_pos = rx_len = 0;
+  open = 1; rx_pos = 0;
+  SEI();
+  eng_state = eng_gap = eng_failed = eng_wantread = eng_rxready = eng_fill = 0;
+  eng_wlen[0] = eng_wlen[1] = eng_wlenh[0] = eng_wlenh[1] = 0;
+  eng_open = 1;
+  (void)ICR;
+  ICR = 0x90;                               /* FLAG2 is an NMI now */
+  CLI();
   return 0;
 }
 
+static uint8_t lost(void) {                 /* an error, or a command stuck for 2 s */
+  if (eng_failed) return 1;
+  if (eng_state && (uint8_t)(c64_ticks - eng_tick) > 100) eng_failed = 1;
+  return eng_failed;
+}
+
+/* queued: the next write command sends it, with whatever else was queued */
 uint8_t tcp_send(const uint8_t *buf, uint16_t n) {
-  uint8_t st;
-  NT(uint32_t t0 = c64_cycles();)
   if (!open) return 1;
-  st = request(CMD_WRITE, buf, n, 50);
-  NT(c64_net.total += c64_cycles() - t0;)
-  if (st == 0xff || !take(0, 0) || st) return 2;
+  while (n) {
+    uint16_t len, k;
+    uint8_t f;
+    if (lost()) return 2;
+    SEI();
+    f = eng_fill;
+    len = eng_wlen[f] | (uint16_t)eng_wlenh[f] << 8;
+    k = WMAX - len;
+    if (k > n) k = n;
+    if (k) {
+      memcpy((f ? eng_wbuf1 : eng_wbuf0) + 4 + len, buf, k);
+      len += k; eng_wlen[f] = (uint8_t)len; eng_wlenh[f] = (uint8_t)(len >> 8);
+      buf += k; n -= k;
+    }
+    CLI();
+    wic64_kick();                           /* full: wait until it goes */
+  }
   return 0;
 }
 
-/* After a read that took all that was waiting, the next call says
- * "nothing" without asking (the WebSocket parser asks again at once). */
+/* what the last read brought; else ask for a read (the engine does it
+ * soon) and say "nothing" for now */
 int16_t tcp_recv(uint8_t *buf, uint16_t max) {
-  uint8_t st;
   uint16_t n;
-  if (rx_pos < rx_len) {                  /* left from the last read */
-    n = rx_len - rx_pos;
-    if (n > max) n = max;
-    memcpy(buf, rx + rx_pos, n); rx_pos += n;
-    return (int16_t)n;
-  }
-  if (drained) { drained = 0; return 0; }
+  if (lost()) return -1;
   if (!open) return -1;
-  NT(uint32_t t0 = c64_cycles();)
-  st = request(CMD_READ, 0, 0, 50);
-  if (st == 0xff || st) return -1;
-  if (reply_len > sizeof(rx)) return -1;  /* more than a read should bring */
-  if (!take(rx, sizeof(rx))) return -1;
-  NT(c64_net.total += c64_cycles() - t0;)
-  if (!reply_len) return 0;
-  rx_len = reply_len; rx_pos = 0;
-  drained = 1;
-  return tcp_recv(buf, max);
+  if (eng_rxready) {
+    n = eng_rxlen - rx_pos;
+    if (n > max) n = max;
+    memcpy(buf, eng_rx + rx_pos, n); rx_pos += n;
+    if (rx_pos >= eng_rxlen) { rx_pos = 0; eng_rxready = 0; }
+    if (n) return (int16_t)n;
+  }
+  eng_wantread = 1;                         /* (still) wanted: start it if the WiC64 is free */
+  wic64_kick();
+  return 0;
 }
 
 void tcp_close(void) {
+  uint8_t t;
   if (!open) return;
+  eng_open = 0;                             /* no more commands; the one going ends */
+  for (t = c64_ticks; eng_state && (uint8_t)(c64_ticks - t) < 100; ) ;
+  ICR = 0x10;                               /* FLAG2 polled again */
+  eng_state = 0;
   if (request(CMD_CLOSE, 0, 0, 50) != 0xff) take(0, 0);
   open = 0;
 }

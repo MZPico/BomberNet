@@ -145,28 +145,23 @@ class Commodore:
     def close(self): self.v.close()
 
     def reset_net(self):
-        """the driver's counters from the game's start on (a C64_NETTIME build)"""
-        if 'c64_net' in self.v.sym:
-            self.v.poke('c64_net', bytes(20)); self.v.poke('c64_frames', bytes(12)); self.f0 = self.r16('_frame_no')
+        """the counters from the game's start on (a C64_NETTIME build)"""
+        if 'c64_frames' in self.v.sym:
+            self.v.poke('c64_frames', bytes(12)); self.f0 = self.r16('_frame_no')
+            self.c0 = int.from_bytes(self.v.mem('eng_cmds', 4), 'little') if 'eng_cmds' in self.v.sym else 0
 
     def report(self, frames):
-        """the WiC64 driver's cost (a C64_NETTIME build): per game frame"""
-        if 'c64_net' not in self.v.sym: return
+        """the WiC64's commands and the frames' time (a C64_NETTIME build): per game frame"""
+        if 'c64_frames' not in self.v.sym: return
         frames -= self.f0
-        d = self.v.mem('c64_net', 20)
-        total, waits = int.from_bytes(d[0:4], 'little'), int.from_bytes(d[4:8], 'little')
-        t_out, t_in = int.from_bytes(d[12:16], 'little'), int.from_bytes(d[16:20], 'little')
-        cmds, nbytes = d[8] | d[9] << 8, d[10] | d[11] << 8
-        ms = lambda c: c / frames / 985.248
-        print(f'C64 WiC64 driver per frame ({frames} frames): {cmds / frames:.2f} commands, {nbytes / frames:.1f} bytes, '
-              f'{ms(total):.2f} ms in the driver, of it {ms(waits):.2f} ms waiting for replies (VICE: a TV frame for a TCP '
-              f'read or write), so {ms(total - waits):.2f} ms of the C64\'s own work: sending bytes {ms(t_out):.2f} ms, '
-              f'receiving {ms(t_in):.2f} ms', flush=True)
+        c = int.from_bytes(self.v.mem('eng_cmds', 4), 'little') if 'eng_cmds' in self.v.sym else 0
+        cmds, flags = (c & 0xffff) - (self.c0 & 0xffff), (c >> 16) - (self.c0 >> 16)
         d = self.v.mem('c64_frames', 12)
         busy, idle = int.from_bytes(d[0:4], 'little'), int.from_bytes(d[4:8], 'little')
         n, late = d[8] | d[9] << 8, d[10] | d[11] << 8
-        print(f'C64 frames ({n}): {busy / n / 985.248:.1f} ms of work (the waits for the WiC64 in it), '
-              f'{idle / n / 985.248:.1f} ms idle; {late} late (over 60 ms)', flush=True)
+        print(f'C64 WiC64 ({frames} frames): {cmds / frames:.2f} commands, {flags / frames:.1f} FLAG2 NMIs '
+              f'a frame (background driver); frames: {busy / n / 985.248:.1f} ms of work, {idle / n / 985.248:.1f} ms idle; {late} of {n} late',
+              flush=True)
 
 
 def run(n, *ms):

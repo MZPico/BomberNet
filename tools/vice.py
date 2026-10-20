@@ -47,7 +47,7 @@ class Vice:
         out = open(log, 'w') if log else subprocess.DEVNULL
         self.p = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT)
         self.s = None
-        for _ in range(100):
+        for _ in range(300):                          # up to 30 s (a busy host)
             try: self._connect(); break
             except OSError: time.sleep(0.1)
         self.cmd('r')                                 # the machine stops while connected

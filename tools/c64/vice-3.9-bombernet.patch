@@ -1,0 +1,106 @@
+--- a/src/monitor/monitor.c	2024-12-24 20:12:44.000000000 +0100
++++ b/src/monitor/monitor.c	2026-10-20 10:33:38.160648569 +0200
+@@ -56,6 +56,8 @@
+ 
+ #include "interrupt.h"
+ #include "kbdbuf.h"
++#include "keyboard.h"
++#include "joystick.h"
+ #include "lib.h"
+ #include "util.h"
+ #include "log.h"
+@@ -1018,8 +1020,27 @@
+     exit_mon = 2;
+ }
+ 
++/* local patch (BomberNet tests): keybuf "#row col value" holds a key of the
++   keyboard matrix down (value 1) or lets it go (0), for programs that scan
++   the matrix themselves; keybuf "#J port bits" sets joystick port 1 or 2
++   (bits: up 1, down 2, left 4, right 8, fire 16); anything else goes into
++   the keyboard buffer */
+ void mon_keyboard_feed(const char *string)
+ {
++    int row, col, value;
++    const char *p = string;
++
++    while (*p == '"' || *p == ' ') {
++        p++;
++    }
++    if (*p == '#' && p[1] == 'J' && sscanf(p + 2, "%d %d", &row, &value) == 2) {
++        joystick_set_value_absolute((unsigned int)row - 1, (uint16_t)value);   /* "#J port bits": a joystick */
++        return;
++    }
++    if (*p == '#' && sscanf(p + 1, "%d %d %d", &row, &col, &value) == 3) {
++        keyboard_set_keyarr(row, col, value);
++        return;
++    }
+     kbdbuf_feed_string(string);
+ }
+ 
+--- a/src/userport/userport_wic64.c	2024-12-24 20:12:44.000000000 +0100
++++ b/src/userport/userport_wic64.c	2026-10-20 11:38:36.629153862 +0200
+@@ -1880,6 +1880,22 @@
+     send_reply_revised(SUCCESS, "Success", t, 2, NULL);
+ }
+ 
++/* local patch (BomberNet tests): with WIC64_FW_TIMING set in the
++   environment, TCP read and write answer after the pauses the WiC64
++   firmware takes around its transfers (userport.cpp, service.cpp: 3 ms
++   after a transfer, 1 ms before sending, 5 ms between the parts of a split
++   one) instead of a TV frame, and a read answers once (VICE re-arms its
++   alarm and sends unasked replies every 30 frames) */
++static int fw_timing(void)
++{
++    static int v = -1;
++    if (v < 0) {
++        v = getenv("WIC64_FW_TIMING") != NULL;
++    }
++    return v;
++}
++#define FW_MS(ms) ((CLOCK)((ms) * machine_get_cycles_per_second() / 1000))
++
+ static void tcp_get_alarm_handler(CLOCK offset, void *data)
+ {
+     CURLcode res;
+@@ -1893,7 +1909,11 @@
+                          curl_buf + total_read,
+                          sizeof(curl_buf) - total_read,
+                          &nread);
+-    alarm_set(tcp_get_alarm, maincpu_clk + (312 * 65 * 30));
++    if (fw_timing()) {
++        alarm_unset(tcp_get_alarm);
++    } else {
++        alarm_set(tcp_get_alarm, maincpu_clk + (312 * 65 * 30));
++    }
+     total_read += nread;
+     if ((res == CURLE_OK) && (nread == 0)) {
+         /* connection closed */
+@@ -1934,7 +1954,17 @@
+                                   tcp_get_alarm_handler, NULL);
+     }
+     alarm_unset(tcp_get_alarm);
+-    alarm_set(tcp_get_alarm, maincpu_clk + (312 * 65));
++    if (fw_timing()) {
++        curl_socket_t sockfd;
++        int avail = 0;
++        if (curl_easy_getinfo(curl, CURLINFO_ACTIVESOCKET, &sockfd) == CURLE_OK) {
++            archdep_socketpeek(sockfd, &avail);
++        }
++        /* header 3, then 1 + 5 to send; with data 3 + 1 + 5 more; 3 after */
++        alarm_set(tcp_get_alarm, maincpu_clk + FW_MS(avail > 0 ? 21 : 12));
++    } else {
++        alarm_set(tcp_get_alarm, maincpu_clk + (312 * 65));
++    }
+     /* no reply here, but from alarm handler */
+ }
+ 
+@@ -1987,7 +2017,8 @@
+                                    tcp_send_alarm_handler, NULL);
+     }
+     alarm_unset(tcp_send_alarm);
+-    alarm_set(tcp_send_alarm, maincpu_clk + (312 * 65));
++    /* header 3, payload 5 (+1), 3, then 1 to send; 3 after */
++    alarm_set(tcp_send_alarm, maincpu_clk + (fw_timing() ? FW_MS(16) : (312 * 65)));
+     /* no reply here, but from alarm handler */
+ }
+ 
