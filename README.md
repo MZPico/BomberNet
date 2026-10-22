@@ -136,7 +136,7 @@ Then point each machine at that PC (192.168.1.10 here):
 
 | Machine | Where the relay is set |
 |---|---|
-| ZX Spectrum, CPC, Atari, C64 | `tools/set_relay.py bomber.tap 192.168.1.10` rewrites the release file (`.tap`, `.dsk`, `.cpc`, `.xex`, `.prg`; not yet `.d64`; the port is 8765 unless given as `host:port`); without an address it shows the file's relay; `api.mzpico.com:80` sets production again |
+| ZX Spectrum, CPC, Atari, C64 | `tools/set_relay.py bomber.tap 192.168.1.10` rewrites the release file (`.tap`, `.dsk`, `.cpc`, `.xex`, `.prg`, `.d64`; the port is 8765 unless given as `host:port`); without an address it shows the file's relay; `api.mzpico.com:80` sets production again |
 | MZ-800 with an MZPico | `mzpico.ini`: `[cloud]` `net_relay = 192.168.1.10`, `net_port = 8765` |
 | MZ-800 with a Unicard | `/unicard/network.cfg`: `NETRELAYADDR`, `NETRELAYPORT` (8766, the TCP port) |
 

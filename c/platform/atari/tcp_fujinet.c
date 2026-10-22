@@ -153,4 +153,5 @@ void tcp_close(void) {
 /* the timing benchmark (sio_bench.c, tools/atari/fakefn.atdevice): the fake
  * FujiNet makes n bytes wait after each write ('I', its own command) */
 void tcp_bench_in(uint16_t n) { sio('I', 0, 0, 0, n, 10); }
+void tcp_bench_arrive(uint16_t ms) { sio('J', 0, 0, 0, ms, 10); }   /* n bytes arrive ms from now */
 #endif

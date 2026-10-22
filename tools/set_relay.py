@@ -10,7 +10,8 @@ then the port, 16 bits little-endian); this rewrites it.
 
 Files: .tap (ZX Spectrum; the block checksum is redone), .dsk (CPC disk image,
 standard or extended; the field may cross sectors), .cpc (an AMSDOS file),
-.xex (Atari). The MZ-800 takes its relay from its card: mzpico.ini
+.xex (Atari), .prg and .d64 (C64; on the disk the file BOMBERNET, or its
+first program, whose sector chain the field may cross). The MZ-800 takes its relay from its card: mzpico.ini
 ([cloud] net_relay, net_port) on an MZPico, /unicard/network.cfg on a Unicard.
 """
 import os, sys
@@ -60,6 +61,37 @@ def dsk_map(d):
     return offs, None
 
 
+def d64_map(d, name=b'BOMBERNET'):
+    """the data bytes of the disk's file called name (or its first program) in order: the
+    sector chain from the directory (track 18); a sector holds 254 bytes after its link"""
+    spt = [21] * 17 + [19] * 7 + [18] * 6 + [17] * 5          # sectors a track, tracks 1-35
+    if len(d) < 174848 or len(d) > 175531 + 683: raise ValueError('not a 35-track D64 image')
+    first = [0]
+    for n in spt: first.append(first[-1] + n)
+    sec = lambda t, s_: (first[t - 1] + s_) * 256
+    chain, t, s_ = [], 18, 1                                    # the directory
+    while t:
+        at = sec(t, s_)
+        for e in range(8):
+            entry = d[at + 32 * e:at + 32 * (e + 1)]
+            if entry[2] & 7 == 2 and entry[2] & 0x80:           # a closed PRG
+                fname = entry[5:21].rstrip(b'\xa0')
+                if fname == name or not chain: chain = [(entry[3], entry[4])]
+                if fname == name: break
+        else:
+            t, s_ = d[at], d[at + 1]
+            continue
+        break
+    if not chain: raise ValueError('no program on the disk')
+    offs, t, s_ = [], chain[0][0], chain[0][1]
+    while t:
+        at = sec(t, s_)
+        nt, ns = d[at], d[at + 1]
+        offs += range(at + 2, at + 2 + (254 if nt else ns - 1))
+        t, s_ = nt, ns
+    return offs, None
+
+
 def xex_map(d):
     """the segments' contents in file order; each byte also by its address, to check the field is contiguous"""
     offs, addrs, i = [], [], 0
@@ -77,6 +109,7 @@ def load(path):
     fix, addrs = None, None
     if low.endswith('.tap'): offs, fix = tap_map(d)
     elif low.endswith('.dsk'): offs, fix = dsk_map(d)
+    elif low.endswith('.d64'): offs, fix = d64_map(d)
     elif low.endswith('.xex'): offs, addrs = xex_map(d)
     else: offs = list(range(len(d)))                 # .cpc and anything plain
     stream = bytes(d[o] for o in offs)

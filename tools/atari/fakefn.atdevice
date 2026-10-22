@@ -3,7 +3,7 @@
 // and the high-speed query as FujiNet's firmware does on its serial port
 // (lib/bus/sio/sio.cpp), with its delays, but without a network: after
 // each write, IN_LEN bytes of the relay's binary input lines wait to be
-// read. Everything runs in emulated time, so a benchmark on the Atari
+// read ('I' sets IN_LEN; 'J' makes IN_LEN bytes arrive aux ms later). Everything runs in emulated time, so a benchmark on the Atari
 // measures what an XL with a FujiNet would spend.
 //
 // Delays (FujiNet firmware): 250 us (DELAY_T5) before 'A' is done and
@@ -25,10 +25,18 @@ int i;
 int b;
 int n;
 int in_len;
+int arrival_delay;  // 'J': in_len bytes arrive after this many ms
 
 Segment frame: { size: 8 };
 
 Thread main_thread;
+Thread arrival_thread;
+
+function void arrive()              // data at a chosen moment (the latency check)
+{
+    Thread.sleep(arrival_delay * 1790);
+    pending = pending + in_len;
+}
 
 function void sendb()
 {
@@ -126,6 +134,10 @@ function void command()
     } else if (cmd == $49) {            // benchmark: aux = bytes waiting after each write
         ack(); Thread.sleep(447); b = $43; $sio.send_raw_byte(b, cpb);
         in_len = aux;
+    } else if (cmd == $4A) {            // benchmark: in_len bytes arrive aux ms from now (no write needed)
+        ack(); Thread.sleep(447); b = $43; $sio.send_raw_byte(b, cpb);
+        arrival_delay = aux;
+        arrival_thread.run(arrive);
     }
 }
 

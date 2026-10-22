@@ -338,6 +338,18 @@ COMMAND). A command measures about 1.7 ms longer than its bytes and the
 firmware's delays add up to; part of that may be how Altirra feeds a
 device's bytes to POKEY.
 
+**How long a message waits.** The C64's first drivers started a read only
+when the game's poll found nothing and used its bytes a frame later, which
+made a message a frame or two late each way (a lobby delay of 300 ms;
+`docs/port-c64.md`). The Atari's driver asks FujiNet at the poll itself (a
+status, then the read), so a message pending at FujiNet should be taken by
+the next poll, within a frame. Checked with the benchmark's latency section
+(the fake FujiNet's 'J' makes 9 bytes arrive; Altirra's device threads do
+not sleep, so they arrive at once, which the benchmark uses: in even frames
+before its poll, in odd frames after it): of 64 arrivals, 32 were taken in
+their own frame, 32 at the next frame's poll, none later. The "drained"
+shortcut never skipped a frame's status.
+
 With the game's own work (37 ms a 2-player, 41 ms a 4-player network frame)
 that is about 63 ms and 71 ms against 60: a match with an Atari would run 5
 and 18 % slow (the Spectrum 48K in 4-player matches: 12-16 % late). The

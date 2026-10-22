@@ -18,6 +18,7 @@ extern const uint8_t atari_text_code[256];
 uint16_t atari_now(void);
 uint16_t atari_since(uint16_t t);
 void tcp_bench_in(uint16_t n);
+void tcp_bench_arrive(uint16_t ms);
 extern uint16_t atari_sio_calls;
 
 static void show(uint8_t at, uint16_t v) {
@@ -55,6 +56,50 @@ static void bench(uint8_t at, uint16_t in_len) {
   show((uint8_t)(at + 24), (uint16_t)(atari_sio_calls * 10 / 64));   /* commands a frame, x10 */
 }
 
+/* How many frames a message waits. 9 bytes arrive (the fake FujiNet's 'J':
+ * at once, whatever the delay asked; Altirra's device threads do not
+ * sleep), in even frames before the frame's poll, in odd frames after it;
+ * each frame polls as the game does (our line out, then reads until
+ * nothing waits). On row 23: arrivals taken at the first poll after them
+ * with 0 frames waited (the "before" ones), 1 frame (the "after" ones,
+ * taken at the next frame's poll), 2 or more (a poll that missed pending
+ * data: a fault), the frames waited in all, and the 'J' command's longest
+ * time (128 us units). */
+static void show23(uint8_t at, uint16_t v) {
+  atari_screen[920 + at] = atari_text_code[v / 100 % 10];
+  atari_screen[921 + at] = atari_text_code[v / 10 % 10];
+  atari_screen[922 + at] = atari_text_code[v % 10];
+}
+static uint8_t poll(void) {                       /* as the game: 1 when bytes came */
+  uint8_t got = 0;
+  tcp_send(out, 12);
+  while (tcp_recv(in, sizeof(in)) > 0) got = 1;
+  return got;
+}
+static void latency(void) {
+  uint16_t sum = 0, jmax = 0, t;
+  uint8_t f, n0 = 0, n1 = 0, n2 = 0, waiting = 0, waited = 0, after = 0;
+  tcp_bench_in(9);
+  for (f = 0; f < 90 && (f < 64 || waiting); f++) {
+    plat_frame_sync();
+    if (!waiting && f < 64 && !after) {           /* an arrival before this frame's poll */
+      t = atari_now(); tcp_bench_arrive(0); t = atari_since(t);
+      if (t > jmax) jmax = t;
+      waiting = 1; waited = 0;
+    }
+    if (poll()) {
+      if (waited == 0) n0++; else if (waited == 1) n1++; else n2++;
+      sum += waited; waiting = 0;
+    } else if (waiting) waited++;
+    if (!waiting && f < 64 && after) {            /* an arrival after this frame's poll: the next frame's is */
+      tcp_bench_arrive(0);                        /* the first that can take it, one frame of waiting */
+      waiting = 1; waited = 1;
+    }
+    after ^= 1;
+  }
+  show23(0, n0); show23(4, n1); show23(8, n2); show23(12, sum); show23(20, jmax);
+}
+
 void main(void) {
   plat_init();
   clear_buffers();
@@ -71,5 +116,6 @@ void main(void) {
     for (f = 0; f < 64; f++) { plat_frame_sync(); t = atari_now(); tcp_recv(in, sizeof(in)); sum += atari_since(t); }
     show(32, (uint16_t)(sum * 10 / 64));          /* x10: in 12.8 us units */
   }
+  latency();
   for (;;) ;
 }
