@@ -28,7 +28,7 @@ cmd = ['fs-uae', f'--base-dir={base}', f'--amiga-model={model}', '--chip-memory=
        f'--hard-drive-0={dh0}', '--fullscreen=0', '--video-sync=0', '--automatic-input-grab=0', '--floppy-drive-speed=0',
        '--ntsc-mode=1' if '--ntsc' in sys.argv else '--ntsc-mode=0']
 if os.environ.get('KICKSTART'): cmd.append(f'--kickstart-file={os.environ["KICKSTART"]}')
-env = dict(os.environ, DISPLAY=os.environ.get('DISPLAY', ':97'))
+env = dict(os.environ, DISPLAY=os.environ.get('AMIGA_DISPLAY', ':97'))   # the invisible X display (Xvfb), never the desktop's
 log = open(os.path.join(ROOT, 'build', 'amiga', 'fsuae.log'), 'w')
 p = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env)
 t0 = time.time()

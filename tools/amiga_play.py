@@ -16,7 +16,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 exe = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, 'build', 'amiga', 'bomber')
 dh0 = os.path.join(ROOT, 'build', 'amiga', 'dh0')
 base = os.path.join(ROOT, 'build', 'amiga', 'fsuae-base')
-DISPLAY = os.environ.get('DISPLAY', ':97')
+DISPLAY = os.environ.get('AMIGA_DISPLAY', ':97')   # the invisible X display (Xvfb), never the desktop's
 env = dict(os.environ, DISPLAY=DISPLAY)
 fails = []
 
@@ -87,7 +87,8 @@ def game(joystick):
         check('SPACE starts the game', state()[1] == 0)
         if not joystick: screenshot('game.png')
         if joystick:
-            moves = [(2, ['Down'], 1, +1), (2, ['Up'], 1, -1), (2, ['Left'], 0, -1), (2, ['Right'], 0, +1)]   # from the top right corner
+            moves = [(2, ['Left'], 0, -1), (2, ['Right'], 0, +1), (2, ['Down'], 1, +1), (2, ['Up'], 1, -1)]   # from the top right corner: along the
+                                                                                                          # corner's row first (a stop short of it is a pillar's row)
         else:
             moves = [(0, ['Right'], 0, +1), (0, ['Left'], 0, -1), (0, ['Down'], 1, +1), (0, ['Up'], 1, -1),
                      (1, ['a'], 0, -1), (1, ['d'], 0, +1), (1, ['w'], 1, -1), (1, ['s'], 1, +1)]   # from the bottom right corner

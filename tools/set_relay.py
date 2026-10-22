@@ -11,7 +11,8 @@ then the port, 16 bits little-endian); this rewrites it.
 Files: .tap (ZX Spectrum; the block checksum is redone), .dsk (CPC disk image,
 standard or extended; the field may cross sectors), .cpc (an AMSDOS file),
 .xex (Atari), .prg and .d64 (C64; on the disk the file BOMBERNET, or its
-first program, whose sector chain the field may cross). The MZ-800 takes its relay from its card: mzpico.ini
+first program, whose sector chain the field may cross), an AmigaOS
+executable (the port's bytes in the 68000's order). The MZ-800 takes its relay from its card: mzpico.ini
 ([cloud] net_relay, net_port) on an MZPico, /unicard/network.cfg on a Unicard.
 """
 import os, sys
@@ -103,6 +104,11 @@ def xex_map(d):
     return offs, addrs
 
 
+def big_endian(d):
+    """an AmigaOS executable (a hunk file, 000003F3 first): its 68000 reads the port's two bytes high first"""
+    return d[:4] == b'\x00\x00\x03\xf3'
+
+
 def load(path):
     d = bytearray(open(path, 'rb').read())
     low = path.lower()
@@ -122,7 +128,8 @@ def load(path):
 
 def show(path, d, at):
     raw = bytes(d[o] for o in at)
-    print(f'{path}: {raw[8:8 + HOST].split(b"\0")[0].decode("ascii", "replace")}:{raw[54] | raw[55] << 8}')
+    port = int.from_bytes(raw[54:56], 'big' if big_endian(d) else 'little')
+    print(f'{path}: {raw[8:8 + HOST].split(b"\0")[0].decode("ascii", "replace")}:{port}')
 
 
 def main(argv):
@@ -146,7 +153,7 @@ def main(argv):
                                               '/unicard/network.cfg)' if path.lower().endswith('.mzf') else '')); rc = 1
             continue
         if target:
-            new = MARK + host.encode().ljust(HOST, b'\0') + int(port).to_bytes(2, 'little')
+            new = MARK + host.encode().ljust(HOST, b'\0') + int(port).to_bytes(2, 'big' if big_endian(d) else 'little')
             for o, v in zip(at, new): d[o] = v
             if fix: fix(d)
             open(path, 'wb').write(d)

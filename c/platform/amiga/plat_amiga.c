@@ -18,6 +18,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <proto/exec.h>
+#include <dos/dos.h>
+#include <dos/dosextens.h>
 #include <proto/intuition.h>
 #include <proto/graphics.h>
 #include <proto/timer.h>
@@ -34,6 +36,27 @@
 #include <exec/memory.h>
 #include "game.h"
 #include "tables.h"
+
+/* Our own stack: the Shell gives a program 4-16 KB, a Workbench icon 4 KB
+ * unless it says more, and the game with its network needs more. The
+ * core's main is compiled as bomber_main (tools/build_amiga.py); this main
+ * swaps to a 64 KB stack around it. */
+#define STACK_SIZE 65536
+void bomber_main(void);
+#undef main                               /* the build renames the core's main, not this one */
+int main(void) {
+  struct StackSwapStruct sss;
+  void *mem = AllocMem(STACK_SIZE, MEMF_ANY);
+  if (!mem) return 20;
+  sss.stk_Lower = mem;
+  sss.stk_Upper = (ULONG)mem + STACK_SIZE;
+  sss.stk_Pointer = (APTR)sss.stk_Upper;
+  StackSwap(&sss);
+  bomber_main();
+  StackSwap(&sss);
+  FreeMem(mem, STACK_SIZE);
+  return 0;
+}
 
 struct IntuitionBase *IntuitionBase;
 struct GfxBase *GfxBase;
@@ -99,6 +122,10 @@ static struct {
 #ifdef AMIGA_PLAYTEST
 static FILE *playlog;                     /* tools/amiga_play.py reads it: the players' places every frame */
 #endif
+#ifdef AMIGA_NETTEST
+#include "netdev.h"
+static FILE *netlog;                      /* tools/crossplay.py reads it: the room's state every frame */
+#endif
 
 /* ---- the keyboard: raw key codes, their state kept ---- */
 static uint8_t keydown[128];
@@ -141,6 +168,15 @@ uint8_t plat_keys_a(void) {
   uint8_t k = 0;
 #ifdef AMIGA_TEST
   return title_mode && (frames & 1) ? KEY_SPACE : 0;
+#endif
+#if defined(AMIGA_NETTEST) && AMIGA_NETTEST == 2
+  {                                       /* joining: the room code from DH0:code.txt, once the test wrote it */
+    static uint8_t poll, got;
+    if (title_mode && !got && !(++poll & 15)) {
+      FILE *f = fopen("DH0:code.txt", "r");
+      if (f) { if (fread(net_code, 1, 4, f) == 4) { net_code[4] = 0; got = 1; } fclose(f); }
+    }
+  }
 #endif
   poll_keys();
   if (keydown[K_UP]) k |= KEY_UP;
@@ -221,6 +257,9 @@ void plat_delay(void) { WaitTOF(); }
 void plat_tone(uint16_t ratio, uint8_t len) {
   uint16_t period, n, i;
   uint32_t bytes;
+#ifdef AMIGA_NO_TONES
+  return;
+#endif
   if (!have_audio || !ratio) return;
   period = (uint16_t)((uint32_t)ratio * 4 / 5);
   if (period < 124) period = 124;
@@ -349,6 +388,24 @@ void flush_screen(void) {
     if (!(++every & 7)) fflush(playlog);
   }
 #endif
+#ifdef AMIGA_NETTEST
+  if (netlog) {                           /* the state tools/crossplay.py reads from the other machines' memory */
+    static uint8_t every;
+    uint8_t i;
+    fprintf(netlog, "frame %u title %u code %.4s active %u abort %u slot %u delay %u table %02x%02x%02x%02x hash %04x map ",
+            frame_no, title_mode, net_code, net_active, net_abort, net_slot, net_delay, net_table[0], net_table[1], net_table[2],
+            net_table[3], state_hash);
+#ifndef AMIGA_NETTEST_NOMAP
+    { static char hex[2001]; char *h = hex; const char *digit = "0123456789abcdef";   /* one write, not a thousand */
+      for (i = 0; i < 25; i++) { uint8_t x; for (x = 0; x < 40; x++) { uint8_t v = map_layer[i * 40 + x]; *h++ = digit[v >> 4]; *h++ = digit[v & 15]; } }
+      *h = 0; fputs(hex, netlog); }
+#else
+    fprintf(netlog, "none");
+#endif
+    fputc('\n', netlog);
+    if (!title_mode || !(++every & 3)) fflush(netlog);   /* every game frame: the last one before a crash is wanted */
+  }
+#endif
 #ifdef AMIGA_TEST
   if (!title_mode) {
     if (rec_pos + 6 <= REC_LEN) { uint32_t d = eclock() - t_flush; test.flush += d; if (test.n < TEST_FRAMES) test.fl[test.n] = d; }
@@ -375,6 +432,37 @@ void plat_hud_colour(uint8_t x, uint8_t n, uint8_t player, uint8_t blank) {
   for (; n; n--, x++) cell(x, HUD_ROW, amiga_game_glyph[shadow_vram[HUD_ROW * SCREEN_W + x]], (uint8_t)(8 + player));
 }
 
+#ifdef AMIGA_NETTEST
+/* A trap handler for the test builds: a CPU exception (an address error,
+ * an illegal instruction) shows its number and the faulting PC as hex on
+ * the screen's top row (written into the bitplanes: no OS calls here) and
+ * halts, for a screenshot. The 68000's frame after the trap number: for a
+ * bus or address error (2, 3) a function word, the address, the
+ * instruction, then SR and PC (PC at 14); for the others SR and PC (PC at
+ * 6). */
+void crash_show(uint32_t trap, uint32_t pc0, uint32_t pc1, uint32_t *usp);   /* called from amiga_trap (assembly) */
+void crash_show(uint32_t trap, uint32_t pc0, uint32_t pc1, uint32_t *usp) {
+  uint32_t v[20];                          /* in binary: the title font has no glyph for every hex digit */
+  uint8_t k, i;
+  v[0] = trap; v[1] = pc0; v[2] = pc1;
+  for (k = 3; k < 20; k++) v[k] = usp[k - 3];   /* the user stack from its pointer: return addresses among them */
+  for (k = 0; k < 20; k++)
+    for (i = 0; i < 32; i++) cell(i, k, amiga_title_glyph[(uint8_t)('0' + ((v[k] >> (31 - i)) & 1))], 7);
+}
+extern void amiga_trap(void);
+asm("\n"
+    "        .text\n"
+    "        .globl  _amiga_trap\n"
+    "_amiga_trap:\n"
+    "        move.l  usp,a0\n"
+    "        move.l  a0,-(sp)\n"           /* the user stack pointer */
+    "        move.l  14+4(sp),-(sp)\n"     /* PC if a bus or address error */
+    "        move.l  6+8(sp),-(sp)\n"      /* PC if another exception */
+    "        move.l  12(sp),-(sp)\n"       /* the trap number */
+    "        jsr     _crash_show\n"
+    "1:      bra.s   1b\n");
+#endif
+
 /* ---- start and end ---- */
 static void cleanup(void) {
   if (vb_int.is_Code) RemIntServer(INTB_VERTB, &vb_int);
@@ -392,6 +480,9 @@ static void cleanup(void) {
 #ifdef AMIGA_PLAYTEST
   if (playlog) fclose(playlog);
 #endif
+#ifdef AMIGA_NETTEST
+  if (netlog) fclose(netlog);
+#endif
 }
 
 void plat_init(void) {
@@ -399,6 +490,7 @@ void plat_init(void) {
   uint8_t i;
   struct EClockVal ev;
   atexit(cleanup);
+  ((struct Process *)FindTask(NULL))->pr_WindowPtr = (APTR)-1;   /* no requesters from DOS or libraries: errors come back as codes */
   IntuitionBase = (struct IntuitionBase *)OpenLibrary("intuition.library", 37);
   GfxBase = (struct GfxBase *)OpenLibrary("graphics.library", 37);
   if (!IntuitionBase || !GfxBase) exit(20);
@@ -460,6 +552,15 @@ void plat_init(void) {
   hash_period = rec[12];
 #endif
   replay_active = 1;
+#endif
+#ifdef AMIGA_NETTEST                     /* 1: host a room of AMIGA_NETTEST_PLAYERS on SPACE; 2: join */
+  netlog = fopen("DH0:net.log", "a");           /* appended: what was logged before a crash and reboot survives */
+  if (netlog) {
+    fprintf(netlog, "start\n");                 /* the marker between runs */
+    fflush(netlog);
+    FindTask(NULL)->tc_TrapCode = (APTR)amiga_trap;
+  }
+  menu_mode = 1; menu_players = AMIGA_NETTEST_PLAYERS; menu_net = AMIGA_NETTEST; menu_local = AMIGA_NETTEST_LOCAL;
 #endif
 #ifdef AMIGA_PLAYTEST
   playlog = fopen("DH0:play.log", "w");

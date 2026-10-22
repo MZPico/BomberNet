@@ -26,7 +26,8 @@ big-endian hashing, `PLAT_HASH_PORTABLE`, is already tested on PowerPC).
    title and lobby; play in FS-UAE. Done, see below.
 2. **The network**: `tcp.h` over `bsdsocket.library`; the lobby's delay;
    cross-play with every machine through the local relay (FS-UAE's own
-   `bsdsocket` emulation), then the production relay.
+   `bsdsocket` emulation), then the production relay. Done in FS-UAE, see
+   below; the production relay and the other machines are next.
 3. **Release**: an executable plus an ADF; `set_relay.py` on the executable
    (a plain file: the field is contiguous) and the ADF; hardware testers;
    the README and the catalog.
@@ -185,6 +186,65 @@ Frame work, dm4 on an A500: median 12.5 ms, 90th percentile 32.9 ms
 RAM timing; a known pause once a round, to be looked at after the network
 (a row-wise redraw, or real hardware's figure).
 
+## Step 2: the network in FS-UAE
+
+**The driver** (`c/platform/amiga/tcp_bsdsocket.c`): `tcp.h` over
+`bsdsocket.library` (version 3 or later), one socket, set non-blocking by
+`IoctlSocket(FIONBIO)` after the connect: the stack receives in the
+background, a poll takes what has arrived, a send that would block waits
+20 ms (`Delay(1)`) and tries again. Without the library the game plays
+locally. The relay is patchable: `tools/set_relay.py` on the executable
+(the field is in the data hunk, the port in the 68000's byte order; the
+file is recognised by its hunk magic).
+
+**Memory.** The program runs the core on a 64 KB stack of its own,
+switched to by `StackSwap` in a wrapper `main` (the core's `main` is
+compiled as `bomber_main`): the Shell's default of 4 KB is too small, and
+libnix ignores `__stack`. `mem.c` provides `memcpy` and `memset` (byte or
+word moves): libnix's go to exec's `CopyMem`, and the AROS ROM's `CopyMem`
+faults on a 68000 when source and destination are not aligned alike,
+which the network's byte buffers bring about every frame. `pr_WindowPtr`
+is set to -1 so no requester can pop up over the game's screen.
+
+**Test builds.** `tools/build_amiga.py --net host|join` (`AMIGA_NETTEST`):
+a preset menu (host or join a room of `PLAYERS` with `LOCAL` local
+players; a joiner takes the room code from `DH0:code.txt`), the room's
+state logged to `DH0:net.log` every frame (the hash, the seat table, the
+map unless `AMIGA_NETTEST_NOMAP`), and a trap handler that shows a CPU
+exception's number and PC as binary on the screen's top row and halts,
+for a screenshot (the Amiga has no debugger to attach here).
+
+**The ROM.** FS-UAE's bundled AROS ROM (2021) crashes on an emulated
+68000 (A500) in the middle of a network match: an address error in its
+`graphics.hidd`; an A1200 (68020) never crashed. The AROS nightly ROM of
+2026-10-22 (`aros-rom.bin` and `aros-ext.bin` from the m68k boot ISO,
+passed as `AMIGA_KICKSTART` and `AMIGA_KICKSTART_EXT`) has the bug fixed,
+and all the results below are with it on an A500. No Kickstart image is
+needed, the test bench stays free.
+
+**Results.**
+
+- `tools/amiga_match.py`: two A500s in FS-UAE, each on an X display of
+  its own (`:97` and `:98`: a window alone has the keyboard, two windows
+  on one display did not take `xdotool`'s keys), through the local relay,
+  both in real time. 2018 game frames in 150 s, 127 hashed frames compared,
+  0 mismatches; 4 players (2 local on each Amiga), 981 frames, 0
+  mismatches. The lobby measures the delay as 1 (20 ms) between the two.
+- `tools/crossplay.py 300 amiga zx`: the Amiga hosting a Spectrum (FuseX,
+  stepped by the harness), 300 frames, 18 hashed frames compared, 0
+  mismatches, the maps identical at the end.
+- Speed: a 2-Amiga match runs at the full 16.6 game frames a second
+  (50 Hz / 3) with the network; the 68000's half-frame headroom of step 0
+  holds with FS-UAE's `bsdsocket`. (Logging the 2000-character map every
+  frame through the emulated hard drive halved it, so the match test
+  leaves the map out.)
+- The replay (`tools/amiga_test.py`, dm4) and the play test
+  (`tools/amiga_play.py`) pass unchanged with the network linked in.
+
+Not yet: the production relay (the Internet from FS-UAE), cross-play with
+the MZ, CPC, Atari and C64, and real hardware with a real stack (Roadshow,
+AmiTCP); those are the start of step 3.
+
 ## Risks and open questions
 
 - Kickstart 1.3 machines (an unexpanded A500 of 1987-1990) have no
@@ -193,8 +253,10 @@ RAM timing; a known pause once a round, to be looked at after the network
   Amiga practice but not strictly OS-clean; a stack that needs the CPU
   (Roadshow is light) shares it with the game: the frame time with the
   network is measured in step 2.
-- The AROS ROM may lack something the test bench needs (Intuition
-  screens, `bsdsocket` hooks): then a real Kickstart image is needed.
+- The AROS ROM: FS-UAE's bundled one has a 68000 bug (step 2); the 2026
+  nightly works. A real Kickstart was never needed in the test bench, but
+  nobody has run the program under one yet: that is the hardware testers'
+  first report.
 - Toolchain build time and quirks (bebbo's gcc is a large build).
 - The Atari ST could follow on the same toolchain family and renderer,
   if a network device worth supporting appears.
