@@ -2,7 +2,7 @@
 """The Amiga build (bebbo's gcc in Docker, tools/amiga-cc): build/amiga/bomber,
 an AmigaOS executable.
 
-  tools/build_amiga.py [--test recording.bnr [--frames n]] [-O2|-Os] [--out dir]
+  tools/build_amiga.py [--test recording.bnr [--frames n] | --play] [-O2|-Os] [--out dir]
 
 --test: AMIGA_TEST, the recording compiled in and replayed from the title on;
 each game frame's work is timed (tools/amiga_test.py runs it in FS-UAE and
@@ -23,6 +23,7 @@ if '--test' in sys.argv:
         for i in range(0, len(data), 24): f.write('  ' + ', '.join(str(b) for b in data[i:i + 24]) + ',\n')
         f.write('};\n')
     flags += ['-DAMIGA_TEST', '-DAMIGA_RESULT="DH0:result.txt"']
+if '--play' in sys.argv: flags.append('-DAMIGA_PLAYTEST')   # tools/amiga_play.py: a 4-player deathmatch preset, the players logged
 rel = lambda p: os.path.relpath(p, ROOT)             # the compiler runs in Docker with the repository as /work
 c = os.path.join(ROOT, 'c')
 src = [f'{c}/core/{n}.c' for n in ('bomber', 'netplay', 'data', 'map', 'game', 'input', 'video', 'enemy', 'bomb', 'player')]

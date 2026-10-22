@@ -23,7 +23,7 @@ big-endian hashing, `PLAT_HASH_PORTABLE`, is already tested on PowerPC).
    a host directory mounted as an Amiga drive. Done, see below.
 1. **The platform layer**: keyboard (two key sets, the room code's
    letters), joysticks, Paula tones, PAL/NTSC frame timing, memory; the
-   title and lobby; play in FS-UAE.
+   title and lobby; play in FS-UAE. Done, see below.
 2. **The network**: `tcp.h` over `bsdsocket.library`; the lobby's delay;
    cross-play with every machine through the local relay (FS-UAE's own
    `bsdsocket` emulation), then the production relay.
@@ -142,6 +142,48 @@ A1200 86 ms), a visible pause, for step 1 to shorten (two cells a word,
 or the blitter); and the frame after a round start, about 90 ms (the map).
 So the 68000 has the headroom expected: half the frame free for the
 stack's work in step 2.
+
+## Step 1: the platform layer, played in FS-UAE
+
+Input (`plat_amiga.c`): a borderless backdrop window on the screen takes
+the raw key events (IDCMP `RAWKEY`), and the state of every key is kept
+from the down and up events, so several keys at once work as on the other
+machines.
+
+| Source | Keys |
+|---|---|
+| key set A, "CURSOR AND SPACE" | the cursor keys; SPACE fires (RETURN when another player has key set B: "CURSOR AND RET") |
+| key set B, "WASD AND E" | W A S D, E fires |
+| joystick port 2, joystick port 1 | read from the hardware (JOYxDAT, the CIA's fire bits) |
+| text entry (the room code) | the letters; BACKSPACE or DEL deletes, ESC cancels |
+
+ESC leaves a network match (BREAK elsewhere). The mouse pointer is hidden
+on the game's screen. On PAL the screen is 256 lines with the field
+centred (a 200-line screen let the screen behind show through the bottom
+56 lines); on NTSC 200.
+
+Sound: one Paula channel, allocated through `audio.device` (so other
+programs' sound keeps working), plays a square-wave sample at the MZ's
+pitch (period = ratio * 4 / 5) for the tone's length, silence after it;
+the vertical-blank server switches the DMA off a frame or two later. Not
+heard yet by anyone (FS-UAE here has no sound output).
+
+The flush compares four cells at a time (32-bit words) for rows 0-23, and
+draws a cell by `amiga_cell` with plain displacements (the rows 40 bytes
+apart): a normal frame's flush is 6 ms (20 before).
+
+Tested (`tools/amiga_play.py`, FS-UAE in real time, the keys sent to its
+window by `xdotool`, the program logging the players' places to `DH0:` in
+an `AMIGA_PLAYTEST` build with a 4-player deathmatch preset): the title,
+SPACE to start, key set A in all four directions, key set B, and joystick
+port 2 (FS-UAE's keyboard joystick) in all four directions; the audio
+channel allocated. All pass.
+
+Frame work, dm4 on an A500: median 12.5 ms, 90th percentile 32.9 ms
+(27.1 and 34.7 in step 0). A round start's full redraw is still 313 ms
+(360 before): the cost is not in the stores, perhaps in FS-UAE's chip
+RAM timing; a known pause once a round, to be looked at after the network
+(a row-wise redraw, or real hardware's figure).
 
 ## Risks and open questions
 
