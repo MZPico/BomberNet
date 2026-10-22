@@ -20,7 +20,7 @@ big-endian hashing, `PLAT_HASH_PORTABLE`, is already tested on PowerPC).
 0. **Measure first**: the toolchain; the core built for the 68000; the
    screen (an Intuition screen, the cell renderer); a recording replayed in
    FS-UAE with the hashes checked and the frames timed. Results written to
-   a host directory mounted as an Amiga drive.
+   a host directory mounted as an Amiga drive. Done, see below.
 1. **The platform layer**: keyboard (two key sets, the room code's
    letters), joysticks, Paula tones, PAL/NTSC frame timing, memory; the
    title and lobby; play in FS-UAE.
@@ -93,6 +93,55 @@ FS-UAE's free AROS replacement ROM is tried first.
 Workbench by icon or from the Shell) and a bootable ADF with it and a
 `startup-sequence` for floppy-only Amigas; with a TCP/IP stack already
 running for a network match.
+
+## Step 0: the core on the 68000, measured
+
+**Toolchain.** bebbo's gcc for AmigaOS, prebuilt in the Docker image
+`amigadev/crosstools:m68k-amigaos` (gcc 6.5, the NDK, libnix): bebbo's
+own GitHub repositories are gone, so the build scripts that fetch them
+(and their forks) no longer work, and vbcc's Linux binaries were not
+found where expected. `tools/amiga-cc` runs the compiler in the container
+with the repository mounted; `tools/build_amiga.py` builds
+`build/amiga/bomber`, an AmigaOS executable (`-O2 -noixemul -m68000`).
+
+**Test bench.** FS-UAE 3.1 (the Ubuntu package) on the invisible X display
+with its bundled AROS replacement ROM (boots to a shell; Intuition screens
+and the timer work), a host directory as `DH0:` whose `Startup-Sequence`
+runs the program; `tools/amiga_test.py`. No Kickstart image was needed.
+
+**The platform so far** (`c/platform/amiga/plat_amiga.c`): an Intuition
+screen of 320 x 200 in 4 bitplanes, the cells drawn by `amiga_cell` (68000
+assembly: the glyph's 8 bytes to each plane where the colour has the bit
+set), the vertical-blank server counting TV frames, the E clock for the
+timing; `tables.c` from `tools/make_amiga_tables.py` (79 glyphs, the MZ's
+inks and the players' colours in a 16-colour palette); the test mode
+`AMIGA_TEST` as on the C64. Keys, joysticks and tones are step 1.
+
+**Correct.** Every recording replays with every hash equal, through the
+big-endian field-by-field hash (`PLAT_HASH_PORTABLE`, its first real
+68000): dm4, coop4, dm2, coop1, dm2s, coop2s, the 2995 frames of
+coop2-score, and dm4 on an NTSC machine.
+
+**Frame work**, an A500 (68000, 7 MHz, 1 MB chip + 8 MB fast; fast RAM
+makes no difference):
+
+| Recording | Median | 90th percentile | Over 60 ms |
+|---|---|---|---|
+| dm4 (4 players, deathmatch) | 27.1 ms | 34.7 ms | 3 of 498 |
+| coop4 | 27.1 ms | 35.0 ms | 5 of 498 |
+| dm2 | 24.5 ms | 30.2 ms | 7 of 498 |
+| coop2-score (2995 frames) | 25.5 ms | 33.8 ms | 26 |
+| dm4, NTSC | 25.9 ms | 33.9 ms | 3 |
+| dm4, an A1200 (68020, 14 MHz) | 6.9 ms | 8.4 ms | 2 |
+
+Of a frame about 20 ms is the flush's pass over the 1000 cells (20 us a
+cell), the logic the rest; without the hash 1.5 ms less. The frames over
+60 ms are the round starts: a full redraw of the 1000 cells takes 360 ms
+(360 us a cell: 32 byte writes with indexed addressing on a 68000, an
+A1200 86 ms), a visible pause, for step 1 to shorten (two cells a word,
+or the blitter); and the frame after a round start, about 90 ms (the map).
+So the 68000 has the headroom expected: half the frame free for the
+stack's work in step 2.
 
 ## Risks and open questions
 
