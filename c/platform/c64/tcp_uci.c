@@ -17,12 +17,14 @@
  * $03 $11 socket bytes: write; $03 $09 socket: close.
  *
  * The firmware gives each socket a 40 ms receive timeout: a read with
- * nothing waiting keeps the interface busy that long. The C64 need not
- * wait: a command is pushed, the game goes on, and a later tcp_recv or
- * tcp_send takes the reply and pushes the next (a write when bytes are
- * queued, else a read when tcp_recv found nothing). The bytes read go to
- * the WiC64 engine's ring (c64.s: only one device is used), the writes
- * queue in its first buffer. */
+ * nothing waiting keeps the interface busy that long, and returns as soon
+ * as data comes. While a connection is open the raster interrupt, every
+ * quarter of a TV frame, takes the reply of the command going and pushes
+ * the next (c64.s, uci_poll): a write with all that tcp_send queued, else
+ * a read, so one is always waiting and a message is in the ring within
+ * about 5 ms of reaching the Ultimate. The bytes read go to the WiC64
+ * engine's ring (only one device is used), the writes queue in its first
+ * buffer. Finding, opening and closing wait here, the pump off. */
 #include <stdint.h>
 #include <string.h>
 #include "tcp_c64.h"
@@ -49,10 +51,15 @@ extern volatile uint16_t eng_head, eng_tail;
 extern uint8_t eng_rx[2048], eng_wbuf0[4 + 512];
 #define RING 2048
 #define WMAX 512
-#define READ_MAX 512                      /* a read's length: one queue block */
 
-static uint8_t sock, open, failed, going, want;   /* going: the command waiting for its reply (0, $10, $11) */
-static uint16_t wq;                       /* bytes queued in eng_wbuf0 + 3 */
+/* c64.s: the pump in the background */
+extern volatile uint8_t uci_bg, uci_going, uci_sock, uci_failed;
+extern volatile uint16_t uci_wq;
+void uci_poll(void);
+#define SEI() __asm__ volatile ("sei")
+#define CLI() __asm__ volatile ("cli")
+
+static uint8_t open;
 static char st[4];                        /* the reply's status: its first characters */
 static uint8_t reply[40];
 static uint16_t reply_len;
@@ -117,77 +124,54 @@ uint8_t uci_open(const char *host, uint16_t port) {
   c[n++] = 0;
   if (!command(c, n, 250)) return 2;      /* up to 5 s to connect */
   if (reply_len < 1) return 3;
-  sock = reply[0];
-  open = 1; failed = going = want = 0; wq = 0;
+  SEI();
+  uci_sock = reply[0];
+  uci_failed = uci_going = 0; uci_wq = 0;
   eng_head = eng_tail = 0;
+  uci_bg = 1;                             /* the pump starts its first read */
+  CLI();
+  open = 1;
   return 0;
-}
-
-/* the reply to the command going, if it is there; then the next command */
-static void pump(void) {
-  if (going) {
-    if (STATE == BUSY) return;
-    if (going == 0x10) {
-      collect(0, 0, 1);
-      if (st[0] == '0' && st[1] == '1') failed = 1;           /* closed by the other side */
-      else if (!ok() && !(st[0] == '0' && st[1] == '2')) failed = 1;   /* "02": nothing was waiting */
-    } else {
-      collect(reply, sizeof(reply), 0);
-      if (!ok()) failed = 1;
-    }
-    going = 0;
-  }
-  if (failed || STATE != IDLE) return;
-  if (wq) {                               /* a write: all that is queued */
-    eng_wbuf0[0] = 0x03; eng_wbuf0[1] = 0x11; eng_wbuf0[2] = sock;
-    push(eng_wbuf0, wq + 3);
-    wq = 0; going = 0x11;
-  } else if (want && ((eng_tail - eng_head - 1) & (RING - 1)) > READ_MAX) {
-    static uint8_t c[5] = {0x03, 0x10, 0, (uint8_t)READ_MAX, (uint8_t)(READ_MAX >> 8)};
-    c[2] = sock;
-    push(c, 5);
-    want = 0; going = 0x10;
-  }
 }
 
 uint8_t uci_send(const uint8_t *buf, uint16_t n) {
   uint8_t t = c64_ticks;
   if (!open) return 1;
   while (n) {
-    uint16_t k = WMAX - wq;
-    if (failed) return 2;
+    uint16_t k;
+    if (uci_failed) return 2;
+    SEI();
+    k = WMAX - uci_wq;
     if (k > n) k = n;
-    memcpy(eng_wbuf0 + 3 + wq, buf, k); wq += k; buf += k; n -= k;
-    pump();
+    memcpy(eng_wbuf0 + 3 + uci_wq, buf, k); uci_wq += k; buf += k; n -= k;
+    uci_poll();                           /* the write goes now if the interface is free */
+    CLI();
     if (n && (uint8_t)(c64_ticks - t) > 100) return 2;   /* the queue did not empty in 2 s */
   }
-  pump();
   return 0;
 }
 
 int16_t uci_recv(uint8_t *buf, uint16_t max) {
   uint16_t h, t = eng_tail, n;
-  if (!open || failed) return -1;
-  pump();
-  h = eng_head;
-  if (h != t) {
-    n = (h - t) & (RING - 1);
-    if (n > RING - t) n = RING - t;       /* up to the ring's end */
-    if (n > max) n = max;
-    memcpy(buf, eng_rx + t, n);
-    eng_tail = (t + n) & (RING - 1);
-    return (int16_t)n;
-  }
-  want = 1;
-  pump();
-  return failed ? -1 : 0;
+  if (!open || uci_failed) return -1;
+  SEI();
+  h = eng_head;                           /* the interrupt writes it */
+  CLI();
+  if (h == t) return 0;
+  n = (h - t) & (RING - 1);
+  if (n > RING - t) n = RING - t;         /* up to the ring's end */
+  if (n > max) n = max;
+  memcpy(buf, eng_rx + t, n);
+  eng_tail = (t + n) & (RING - 1);
+  return (int16_t)n;
 }
 
 void uci_close(void) {
   uint8_t c[3];
   if (!open) return;
-  if (going) { wait_ready(10); CTRL = C_ACC; going = 0; }
-  c[0] = 0x03; c[1] = 0x09; c[2] = sock;
+  uci_bg = 0;                             /* the pump stops; a command going ends */
+  if (uci_going) { wait_ready(10); CTRL = C_ACC; uci_going = 0; }
+  c[0] = 0x03; c[1] = 0x09; c[2] = uci_sock;
   command(c, 3, 10);
   open = 0;
 }

@@ -149,17 +149,15 @@ class Commodore:
     def close(self): self.v.close()
 
     def gap(self, secs, *others):
-        """the game stops polling the network for secs (as between stages):
-        its main program waits in a JMP * at $033C, interrupts running; the
-        others run on (their input lines arrive meanwhile)"""
-        r = self.v.cmd('r')
-        pc = r.split('.;')[1][:4]
-        self.v.poke(0x033c, [0x4c, 0x3c, 0x03])
-        self.v.cmd('r pc = 033c')
-        self.v.run()
+        """the game stops polling the network for secs (as between stages).
+        A C64_NETTIME build waits in its next frame sync (c64_gap, poked:
+        no PC tricks through the monitor, which can stop the CPU inside an
+        interrupt handler); the others run on, their input lines arrive
+        meanwhile."""
+        if 'c64_gap' not in self.v.sym: sys.exit('GAP needs a C64_NETTIME build (C64_BUILD=build/c64nt)')
+        self.v.poke('c64_gap', [min(250, secs * 50)]); self.v.run()
         t = time.time()
-        while time.time() - t < secs: run(1, *others)
-        self.v.cmd(f'r pc = {pc}')
+        while time.time() - t < secs + 1: run(1, *others)
 
     def reset_net(self):
         """the counters from the game's start on (a C64_NETTIME build)"""
@@ -260,6 +258,9 @@ fh, fj = host.rd('_map_layer', 1000), join.rd('_map_layer', 1000)
 print(f'fields identical: {fh == fj} (read at frames {H} {host.r16("_frame_no")}, {J} {join.r16("_frame_no")})')
 for m in both:
     if m.kind == 'C64': m.report(m.r16('_frame_no'))
+    if m.kind == 'C64' and os.environ.get('C64_DUMP'):
+        print('C64 at the end:', m.v.cmd('r').split('.;')[1].split('\n')[0], '| engine', m.v.mem('eng_state', 20).hex(' '),
+              '| frame_no', m.r16('_frame_no'), '| title_mode', m.r8('_title_mode'), flush=True)
 for m in both:
     if hasattr(m, 'z'): m.z.screenshot(f'build/cross_{m.kind.lower()}.png')
     elif m.kind == 'C64': m.v.screenshot('build/cross_c64.png')

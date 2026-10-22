@@ -9,6 +9,7 @@ time with the network, for a C64_NETTIME build (tools/build_c64.py).
                                            tools/c64/vice-3.9-bombernet.patch)
   PLAYERS=4 LOCAL_HOST=2 LOCAL_JOIN=2 ...  seats, as in tools/crossplay.py
   C64_NET=uci ...                          an Ultimate's network (else a WiC64)
+  RELAY=real ...                           the production relay (else the local one)
 
 The figures are each machine's: game frames a second, the frames' work
 (from one frame sync to the next, the waits for the network included), the
@@ -24,7 +25,7 @@ PLAYERS, LOCAL_H, LOCAL_J = int(os.environ.get('PLAYERS', 2)), int(os.environ.ge
 out = BUILD + '/net'; os.makedirs(out, exist_ok=True)
 for ext in ('', '.elf'):
     open(f'{out}/bomber.prg{ext}', 'wb').write(open(f'{BUILD}/bomber.prg{ext}', 'rb').read())
-set_relay.main([f'{out}/bomber.prg', '127.0.0.1:8765'])
+if os.environ.get('RELAY') != 'real': set_relay.main([f'{out}/bomber.prg', '127.0.0.1:8765'])   # RELAY=real: production
 UCI = os.environ.get('C64_NET') == 'uci'          # C64_NET=uci: the Ultimate's network, else a WiC64
 host = Vice(f'{out}/bomber.prg', wic64=not UCI, uci=UCI, port=6510)
 join = Vice(f'{out}/bomber.prg', wic64=not UCI, uci=UCI, port=6511)
@@ -55,6 +56,7 @@ try:
         if host.u8('title_mode') == 0 and join.u8('title_mode') == 0: break
         host.run(); join.run(0.5)
     if host.u8('title_mode') or join.u8('title_mode'): sys.exit('the match did not start')
+    print(f'input delay: host {host.u8("net_delay")} frames ({host.u8("net_delay") * 60} ms), join {join.u8("net_delay")}', flush=True)
     host.key('CRSR_RIGHT', 1); join.key('CRSR_RIGHT', 1)
     f0 = []
     for v in both:

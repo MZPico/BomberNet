@@ -177,6 +177,10 @@ static uint8_t last_tick, ntsc, ntsc_step;
  * frames that came late */
 __attribute__((used)) struct { uint32_t busy, idle; uint16_t n, late; } c64_frames;
 static uint32_t f_end;
+/* a test's gap (tools/crossplay.py GAP=n pokes it): the next frame sync
+ * waits that many TV frames first, interrupts on, as a stage change does
+ * not poll the network for seconds */
+__attribute__((used)) volatile uint8_t c64_gap;
 #endif
 
 void plat_frame_sync(void) {                    /* 60 ms: 3 PAL frames, or 4,3,4,3,4 NTSC ones (3.6) */
@@ -187,6 +191,9 @@ void plat_frame_sync(void) {                    /* 60 ms: 3 PAL frames, or 4,3,4
                               if ((uint8_t)(c64_ticks - last_tick) > need) c64_frames.late++; }
 #endif
   if (ntsc) { need = (ntsc_step & 1) ? 3 : 4; if (++ntsc_step == 5) ntsc_step = 0; }
+#ifdef C64_NETTIME
+  if (c64_gap) { uint8_t t = c64_ticks; while ((uint8_t)(c64_ticks - t) < c64_gap) ; c64_gap = 0; last_tick = c64_ticks; }
+#endif
 #ifdef C64_TEST
   if (t_start && c64_test.n < TEST_FRAMES) {
     uint32_t w = cycles() - t_start;

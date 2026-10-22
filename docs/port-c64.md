@@ -172,14 +172,15 @@ FLAG2 comes while the handler still runs: that nested NMI only notes it,
 and the first handler takes the step before it leaves (at most two deep).
 `tcp_send` appends to one of two buffers, and one write command sends all
 that was queued; reads go into a 2 KB ring, from which `tcp_recv` hands
-out; a read starts when `tcp_recv` finds the ring empty (it answers
-"nothing" meanwhile), and by itself 8 TV frames after the last one: between
-stages the game does not poll the network for seconds (the time bonus),
-and stock VICE then answers a read nobody asked for and drops its bytes.
-That froze a co-op match at its second stage (reported with the browser
-player); `tools/crossplay.py` with `GAP=n` stops the C64's polling for 5 s
-at game frame n, the partner sending on: the previous driver stuck at the
-gap, this one plays on. A command starts 2 ms after
+out. Reads run one after the other whenever no write waits, so a message
+is in the ring a read's time after it reached the WiC64, whatever the game
+does. (Two earlier versions read only when the game asked: between stages
+the game does not poll the network for seconds, and stock VICE then
+answers a read nobody asked for and drops its bytes, which froze a co-op
+match at its second stage; and a message was used a frame or two late
+each way, which made the lobby's input delay 300 ms where the other
+machines got 180. `tools/crossplay.py` with `GAP=n` stops the C64's
+polling for 5 s at game frame n, the partner sending on.) A command starts 2 ms after
 the last one ended (CIA 1's timer B), as VICE's WiC64 sends one more FLAG2
 after a reply's last byte; the raster interrupt starts whatever was missed.
 An error status, a read bigger than its 2 KB buffer, or a command stuck for
@@ -231,13 +232,16 @@ from $DF1F; "data accepted" (control bit 1) returns to idle. The firmware
 gives each socket a 40 ms receive timeout: a read with nothing waiting
 keeps the interface busy that long and answers "02,NO DATA".
 
-So the C64 does not wait: a command is pushed, the game goes on, and a
-later `tcp_recv` or `tcp_send` takes the reply and pushes the next one (a
-write with all that is queued, else a read when `tcp_recv` found nothing).
-No interrupts are needed: the interface keeps a reply until it is taken.
-Only one device is used, so the Ultimate's driver uses the WiC64 engine's
-ring and write buffer (`c64.s`). The network code is 41.3 KB with both
-drivers, ending at $C822.
+So the C64 does not wait: the raster interrupt, every quarter of a TV
+frame, takes the reply of the command going and pushes the next one
+(`c64.s`, `uci_poll`): a write with all that `tcp_send` queued, else a
+read, so a read is always waiting and returns the moment data comes; its
+bytes are in the ring within about 5 ms of reaching the Ultimate. (The
+first version pushed the next command only from `tcp_recv` or `tcp_send`,
+which made a message a frame or two late each way: a lobby delay of
+300 ms.) Only one device is used, so the Ultimate's driver uses the WiC64
+engine's ring and write buffer. The program is 41.0 KB with both drivers,
+ending at $C724.
 
 No emulator has the command interface's network target, so the local VICE
 patch has one (`src/c64/uci_net.c`, on with `UCI_EMU=1`; tools:
@@ -248,6 +252,23 @@ the local relay: the C64 joining a Spectrum and an MZ-800, hosting the
 CPC, the 128K with ESP-01 and a Spectrum (2+2 too), co-op with a 5 s gap
 in its polling: 300 frames each, every hash equal; two C64s for 32 s at
 16.4 game frames a second (98 %). To be confirmed on a real Ultimate.
+
+**The lobby's input delay**, through the production relay from here,
+`tools/c64_match.py` with `RELAY=real` (two C64s; `tools/fusex_match.py`
+for the Spectrums), the host's figure (`ceil(rtt / 2)` frames of 60 ms,
+the longest of four pings):
+
+| | delay before (33c55fb) | delay now | two C64s' speed now |
+|---|---|---|---|
+| two Spectrums (FuseX, Spectranet) | | 1 frame (60 ms) | |
+| two C64s on the Ultimate's network | 3 frames (180 ms) | 1 frame (60 ms) | 93 % |
+| two C64s on WiC64s, the firmware's timing | 1 frame (60 ms) | 1 frame (60 ms) | 84 % (66 % before) |
+
+The WiC64's firmware pauses (a read 12-21 ms, a write 16 ms) make a
+message about 60 ms late on the WiC64's side alone, so the shortest delay
+is too short for it: two C64s on WiC64s do not reach full speed with it.
+A minimum delay of 2 frames for a WiC64, announced in the lobby, would
+make such a match steady at 120 ms; left out to keep the lobby simple.
 
 **VICE with a window** (to play, not to test): `tools/c64/vice_wsl.sh
 [uci|wic64|both] [program]` starts the patched VICE built with its SDL2

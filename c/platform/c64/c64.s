@@ -88,7 +88,8 @@ c64_irq:
         dec c64_tone_q+1
         bne 4f
         sta 0xd40b              ; voice 2
-4:      lda irq_quarter         ; the next line
+4:      jsr uci_poll            ; the Ultimate's network, every quarter of a TV frame
+        lda irq_quarter         ; the next line
         clc
         adc #1
         and #3
@@ -201,11 +202,13 @@ wic64_tmo:
 ; port B in and PA2 low; then the reply is there (FLAG2): the dummy read;
 ; then the status and the length, then the payload, a byte each FLAG2.
 ; Writes: tcp_send appends to one of two buffers, and a write command sends
-; all that was queued. Reads: when tcp_recv asks (eng_wantread), or by
-; themselves 8 TV frames after the last one (the game does not poll the
-; network between stages, for seconds; stock VICE then answers a read
-; nobody asked for and drops its bytes), into the ring eng_rx: the NMI
-; moves eng_head when a read ends, tcp_recv moves eng_tail. A command starts 2 ms after the last one ended
+; all that was queued. Reads: whenever no write waits, one after the other,
+; into the ring eng_rx (the NMI moves eng_head when a read ends, tcp_recv
+; moves eng_tail): a message is in the ring a read's time after it reached
+; the WiC64, whatever the game is doing. (Reads only when the game asked
+; made the C64 a frame or two late each way: a lobby delay of 300 ms
+; against 180; and between stages the game does not poll for seconds,
+; when stock VICE answers a read nobody asked for and drops its bytes.) A command starts 2 ms after the last one ended
 ; (CIA 1 timer B, c64_irq): VICE's WiC64 sends one more FLAG2 after a
 ; reply's last byte, which must not answer the next command's first byte.
 
@@ -343,10 +346,7 @@ st_hdr:                         ; the status, the length (low, high)
         sta eng_discard
         lda eng_job
         beq 7f                  ; a write's payload: dropped
-        jsr rx_free             ; free bytes (high) in A, with a page to spare for tcp_recv's moving tail
-        sec
-        sbc #1
-        bcc 9f
+        jsr rx_free             ; free pages in A: the reply fits when its high byte is below that
         cmp eng_left+1
         beq 9f
         bcs 8f
@@ -411,18 +411,9 @@ wic64_kick:
         lda eng_wlen,x
         ora eng_wlenh,x
         bne kick_write
-        lda eng_wantread
-        bne 1f
-        lda c64_ticks           ; not asked for: after 8 TV frames
-        sec
-        sbc eng_lastread
-        cmp #8
+        jsr rx_free             ; else always a read, while the ring has 1 KB free
+        cmp #4
         bcc 9f
-1:      jsr rx_free
-        cmp #4                  ; 1 KB free
-        bcc 9f
-        lda c64_ticks
-        sta eng_lastread
         lda #0                  ; a read
         sta eng_wantread
         lda #1
@@ -537,7 +528,6 @@ eng_wantread:   .zero 1
 eng_got:        .zero 1         ; the read in progress stores its bytes
 eng_head:       .zero 2         ; the ring: written up to here (the NMI)
 eng_tail:       .zero 2         ; taken up to here (tcp_recv)
-eng_lastread:   .zero 1         ; c64_ticks at the last read's start
 eng_fill:       .zero 1         ; the buffer tcp_send fills
 eng_wlen:       .zero 2         ; its bytes (low; buffers 0, 1)
 eng_wlenh:      .zero 2         ; (high)
@@ -555,3 +545,175 @@ eng_rx:         .zero RXMAX
         .global c64_ticks
 c64_ticks:
         .zero 1
+
+;---------------------------------------------------------------------------
+; The Ultimate's network in the background (tcp_uci.c, docs/port-c64.md):
+; while a connection is open (uci_bg), uci_poll takes the reply of the
+; command going when the command interface has it, then pushes the next:
+; a write with all that tcp_send queued (eng_wbuf0 + 3, uci_wq bytes), else
+; a read of up to 512 bytes into the ring eng_rx (eng_head). A read with
+; nothing waiting is busy up to 40 ms (the firmware's), and returns as soon
+; as data comes. Called every quarter of a TV frame (c64_irq) and from
+; tcp_uci.c with interrupts off. A reply's status other than "00" (and
+; "02": nothing was waiting) sets uci_failed.
+        .set UCI_CTRL, 0xdf1c
+        .set UCI_CMD, 0xdf1d
+        .set UCI_DATA, 0xdf1e
+        .set UCI_STAT, 0xdf1f
+
+        .section .text.uci_poll,"ax",@progbits
+        .global uci_poll
+uci_poll:
+        lda uci_bg
+        bne 1f
+        rts
+1:      lda uci_going
+        bne 12f
+        jmp uci_start
+12:     lda UCI_CTRL
+        and #0x30
+        cmp #0x10
+        bne 2f
+        rts                     ; still busy
+2:      lda uci_going
+        cmp #0x10
+        bne 6f
+        lda #2                  ; a read: the count (2 bytes, skipped), then the bytes into the ring
+        sta uci_skip
+        lda eng_head
+        sta wic64_ptr
+        lda eng_head+1
+        clc
+        adc #>eng_rx
+        sta wic64_ptr+1
+        ldy #0
+3:      bit UCI_CTRL            ; data waiting (bit 7)?
+        bpl 5f
+        lda UCI_DATA
+        ldx uci_skip
+        beq 4f
+        dec uci_skip
+        jmp 3b
+4:      sta (wic64_ptr),y
+        inc wic64_ptr
+        bne 3b
+        inc wic64_ptr+1
+        lda wic64_ptr+1
+        cmp #>(eng_rx + RXMAX)
+        bne 3b
+        lda #>eng_rx
+        sta wic64_ptr+1
+        jmp 3b
+5:      lda wic64_ptr           ; the ring's new head
+        sta eng_head
+        lda wic64_ptr+1
+        sec
+        sbc #>eng_rx
+        sta eng_head+1
+        jmp 7f
+6:      bit UCI_CTRL            ; a write: its reply (bytes sent) dropped
+        bpl 7f
+        lda UCI_DATA
+        jmp 6b
+7:      lda #0                  ; the status's first two characters
+        sta uci_st
+        sta uci_st+1
+        ldx #0
+8:      bit UCI_CTRL            ; status waiting (bit 6)?
+        bvc 9f
+        lda UCI_STAT
+        cpx #2
+        bcs 8b
+        sta uci_st,x
+        inx
+        jmp 8b
+9:      lda #0x02               ; accepted: the interface goes idle
+        sta UCI_CTRL
+        lda #0
+        sta uci_going
+        lda uci_st
+        cmp #0x30               ; '0'
+        bne 10f
+        lda uci_st+1
+        cmp #0x30               ; "00": done
+        beq 11f
+        cmp #0x32               ; "02": nothing was waiting
+        bne 10f
+11:     jmp uci_start
+10:     lda #1                  ; anything else (01: closed by the other side): lost
+        sta uci_failed
+        rts
+
+uci_start:
+        lda uci_failed
+        beq 1f
+        rts
+1:      lda UCI_CTRL
+        and #0x30
+        beq 1f
+        rts                     ; not idle
+1:      lda uci_wq
+        ora uci_wq+1
+        bne 1f
+        jmp 5f
+1:
+        lda #0x08               ; a write: clear an old error, then 3, 0x11, the socket, the bytes
+        sta UCI_CTRL
+        lda #0x03
+        sta UCI_CMD
+        lda #0x11
+        sta UCI_CMD
+        lda uci_sock
+        sta UCI_CMD
+        lda #<(eng_wbuf0 + 3)
+        sta wic64_ptr
+        lda #>(eng_wbuf0 + 3)
+        sta wic64_ptr+1
+        ldy #0
+1:      lda (wic64_ptr),y
+        sta UCI_CMD
+        inc wic64_ptr
+        bne 2f
+        inc wic64_ptr+1
+2:      lda uci_wq
+        bne 3f
+        dec uci_wq+1
+3:      dec uci_wq
+        lda uci_wq
+        ora uci_wq+1
+        bne 1b
+        lda #0x01               ; push
+        sta UCI_CTRL
+        lda #0x11
+        sta uci_going
+        rts
+5:      jsr rx_free             ; a read, while the ring has 768 bytes free
+        cmp #3
+        bcc 9f
+        lda #0x08
+        sta UCI_CTRL
+        lda #0x03
+        sta UCI_CMD
+        lda #0x10
+        sta UCI_CMD
+        lda uci_sock
+        sta UCI_CMD
+        lda #0x00               ; 512 bytes
+        sta UCI_CMD
+        lda #0x02
+        sta UCI_CMD
+        lda #0x01
+        sta UCI_CTRL
+        lda #0x10
+        sta uci_going
+9:      rts
+
+        .section .bss.uci,"aw",@nobits
+        .global uci_bg, uci_going, uci_sock, uci_failed, uci_wq
+uci_bg:         .zero 1         ; the pump runs (tcp_uci.c: a connection is open)
+uci_going:      .zero 1         ; the command waiting for its reply: 0, 0x10 read, 0x11 write
+uci_sock:       .zero 1
+uci_failed:     .zero 1
+uci_wq:         .zero 2         ; bytes queued for the next write (eng_wbuf0 + 3)
+uci_skip:       .zero 1
+uci_st:         .zero 2

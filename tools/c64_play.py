@@ -47,9 +47,8 @@ try:
     down = v.u8('menu_item')
     hold(['RSHIFT', 'CRSR_DOWN'], t=0.2)
     check(f'menu: CRSR down {item} -> {down}, SHIFT+CRSR back to {v.u8("menu_item")}', down > item and v.u8('menu_item') == item)
-    for k in ('RSHIFT', 'LSHIFT', 'CRSR_DOWN'): v.key(k, 0)    # once more: a SHIFT left down (rarely seen) walks player 1 into the walls
     v.poke('menu_mode', [1]); v.poke('menu_players', [4]); v.poke('menu_inputs', [1, 2, 3, 4])   # deathmatch: A, B, joy 1, joy 2
-    hold(['SPACE'], t=0.3)
+    hold(['SPACE'], t=0.1)                   # a tap: SPACE still down when the game starts is player 1's first bomb
     for _ in range(60):                      # the round under way (game frames, not seconds: VICE may lag)
         v.run(0.25)
         if v.u8('title_mode') == 0 and v.u16('frame_no') >= 40: break
