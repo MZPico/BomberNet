@@ -8,6 +8,7 @@ time with the network, for a C64_NETTIME build (tools/build_c64.py).
                                            firmware's pauses (the VICE patch,
                                            tools/c64/vice-3.9-bombernet.patch)
   PLAYERS=4 LOCAL_HOST=2 LOCAL_JOIN=2 ...  seats, as in tools/crossplay.py
+  C64_NET=uci ...                          an Ultimate's network (else a WiC64)
 
 The figures are each machine's: game frames a second, the frames' work
 (from one frame sync to the next, the waits for the network included), the
@@ -24,8 +25,9 @@ out = BUILD + '/net'; os.makedirs(out, exist_ok=True)
 for ext in ('', '.elf'):
     open(f'{out}/bomber.prg{ext}', 'wb').write(open(f'{BUILD}/bomber.prg{ext}', 'rb').read())
 set_relay.main([f'{out}/bomber.prg', '127.0.0.1:8765'])
-host = Vice(f'{out}/bomber.prg', wic64=True, port=6510)
-join = Vice(f'{out}/bomber.prg', wic64=True, port=6511)
+UCI = os.environ.get('C64_NET') == 'uci'          # C64_NET=uci: the Ultimate's network, else a WiC64
+host = Vice(f'{out}/bomber.prg', wic64=not UCI, uci=UCI, port=6510)
+join = Vice(f'{out}/bomber.prg', wic64=not UCI, uci=UCI, port=6511)
 both = (host, join)
 try:
     for v in both: v.run()

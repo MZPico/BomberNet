@@ -1,4 +1,5 @@
-/* tcp.h over a WiC64 (Wi-Fi on the C64's user port; docs/port-c64.md),
+/* The network over a WiC64 (Wi-Fi on the C64's user port; docs/port-c64.md;
+ * tcp_c64.c picks it or the Ultimate's, tcp_uci.c),
  * its "revised" protocol as VICE 3.9 emulates it (userport_wic64.c):
  *
  *   The C64 sends with PA2 high and port B as output: each byte written to
@@ -24,7 +25,7 @@
  * (eng_cmds, eng_flags) and C64_NETTIME's frame times show the cost. */
 #include <stdint.h>
 #include <string.h>
-#include "tcp.h"
+#include "tcp_c64.h"
 
 #define REG(a) (*(volatile uint8_t *)(a))
 #define PA     REG(0xdd00)                /* bit 2: PA2 (bits 0-1: the VIC bank, kept) */
@@ -102,18 +103,18 @@ static uint8_t take(uint8_t *buf, uint16_t max) {
   return 1;
 }
 
-uint8_t tcp_present(void) {
+uint8_t wic64_present(void) {
   uint8_t v[4];
   DDRA |= 0x04;                           /* PA2 an output */
   if (request(CMD_VERSION, 0, 0, 10) != 0) return 0;
   return take(v, sizeof(v));
 }
 
-uint8_t tcp_open(const char *host, uint16_t port) {
+uint8_t wic64_open(const char *host, uint16_t port) {
   static char spec[64];
   char *p = spec, d[6];
   uint8_t n = 0, st;
-  if (open) tcp_close();
+  if (open) wic64_close();
   while (*host && p < spec + 56) *p++ = *host++;
   *p++ = ':';
   do d[n++] = (char)('0' + port % 10); while (port /= 10);
@@ -140,7 +141,7 @@ static uint8_t lost(void) {                 /* an error, or a command stuck for 
 }
 
 /* queued: the next write command sends it, with whatever else was queued */
-uint8_t tcp_send(const uint8_t *buf, uint16_t n) {
+uint8_t wic64_send(const uint8_t *buf, uint16_t n) {
   if (!open) return 1;
   while (n) {
     uint16_t len, k;
@@ -164,7 +165,7 @@ uint8_t tcp_send(const uint8_t *buf, uint16_t n) {
 
 /* what the reads brought (the ring eng_rx); else ask for a read (the
  * engine does it soon) and say "nothing" for now */
-int16_t tcp_recv(uint8_t *buf, uint16_t max) {
+int16_t wic64_recv(uint8_t *buf, uint16_t max) {
   uint16_t h, t, n;
   if (lost()) return -1;
   if (!open) return -1;
@@ -183,7 +184,7 @@ int16_t tcp_recv(uint8_t *buf, uint16_t max) {
   return 0;
 }
 
-void tcp_close(void) {
+void wic64_close(void) {
   uint8_t t;
   if (!open) return;
   eng_open = 0;                             /* no more commands; the one going ends */

@@ -47,6 +47,7 @@ try:
     down = v.u8('menu_item')
     hold(['RSHIFT', 'CRSR_DOWN'], t=0.2)
     check(f'menu: CRSR down {item} -> {down}, SHIFT+CRSR back to {v.u8("menu_item")}', down > item and v.u8('menu_item') == item)
+    for k in ('RSHIFT', 'LSHIFT', 'CRSR_DOWN'): v.key(k, 0)    # once more: a SHIFT left down (rarely seen) walks player 1 into the walls
     v.poke('menu_mode', [1]); v.poke('menu_players', [4]); v.poke('menu_inputs', [1, 2, 3, 4])   # deathmatch: A, B, joy 1, joy 2
     hold(['SPACE'], t=0.3)
     for _ in range(60):                      # the round under way (game frames, not seconds: VICE may lag)
@@ -64,7 +65,9 @@ try:
         before = pos(p)
         after = hold(keys, joy)[p]
         what = '+'.join(keys) if keys else f'joystick {joy[0]} {joy[1][0]}'
-        check(f'player {p + 1} {what}: {before} -> {after}', (after[axis] - before[axis]) * sign > 0)
+        good = (after[axis] - before[axis]) * sign > 0
+        check(f'player {p + 1} {what}: {before} -> {after}' + ('' if good else
+              f' (record {v.mem(P + 16 * p, 10).hex(" ")}, inputs {v.mem("menu_inputs", 4).hex()}, frame {v.u16("frame_no")})'), good)
     hold(['SPACE', 'E'], (1, ['fire']), t=0.2)
     hold([], (2, ['fire']), t=0.2)
     v.screenshot(os.path.join(OUT, 'bombs.png'))

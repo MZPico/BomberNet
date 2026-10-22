@@ -6,6 +6,7 @@ headless, controlled through its text remote monitor.
   v.key('SPACE', 1); v.joy(2, 'up', 'fire')     # held until changed
   v.run(seconds); v.screenshot('x.png'); v.close()
   Vice(prg, wic64=True, log='vice.log')          # a WiC64 on the user port (its trace to log)
+  Vice(prg, uci=True)                            # an Ultimate's network (its command interface, the VICE patch)
 
 Keys go into the keyboard matrix through a local patch of the monitor's
 keybuf command (keybuf "#row col value", see docs/port-c64.md), as the
@@ -35,7 +36,7 @@ def symbols(prg):
 
 
 class Vice:
-    def __init__(self, prg, warp=False, ntsc=False, port=None, wic64=False, log=None):
+    def __init__(self, prg, warp=False, ntsc=False, port=None, wic64=False, log=None, uci=False):
         self.port = port or int(os.environ.get('VICE_MON_PORT', 6510))
         self.prg = os.path.abspath(prg)
         self.sym = symbols(self.prg)
@@ -45,7 +46,8 @@ class Vice:
                *(['-userportdevice', '23'] if wic64 else []),     # USERPORT_DEVICE_WIC64
                *(['-wic64trace', '-wic64tracelevel', '1'] if wic64 and log else []), '-autostart', self.prg]
         out = open(log, 'w') if log else subprocess.DEVNULL
-        self.p = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT)
+        env = dict(os.environ, UCI_EMU='1') if uci else None      # the Ultimate's command interface (the VICE patch)
+        self.p = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, env=env)
         self.s = None
         for _ in range(300):                          # up to 30 s (a busy host)
             try: self._connect(); break

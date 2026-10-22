@@ -16,6 +16,7 @@ TV frame is 20 ms of waiting, and it stands still while it is read.
   PLAYERS=3 LOCAL_HOST=2 LOCAL_JOIN=1   seats: players in total, local players per machine
   MODE=0                                co-op (default 1, deathmatch)
   GAP=100                               the C64 stops polling the network for 5 s at game frame 100
+  C64_NET=uci                           the C64 on an Ultimate's network (else a WiC64)
 Needs the local relay (relay/relay.py) on 8765 (WebSocket) and 8766 (TCP),
 and the MZ build (build/c) and the Spectrum build (build/zx).
 """
@@ -134,7 +135,8 @@ class Commodore:
         for ext in ('', '.elf'):
             open(f'{out}/bomber.prg{ext}', 'wb').write(open(f'{build}/bomber.prg{ext}', 'rb').read())
         set_relay.main([f'{out}/bomber.prg', '127.0.0.1:8765'])
-        self.v = Vice(f'{out}/bomber.prg', wic64=True, log=f'{out}/vice.log')
+        uci = os.environ.get('C64_NET') == 'uci'                    # the Ultimate's network, else a WiC64
+        self.v = Vice(f'{out}/bomber.prg', wic64=not uci, uci=uci, log=f'{out}/vice.log')
         self.v.run()
 
     def rd(self, n, k=1): return self.v.mem(n.lstrip('_'), k)

@@ -12,9 +12,8 @@ the same work: llvm-mos (its `c64` target), the 6502 helpers in
 - Memory: llvm-mos loads the program at $0801 and unmaps BASIC, so
   $0801-$CFFF is free (50 KB); the screen and the character set go into the
   RAM under the KERNAL ROM, which the CPU only writes.
-- Network: a `tcp.h` for one of WiC64 (Wi-Fi on the user port; VICE 3.9
-  emulates its TCP commands), the Ultimate's command interface, or a
-  SwiftLink-type serial cartridge with a Wi-Fi modem; chosen in step 2.
+- Network: a WiC64 (Wi-Fi on the user port) or an Ultimate's own network
+  (Ultimate 64, Ultimate-II+: its command interface), whichever answers.
 
 ## Steps
 
@@ -213,9 +212,55 @@ relay (`tools/crossplay.py`, machine `c64`): the C64 hosting a Spectrum
 Spectrum and an MZ-800 (JSON lines): 300 frames each, every hash equal, no
 aborts; two C64s for 500 frames (`tools/c64_match.py`).
 
+## Step 2b: the Ultimate's network
+
+The Ultimate 64 and the Ultimate-II+ cartridge reach their own Ethernet or
+Wi-Fi through the Ultimate Command Interface (registers $DF1C-$DF1F,
+enabled in the Ultimate's menu) and its network target ($03):
+`c/platform/c64/tcp_uci.c`. `tcp_c64.c` implements `tcp.h` with whichever
+device answers: the Ultimate first (its identification register reads $C9
+at once, then the network target must answer IDENTIFY), else a WiC64 (an
+Ultimate 64 with a WiC64 on its user port uses the Ultimate's network).
+
+From the documentation (1541u-documentation.readthedocs.io, uci/) and the
+firmware (github.com/GideonZ/1541ultimate, `network_target.cc`): a command
+is written to $DF1D and pushed (control bit 0); the state (status bits
+5-4) goes from idle to busy to data; the data comes from $DF1E (a TCP read:
+a 2-byte count, then the bytes, at most 1472), the status text ("00,OK")
+from $DF1F; "data accepted" (control bit 1) returns to idle. The firmware
+gives each socket a 40 ms receive timeout: a read with nothing waiting
+keeps the interface busy that long and answers "02,NO DATA".
+
+So the C64 does not wait: a command is pushed, the game goes on, and a
+later `tcp_recv` or `tcp_send` takes the reply and pushes the next one (a
+write with all that is queued, else a read when `tcp_recv` found nothing).
+No interrupts are needed: the interface keeps a reply until it is taken.
+Only one device is used, so the Ultimate's driver uses the WiC64 engine's
+ring and write buffer (`c64.s`). The network code is 41.3 KB with both
+drivers, ending at $C822.
+
+No emulator has the command interface's network target, so the local VICE
+patch has one (`src/c64/uci_net.c`, on with `UCI_EMU=1`; tools:
+`C64_NET=uci`): the registers, the state machine and the network target
+over real sockets, a read with nothing waiting busy up to 40 ms as the
+firmware's, other commands 1 ms (an assumption). Tested with it against
+the local relay: the C64 joining a Spectrum and an MZ-800, hosting the
+CPC, the 128K with ESP-01 and a Spectrum (2+2 too), co-op with a 5 s gap
+in its polling: 300 frames each, every hash equal; two C64s for 32 s at
+16.4 game frames a second (98 %). To be confirmed on a real Ultimate.
+
+**VICE with a window** (to play, not to test): `tools/c64/vice_wsl.sh
+[uci|wic64|both] [program]` starts the patched VICE built with its SDL2
+interface (`~/src/vice/dist-sdl`, configured `--enable-sdl2ui --with-pulse
+--with-libcurl`; SDL2_image built into `~/src/vice/deps/prefix`); under
+WSL, WSLg shows it on the Windows desktop with sound. `uci` imitates the
+Ultimate's network, `wic64` a WiC64 with the real firmware's timing. F12
+is VICE's menu.
+
 VICE: built from source into `~/src/vice/dist` (`--enable-headlessui
 --with-libcurl`; it needs `xa` and `dos2unix`), with
 `tools/c64/vice-3.9-bombernet.patch` applied (the monitor's keys and
-joysticks, the WiC64's firmware timing). VICE
+joysticks, the WiC64's firmware timing, the Ultimate's command interface).
+VICE
 3.9 crashes when it logs in colour to a pipe, so it runs with
 `+logcolorize`.
