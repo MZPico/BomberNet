@@ -21,6 +21,8 @@
 #include "tcp.h"
 
 uint32_t pc_ms(void);                     /* plat_pc.c: milliseconds */
+extern uint8_t pc_modem_port;             /* plat_pc.c, the command line: 0 either, 1 COM1, 2 COM2 */
+extern uint32_t pc_modem_baud;            /* plat_pc.c, the command line: 0 both speeds */
 extern void (*pc_net_cleanup)(void);      /* plat_pc.c calls it at the end */
 uint32_t pc_modem_tx, pc_modem_rx;        /* counters for the network test's log */
 
@@ -192,9 +194,11 @@ uint8_t tcp_present(void) {
   if (done) return have_modem;
   done = 1;
   pc_net_cleanup = cleanup;
-  for (p = 0; p < 2 && !have_modem; p++)
-    for (s = 0; s < 2 && !have_modem; s++)
-      have_modem = probe(ports[p], irqs[p], speeds[s]);
+  for (p = 0; p < 2 && !have_modem; p++) {
+    if (pc_modem_port && p != pc_modem_port - 1) continue;
+    if (pc_modem_baud) have_modem = probe(ports[p], irqs[p], pc_modem_baud);
+    else for (s = 0; s < 2 && !have_modem; s++) have_modem = probe(ports[p], irqs[p], speeds[s]);
+  }
   if (!have_modem) { uart_close(); return 0; }
   command("ATE0", 500);                   /* no echo */
   command("ATNET0", 500);                 /* no telnet (an ERROR where the firmware has no such setting) */

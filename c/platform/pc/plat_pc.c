@@ -106,6 +106,58 @@ static void __interrupt __far key_isr(void) {
 static FILE *playlog;                     /* tools/pc_play.py reads it: the players' places every frame */
 #endif
 uint32_t pc_ms(void) { return now(); }    /* the network driver's clock */
+
+/* ---- the command line ----
+ *   /RELAY=host[:port]   the relay (port 8765 if not given; the built-in one is api.mzpico.com:80)
+ *   /CGA /EGA /VGA       the adapter's look, else the one found (a CGA's on any EGA or VGA, an EGA's on a VGA)
+ *   /COM1 /COM2          the modem's port, else both looked at
+ *   /BAUD=n              the modem's speed (19200, 115200 ...), else both tried
+ *   /NOSOUND             no sound
+ * (a dash serves as well as the slash; upper or lower case) */
+uint8_t pc_modem_port;                    /* 0: either; 1, 2: COM1, COM2 (tcp_modem.c) */
+uint32_t pc_modem_baud;                   /* 0: 19200 then 115200 */
+static uint8_t force_adapter;             /* 0: the one found; 'C', 'E', 'V' */
+static uint8_t no_sound;
+
+static uint8_t opt(const char *arg, const char *name) {   /* arg is /NAME or -NAME (any case): 1 */
+  if (*arg != '/' && *arg != '-') return 0;
+  arg++;
+  while (*name) { if ((*arg & 0xdf) != *name && *arg != *name) return 0; arg++; name++; }
+  return *arg == 0 || *arg == '=';
+}
+
+static void options(void) {
+  int k;
+  for (k = 1; k < __argc; k++) {
+    const char *a = __argv[k], *v = strchr(a, '=');
+    if (opt(a, "CGA")) force_adapter = 'C';
+    else if (opt(a, "EGA")) force_adapter = 'E';
+    else if (opt(a, "VGA")) force_adapter = 'V';
+    else if (opt(a, "COM1")) pc_modem_port = 1;
+    else if (opt(a, "COM2")) pc_modem_port = 2;
+    else if (opt(a, "BAUD") && v) pc_modem_baud = (uint32_t)atol(v + 1);
+    else if (opt(a, "NOSOUND")) no_sound = 1;
+#ifndef PC_TEST
+    else if (opt(a, "RELAY") && v) {        /* host or host:port, the host kept where it is (argv lives on) */
+      extern const char *net_relay_host;
+      extern uint16_t net_relay_port;
+      char *colon = strrchr((char *)v + 1, ':');
+      net_relay_port = 8765;
+      if (colon) { *colon = 0; net_relay_port = (uint16_t)atoi(colon + 1); }
+      net_relay_host = v + 1;
+    }
+#endif
+    else {
+      printf("BomberNet for DOS\n"
+             "  /RELAY=host[:port]   the relay (port 8765 if not given)\n"
+             "  /CGA /EGA /VGA       the adapter's look (else the one found)\n"
+             "  /COM1 /COM2          the WiFi modem's port (else both are tried)\n"
+             "  /BAUD=n              the modem's speed (else 19200, then 115200)\n"
+             "  /NOSOUND             no sound\n");
+      exit(opt(a, "?") || opt(a, "H") ? 0 : 1);
+    }
+  }
+}
 void (*pc_net_cleanup)(void);             /* the network driver's: hung up, its UART's interrupt given back */
 #ifdef PC_NETTEST
 #include "netdev.h"
@@ -309,7 +361,7 @@ void plat_tone(uint16_t ratio, uint8_t len) {
 #ifdef PC_NO_TONES
   return;
 #endif
-  if (!ratio) return;
+  if (!ratio || no_sound) return;
   d = (uint32_t)ratio * 1193182UL / 1108400UL;
   if (d > 0xffff) d = 0xffff;
   _disable();
@@ -690,6 +742,7 @@ static const uint8_t ega_colours[16] = {
 void plat_init(void) {
   union REGS r;
   uint8_t i;
+  options();
   r.h.ah = 0x0f; int86(0x10, &r, &r); old_mode = r.h.al;
   r.h.ah = 0x12; r.h.bl = 0x10; r.h.bh = 0xff; int86(0x10, &r, &r);   /* EGA or better? (BH 0 or 1 if so) */
   if (r.h.bh > 1) {                              /* no: a CGA, unless the BIOS's equipment word says mono (MDA, Hercules) */
@@ -697,6 +750,7 @@ void plat_init(void) {
     if ((r.x.ax & 0x30) == 0x30) { printf("BomberNet needs a CGA, EGA or VGA card.\n"); exit(1); }
     cga = 1;
   }
+  if (force_adapter == 'C') cga = 1;             /* /CGA: any EGA or VGA shows the CGA's mode */
   if (cga) {
     uint16_t b;
     r.x.ax = 0x0004; int86(0x10, &r, &r);       /* 320 x 200, 4 colours */
@@ -740,7 +794,7 @@ void plat_init(void) {
   r.h.ah = 0; r.h.al = 0x0d; int86(0x10, &r, &r);
   vram = (volatile uint8_t far *)MK_FP(0xa000, 0);
   r.x.ax = 0x1a00; int86(0x10, &r, &r);
-  if (r.h.al == 0x1a) {                          /* a VGA: the game's colours exactly, in the DAC entries mode 0Dh shows */
+  if (r.h.al == 0x1a && force_adapter != 'E') {  /* (/EGA: a VGA shows the EGA's 16 colours) */                          /* a VGA: the game's colours exactly, in the DAC entries mode 0Dh shows */
     for (i = 0; i < 16; i++) {                   /* (0-7 and 16-23), 6 bits a gun */
       uint16_t c = amiga_palette[i];
       r.x.ax = 0x1010; r.x.bx = (uint16_t)(i < 8 ? i : i + 8);

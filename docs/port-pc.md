@@ -22,8 +22,8 @@ with its own modem), Ethernet through a packet driver later.
 2. **The network**: `tcp.h` over a WiFi modem on a COM port (the 8250/16550
    UART, interrupt-driven), DOSBox-X's own modem emulation for the tests;
    cross-play with every machine; the production relay. Done, see below.
-3. **Release**: `BOMBER.EXE` and a disk image; `set_relay.py` on both; the
-   README.
+3. **Release**: `BOMBER.EXE` and a disk image; the relay on the command
+   line (`/RELAY=`, no `set_relay.py`); the README.
 4. Optional: Ethernet through a packet driver (NE2000 in DOSBox-X, our own
    small TCP/IP); Tandy, Hercules, MDA renderers.
 
@@ -273,6 +273,23 @@ written plane by plane through the Map Mask (the colour's planes the
 glyph, the others zeros: 16 memory writes and 2 port writes, the flush
 2.8-3.0 ms a frame at cycles 3000 against 2.6). Nothing hidden is left to
 an emulator.
+
+## The command line
+
+`BOMBER.EXE` takes options, `/` or `-`, in any case (`BOMBER /?` lists them):
+
+```
+/RELAY=host[:port]   the relay (port 8765 if not given; else the built-in one)
+/CGA /EGA /VGA       the adapter's look (else the one found): /CGA on an EGA or
+                     VGA draws the CGA palettes, /EGA on a VGA the EGA colours
+/COM1 /COM2          the WiFi modem's port (else both are tried)
+/BAUD=n              the modem's speed (else 19200, then 115200)
+/NOSOUND             no sound
+```
+
+An unknown option prints the list and returns to DOS with error level 1.
+On the PC the relay is a command-line option rather than a patched field:
+a batch file or a shortcut carries it, and `set_relay.py` is not needed.
 
 ## Risks and open questions
 
