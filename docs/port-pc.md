@@ -1,6 +1,6 @@
 # BomberNet on the IBM PC (DOS): plan and progress
 
-A real-mode DOS program for any PC with EGA or VGA (CGA later): the same
+A real-mode DOS program for any PC with CGA, EGA or VGA: the same
 core in 16-bit C (OpenWatcom), a new platform layer, the network over a
 WiFi modem on a COM port first (the Atari ST's transport, in DOSBox-X
 with its own modem), Ethernet through a packet driver later.
@@ -17,7 +17,7 @@ with its own modem), Ethernet through a packet driver later.
    checked and the frames timed. Done, see below.
 1. **The platform layer**: the keyboard (its own INT 9 handler, the state
    of every key), the game port's two joysticks, the speaker, ESC to DOS;
-   the title and lobby; play in DOSBox-X. Done but the CGA renderer, see
+   the title and lobby; play in DOSBox-X. A CGA renderer. Done, see
    below.
 2. **The network**: `tcp.h` over a WiFi modem on a COM port (the 8250/16550
    UART, interrupt-driven), DOSBox-X's own modem emulation for the tests;
@@ -138,7 +138,41 @@ host joystick (a mapper binding of keys to its axes did nothing without
 one), WSL has no `/dev/uinput` for a virtual one, and there is no real
 one here. The code is the usual one; a tester's report will tell.
 
+## The CGA
+
+Mode 4, 320 x 200 in 4 colours, the even lines at B800:0000 and the odd
+ones at B800:2000, 80 bytes a line. A glyph's row is one word: each bit
+doubled into a 2-bit pixel by a 256-entry table, ANDed with the colour's
+mask (0x5555 times the colour). The adapter: no EGA answers INT 10h
+AH=12h, and the BIOS's equipment word is not mono (an MDA or a Hercules
+gets a message instead).
+
+The look was chosen from mockups of four ways (drawn from a frame the VGA
+build recorded, cell by cell): 4-colour graphics with palette 0 or 1, the
+160 x 100 16-colour trick, 16-colour text mode; then dithered colour
+pairs (a checkerboard of two palette colours, as cheap as a solid one),
+and players told apart by form. Dithering broke the text (one-pixel
+strokes) and could not give the status line's digits the players'
+colours. The choice:
+
+- The title in palette 1 (cyan, magenta, white): the logo keeps its
+  magenta. The game in palette 0 (green, red, yellow): the field's red.
+  The palette is chosen through the BIOS (INT 10h AH=0Bh) at each switch.
+- The enemies all red (by their codes), so red is danger and green and
+  yellow are players.
+- Player 1 green, player 2 yellow; players 3 and 4 the same colours
+  hollow (each block of the figure with its centre cut out: rows 2 and 6,
+  columns 2 and 6), their status-line marks (the digit, the figure
+  icon) inverse.
+
+Tested: every hash equal (dm4, coop4) on DOSBox-X's `machine=cga`; the
+play test passes; the title, a deathmatch and a co-op frame look as the
+mockups. Speed: at cycles 3000 a frame's work is 5.4 ms (median), at 300
+(an XT) 61 ms, the flush 37 ms of it: an XT with a CGA is slower than with
+an EGA (the 2-bit pixels: a table and a word a row, in C).
+
 ## Risks and open questions
 
 - Speed on an 8088 is an estimate until a tester runs it.
-- CGA has 4 colours in 320 x 200: the players need telling apart.
+- An XT is too slow in C on either adapter (CGA 61 ms a frame, EGA
+  49): the flush in assembly would be the remedy, if testers want it.
