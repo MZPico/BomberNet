@@ -12,7 +12,7 @@ the menu's cursor moves, and each beep's length (its envelope) and pitch
 The joysticks are not tested: DOSBox-X emulates the game port only with a
 host joystick, and there is none here.
 
-  tools/pc_play.py [build/pc/BOMBER.EXE] [--cycles n] [--video ega|vga]
+  tools/pc_play.py [build/pc/BOMBER.EXE] [--cycles n] [--video ega|vga|cga]
 """
 import glob, os, shutil, subprocess, sys, time, wave
 
@@ -42,7 +42,7 @@ def start(capture=None):
 output=surface
 autolock=false
 [dosbox]
-machine={'ega' if video == 'ega' else 'svga_s3'}
+machine={'ega' if video == 'ega' else 'cga' if video == 'cga' else 'svga_s3'}
 memsize=1
 captures={capture or cdir}
 [cpu]

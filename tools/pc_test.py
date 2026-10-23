@@ -3,7 +3,7 @@
 figures: the recording replayed with the hashes checked, each game frame's
 work (flush .. next frame sync) timed by the PC's own timer chip.
 
-  tools/pc_test.py [build/pc/BOMBER.EXE] [--cycles n] [--cpu 8086|286|386] [--video ega|vga] [--png out.png]
+  tools/pc_test.py [build/pc/BOMBER.EXE] [--cycles n] [--cpu 8086|286|386] [--video ega|vga|cga] [--png out.png]
 
 DOSBox-X is not cycle-exact: --cycles is its fixed count of instructions a
 millisecond (DOSBox's rough guides: 8088 4.77 MHz about 300, a 286 at
@@ -29,7 +29,7 @@ open(conf, 'w').write(f"""[sdl]
 output=surface
 autolock=false
 [dosbox]
-machine={'ega' if video == 'ega' else 'svga_s3'}
+machine={'ega' if video == 'ega' else 'cga' if video == 'cga' else 'svga_s3'}
 memsize=1
 fastbioslogo=true
 startbanner=false

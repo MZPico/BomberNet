@@ -1,6 +1,6 @@
 /* IBM PC (DOS): the platform layer (core/platform.h), docs/port-pc.md. A
- * real-mode DOS program (OpenWatcom, small model) for any PC with EGA or
- * VGA.
+ * real-mode DOS program (OpenWatcom, small model) for any PC with CGA,
+ * EGA or VGA.
  *
  * Screen: mode 0Dh, 320 x 200 in 16 colours, 40 x 25 cells of 8 x 8; the
  * four bitplanes in parallel at A000:0000, 40 bytes a line. A cell is
@@ -12,6 +12,15 @@
  * tables (the same 16-colour cells). A VGA shows the palette as it is
  * (its DAC); an EGA in a 200-line mode has only the CGA's 16 colours,
  * chosen for each of the game's by hand (ega_colours).
+ *
+ * A CGA: mode 4, 320 x 200 in 4 colours, the even lines at B800:0000 and
+ * the odd ones at B800:2000, 80 bytes a line; a glyph's row is one word,
+ * each bit two (cga_expand), masked to the colour. The title in palette 1
+ * (cyan, magenta, white: the logo keeps its magenta), the game in palette
+ * 0 (green, red, yellow: the field's red); the enemies all red, so that
+ * red is danger and green and yellow are players: 1 green, 2 yellow, 3 and
+ * 4 the same colours hollow (each block of the figure with its centre
+ * cut out) and their status-line marks inverse.
  *
  * Time: the timer chip's channel 0 at about 1 kHz (the BIOS's own 18.2 Hz
  * tick still called on time), a game frame being 60 of its ticks; finer
@@ -269,10 +278,33 @@ void plat_tone(uint16_t ratio, uint8_t len) {
 static uint8_t mode = 0xff;
 static uint8_t cur_colour = 0xff;
 
+static uint8_t cga;                       /* the adapter is a CGA: mode 4 */
+static uint16_t cga_expand[256];          /* a glyph row: each bit as a 2-bit pixel, the two bytes in memory order */
+static const uint8_t cga_game_map[16] = {0, 1, 2, 2, 1, 1, 3, 3,   1, 3, 1, 3,   3, 3, 1, 1};   /* palette 0: green, red, yellow */
+static const uint8_t cga_title_map[16] = {0, 1, 2, 2, 1, 1, 3, 3,  3, 1, 2, 3,   3, 3, 1, 1};   /* palette 1: cyan, magenta, white */
+
+static void cga_cell(uint8_t x, uint8_t y, uint8_t g, uint8_t col) {
+  const uint8_t *s = amiga_glyphs + ((uint16_t)g << 3);
+  uint16_t mask = (uint16_t)(0x5555u * (title_mode ? cga_title_map : cga_game_map)[col & 15]);
+  uint8_t marked = !title_mode && (col == 10 || col == 11);   /* players 3 and 4 */
+  uint8_t hollow = marked && y < HUD_ROW, invert = marked && y == HUD_ROW;
+  volatile uint16_t far *even = (volatile uint16_t far *)(vram + (uint16_t)y * 320 + x * 2);
+  volatile uint16_t far *odd = (volatile uint16_t far *)(vram + 0x2000 + (uint16_t)y * 320 + x * 2);
+  uint8_t l, b;
+  for (l = 0; l < 8; l++) {
+    b = s[l];
+    if (hollow && (l == 2 || l == 6)) b &= (uint8_t)~0x22;   /* the blocks' centres: rows 2 and 6, columns 2 and 6 */
+    if (invert) b = (uint8_t)~b;
+    if (l & 1) { *odd = cga_expand[b] & mask; odd += 40; }
+    else { *even = cga_expand[b] & mask; even += 40; }
+  }
+}
+
 static void cell(uint8_t x, uint8_t y, uint8_t g, uint8_t col) {
   volatile uint8_t far *d = vram + (uint16_t)y * 320 + x;
   const uint8_t *s = amiga_glyphs + ((uint16_t)g << 3);
   uint8_t l;
+  if (cga) { cga_cell(x, y, g, col); return; }
   col = col_map[col & 15];
   if (col != cur_colour) {                      /* Set/Reset: the colour, then Bit Mask selected again */
     outp(GC_INDEX, 0); outp(GC_DATA, col);
@@ -285,6 +317,18 @@ static void cell(uint8_t x, uint8_t y, uint8_t g, uint8_t col) {
 static void set_mode(uint8_t title) {           /* everything is drawn again */
   mode = title;
   memset(shadow_vram, 0xff, SCREEN_CELLS);
+  if (cga) {                                    /* the CGA's palette: 1 for the title, 0 for the game; bright, black behind */
+    union REGS r;
+    r.h.ah = 0x0b; r.h.bh = 0; r.h.bl = 0x10; int86(0x10, &r, &r);
+    r.h.ah = 0x0b; r.h.bh = 1; r.h.bl = title ? 1 : 0; int86(0x10, &r, &r);
+  }
+}
+
+static void ega_ready(void) {                   /* the latches zero, Bit Mask selected (the EGA's; nothing on a CGA) */
+  if (cga) return;
+  (void)vram[0xffff];
+  cur_colour = 0xff;
+  outp(GC_INDEX, 8);
 }
 
 void flush_screen(void) {
@@ -300,9 +344,7 @@ void flush_screen(void) {
   if (!title_mode) t_start = t_flush = pc_time();
 #endif
   if (mode != title_mode) set_mode(title_mode);
-  (void)vram[0xffff];                           /* the latches: zeros (that byte is never written) */
-  cur_colour = 0xff;
-  outp(GC_INDEX, 8);
+  ega_ready();                                  /* the latches: zeros (that byte is never written) */
   if (title_mode) {
     for (i = 0; i < SCREEN_CELLS; i++) {
       a = draw_buf[i]; draw_buf[i] = C_SPACE;
@@ -322,7 +364,8 @@ void flush_screen(void) {
         a = draw_buf[i];
         if (a == shadow_vram[i]) continue;
         shadow_vram[i] = a;
-        cell((uint8_t)(i % SCREEN_W), (uint8_t)(i / SCREEN_W), amiga_game_glyph[a], amiga_game_colour[a]);
+        cell((uint8_t)(i % SCREEN_W), (uint8_t)(i / SCREEN_W), amiga_game_glyph[a],
+             cga && a >= C_ENEMY_BASE && a < C_FIRE ? 2 : amiga_game_colour[a]);   /* a CGA: every enemy red */
       }
     }
     for (i = HUD_ROW * SCREEN_W; i < SCREEN_CELLS; i++) {
@@ -359,17 +402,13 @@ void flush_screen(void) {
 }
 
 void plat_player_colour(uint8_t x, uint8_t y, uint8_t player) {
-  (void)vram[0xffff];
-  cur_colour = 0xff;
-  outp(GC_INDEX, 8);
+  ega_ready();
   cell(x, y, amiga_game_glyph[shadow_vram[(uint16_t)y * SCREEN_W + x]], (uint8_t)(8 + player));
 }
 
 void plat_hud_colour(uint8_t x, uint8_t n, uint8_t player, uint8_t blank) {
   (void)blank;
-  (void)vram[0xffff];
-  cur_colour = 0xff;
-  outp(GC_INDEX, 8);
+  ega_ready();
   for (; n; n--, x++) cell(x, HUD_ROW, amiga_game_glyph[shadow_vram[HUD_ROW * SCREEN_W + x]], (uint8_t)(8 + player));
 }
 
@@ -386,8 +425,10 @@ static void cleanup(void) {
 #ifdef PC_PLAYTEST
   if (playlog) fclose(playlog);
 #endif
-  outp(GC_INDEX, 1); outp(GC_DATA, 0);           /* Enable Set/Reset off, Bit Mask all: as the BIOS left them */
-  outp(GC_INDEX, 8); outp(GC_DATA, 0xff);
+  if (!cga) {
+    outp(GC_INDEX, 1); outp(GC_DATA, 0);         /* Enable Set/Reset off, Bit Mask all: as the BIOS left them */
+    outp(GC_INDEX, 8); outp(GC_DATA, 0xff);
+  }
   r.h.ah = 0; r.h.al = old_mode;                 /* the screen mode back */
   int86(0x10, &r, &r);
   started = 0;
@@ -409,7 +450,23 @@ void plat_init(void) {
   uint8_t i;
   r.h.ah = 0x0f; int86(0x10, &r, &r); old_mode = r.h.al;
   r.h.ah = 0x12; r.h.bl = 0x10; r.h.bh = 0xff; int86(0x10, &r, &r);   /* EGA or better? (BH 0 or 1 if so) */
-  if (r.h.bh > 1) { printf("BomberNet needs an EGA or VGA card.\n"); exit(1); }
+  if (r.h.bh > 1) {                              /* no: a CGA, unless the BIOS's equipment word says mono (MDA, Hercules) */
+    int86(0x11, &r, &r);
+    if ((r.x.ax & 0x30) == 0x30) { printf("BomberNet needs a CGA, EGA or VGA card.\n"); exit(1); }
+    cga = 1;
+  }
+  if (cga) {
+    uint16_t b;
+    r.x.ax = 0x0004; int86(0x10, &r, &r);       /* 320 x 200, 4 colours */
+    vram = (volatile uint8_t far *)MK_FP(0xb800, 0);
+    for (b = 0; b < 256; b++) {
+      uint16_t w = 0;
+      uint8_t k;
+      for (k = 0; k < 8; k++)                    /* pixel k: the first four in the first byte, the leftmost highest */
+        if (b & (0x80 >> k)) w |= (uint16_t)(3u << ((k < 4 ? 0 : 8) + 6 - 2 * (k & 3)));
+      cga_expand[b] = w;
+    }
+  } else {
   r.h.ah = 0; r.h.al = 0x0d; int86(0x10, &r, &r);
   vram = (volatile uint8_t far *)MK_FP(0xa000, 0);
   r.x.ax = 0x1a00; int86(0x10, &r, &r);
@@ -429,6 +486,7 @@ void plat_init(void) {
   outp(GC_INDEX, 0); outp(GC_DATA, 0);
   outp(GC_INDEX, 8); outp(GC_DATA, 0xff);
   vram[0xffff] = 0;                              /* the latches' zero (Set/Reset 0, all bits) */
+  }
   {                                              /* the game port: which sticks answer, and their centres */
     uint16_t t[4];
     uint8_t k;
