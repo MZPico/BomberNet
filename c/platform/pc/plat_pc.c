@@ -381,7 +381,7 @@ static void cell(uint8_t x, uint8_t y, uint8_t g, uint8_t col) {
  * REPE CMPSW. The status line (its inverse marks) and the players'
  * recolouring keep cga_cell. */
 static uint16_t cga_words[256][8];        /* by code: the cell's 8 rows as they go to the screen (4 KB) */
-static uint16_t cga_off[SCREEN_CELLS];    /* by cell: its even line's offset in B800 */
+static uint16_t cga_off[SCREEN_CELLS];    /* by cell: its offset on the screen (a CGA: its even line's in B800; an EGA: in A000) */
 static uint8_t hollow_glyphs[632];        /* the glyphs with their blocks' centres cut out (players 3 and 4) */
 
 static void cga_tables(uint8_t title) {
@@ -437,6 +437,75 @@ static void cga_draw(uint16_t off, uint16_t code) {
   }
 }
 
+/* The EGA's fast path, as the CGA's (an XT's flush 33 ms in C): every
+ * code's colour (the adapter's register) and glyph worked out when the
+ * screen switches; a cell in assembly: the colour's planes (the Map Mask,
+ * selected by ega_ready) get its 8 rows, the other planes zeros */
+static uint8_t ega_col[256];
+static uint16_t ega_glyph[256];
+
+static void ega_tables(uint8_t title) {
+  uint16_t c;
+  for (c = 0; c < 256; c++) {
+    ega_col[c] = col_map[(title ? amiga_title_colour[c] : amiga_game_colour[c]) & 15];
+    ega_glyph[c] = (uint16_t)(amiga_glyphs + ((uint16_t)(title ? amiga_title_glyph[c] : amiga_game_glyph[c]) << 3));
+  }
+}
+
+static void ega_draw(uint16_t off, uint16_t code) {
+  _asm {
+    push si
+    push di
+    push es
+    mov di, off
+    mov bx, code
+    mov al, ega_col[bx]
+    shl bx, 1
+    mov si, ega_glyph[bx]
+    mov dx, 3c5h
+    out dx, al
+    mov ah, al
+    mov cx, 0a000h
+    mov es, cx
+    lodsb
+    mov es:[di], al
+    lodsb
+    mov es:[di + 40], al
+    lodsb
+    mov es:[di + 80], al
+    lodsb
+    mov es:[di + 120], al
+    lodsb
+    mov es:[di + 160], al
+    lodsb
+    mov es:[di + 200], al
+    lodsb
+    mov es:[di + 240], al
+    lodsb
+    mov es:[di + 280], al
+    mov al, ah
+    not al
+    and al, 0fh
+    jz done
+    out dx, al
+    xor al, al
+    mov es:[di], al
+    mov es:[di + 40], al
+    mov es:[di + 80], al
+    mov es:[di + 120], al
+    mov es:[di + 160], al
+    mov es:[di + 200], al
+    mov es:[di + 240], al
+    mov es:[di + 280], al
+  done:
+    pop es
+    pop di
+    pop si
+  }
+}
+
+#define fast_draw(off, code) (cga ? cga_draw((off), (code)) : ega_draw((off), (code)))
+
 /* the first word of the field rows (draw_buf against shadow_vram) from
  * word w on that differs, or end: REPE CMPSW */
 static uint16_t cga_next(uint16_t w, uint16_t end) {
@@ -473,7 +542,7 @@ static uint16_t cga_next(uint16_t w, uint16_t end) {
 static void set_mode(uint8_t title) {           /* everything is drawn again */
   mode = title;
   memset(shadow_vram, 0xff, SCREEN_CELLS);
-  if (cga) cga_tables(title);
+  if (cga) cga_tables(title); else ega_tables(title);
   if (cga) {                                    /* the CGA's palette: 1 for the title, 0 for the game; bright, black behind */
     union REGS r;
     r.h.ah = 0x0b; r.h.bh = 0; r.h.bl = 0x10; int86(0x10, &r, &r);
@@ -509,8 +578,7 @@ void flush_screen(void) {
       a = draw_buf[i]; draw_buf[i] = C_SPACE;
       if (a == shadow_vram[i]) continue;
       shadow_vram[i] = a;
-      if (cga) cga_draw(cga_off[i], a);
-      else cell((uint8_t)(i % SCREEN_W), (uint8_t)(i / SCREEN_W), amiga_title_glyph[a], amiga_title_colour[a]);
+      fast_draw(cga_off[i], a);
     }
   } else {
     /* rows 0-23, two cells a compare (every game frame begins with
@@ -518,22 +586,10 @@ void flush_screen(void) {
      * status line, cleared */
     const uint16_t *d2 = (const uint16_t *)draw_buf, *s2 = (const uint16_t *)shadow_vram;
     uint16_t w;
-    if (cga)                                    /* the fast path: the changed words found by REPE CMPSW, their cells copied */
-      for (w = 0; (w = cga_next(w, (HUD_ROW * SCREEN_W) / 2)) < (HUD_ROW * SCREEN_W) / 2; w++) {
-        i = (uint16_t)(w * 2);
-        if ((a = draw_buf[i]) != shadow_vram[i]) { shadow_vram[i] = a; cga_draw(cga_off[i], a); }
-        if ((a = draw_buf[i + 1]) != shadow_vram[i + 1]) { shadow_vram[i + 1] = a; cga_draw(cga_off[i + 1], a); }
-      }
-    else
-    for (w = 0; w < (HUD_ROW * SCREEN_W) / 2; w++) {
-      if (d2[w] == s2[w]) continue;
-      for (i = (uint16_t)(w * 2); i < (uint16_t)(w * 2 + 2); i++) {
-        a = draw_buf[i];
-        if (a == shadow_vram[i]) continue;
-        shadow_vram[i] = a;
-        cell((uint8_t)(i % SCREEN_W), (uint8_t)(i / SCREEN_W), amiga_game_glyph[a],
-             (uint8_t)(amiga_game_colour[a] | (cga && ((a >= C_ENEMY_BASE && a < C_FIRE) || (a & 0xe0) == C_BOMB_TILE) ? CGA_FIGURE : 0)));   /* bombs: 60-7Fh, both halves */
-      }
+    for (w = 0; (w = cga_next(w, (HUD_ROW * SCREEN_W) / 2)) < (HUD_ROW * SCREEN_W) / 2; w++) {   /* the changed words by */
+      i = (uint16_t)(w * 2);                                                                   /* REPE CMPSW, their cells */
+      if ((a = draw_buf[i]) != shadow_vram[i]) { shadow_vram[i] = a; fast_draw(cga_off[i], a); }
+      if ((a = draw_buf[i + 1]) != shadow_vram[i + 1]) { shadow_vram[i + 1] = a; fast_draw(cga_off[i + 1], a); }
     }
     for (i = HUD_ROW * SCREEN_W; i < SCREEN_CELLS; i++) {
       a = draw_buf[i]; draw_buf[i] = C_SPACE;
@@ -680,6 +736,7 @@ void plat_init(void) {
       hollow_glyphs[b] = (uint8_t)(((b & 7) == 2 || (b & 7) == 6) ? amiga_glyphs[b] & ~0x22 : amiga_glyphs[b]);
     for (b = 0; b < SCREEN_CELLS; b++) cga_off[b] = (uint16_t)((b / SCREEN_W) * 320 + (b % SCREEN_W) * 2);
   } else {
+  uint16_t b;
   r.h.ah = 0; r.h.al = 0x0d; int86(0x10, &r, &r);
   vram = (volatile uint8_t far *)MK_FP(0xa000, 0);
   r.x.ax = 0x1a00; int86(0x10, &r, &r);
@@ -692,6 +749,7 @@ void plat_init(void) {
       col_map[i] = i;
     }
   } else for (i = 0; i < 16; i++) col_map[i] = ega_colours[i];   /* an EGA: its 16, chosen by hand */
+  for (b = 0; b < SCREEN_CELLS; b++) cga_off[b] = (uint16_t)((b / SCREEN_W) * 320 + b % SCREEN_W);   /* a byte a cell in each plane */
   ega_ready();
   }
   {                                              /* the game port: which sticks answer, and their centres */

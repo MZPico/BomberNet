@@ -199,11 +199,19 @@ much as a move), so the XT figures are a guide:
 | CGA in C | 61.0 ms | 82.8 ms | 272 of 498 | 37.5 ms |
 | CGA, the fast path | 37.6 ms | 51.5 ms | 29 | 8.5 ms |
 | CGA, the fast path, no state hash (a local game) | 34.0 ms | 45.8 ms | 12 | 8.4 ms |
-| EGA (still C), no state hash | 52.1 ms | 68.8 ms | 90 | 33.2 ms |
+| EGA in C, no state hash | 52.1 ms | 68.8 ms | 90 | 33.2 ms |
+| EGA, the fast path, no state hash | 30.4 ms | 41.0 ms | 8 | 8.4 ms |
 
-An XT with a CGA now plays at full speed but for a short catch-up in big
-explosions; a round start is 0.7 s (the tables, the 1000 cells). An XT
-with an EGA (rare) would want the same treatment.
+The EGA's fast path is the CGA's in planar form: every code's colour (the
+adapter's register: a VGA's DAC entry, an EGA's hand-chosen one) and
+glyph worked out when the screen switches, a cell in assembly (an OUT to
+the Map Mask, the 8 rows; an OUT, 8 zeros), the same REPE CMPSW scan and
+offset table. On a 286 (cycles 3000) the flush is 0.9 ms a frame (2.8
+before), a full redraw 42 ms (85-100).
+
+An XT now plays at full speed on either adapter but for a short catch-up
+in big explosions; a round start is 0.5-0.7 s (the tables, the 1000
+cells).
 
 ## Step 2: the network over a WiFi modem
 
@@ -269,5 +277,5 @@ an emulator.
 ## Risks and open questions
 
 - Speed on an 8088 is an estimate until a tester runs it.
-- An XT with an EGA is still slow (the EGA's flush in C); with a CGA it
-  plays. Both are DOSBox estimates until a tester has a real XT.
+- The XT figures are DOSBox estimates (it counts instructions, not an
+  8088's clocks) until a tester has a real XT.
