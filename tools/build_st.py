@@ -2,7 +2,7 @@
 """The Atari ST build (m68k-atari-mint-gcc, MiNTLib; Vincent Riviere's
 cross tools): build/st/BOMBER.PRG, a TOS program.
 
-  tools/build_st.py [--test recording.bnr [--frames n] | --play] [-O2|-Os] [--out dir]
+  tools/build_st.py [--test recording.bnr [--frames n] | --play | --net host|join] [-O2|-Os] [--out dir]
 
 --test: ST_TEST, the recording compiled in and replayed from the title on;
 each game frame's work is timed (tools/st_test.py runs it in Hatari and
@@ -24,9 +24,15 @@ if '--test' in sys.argv:
         f.write('};\n')
     flags += ['-DST_TEST', '-DST_RESULT="C:\\\\RESULT.TXT"']
 if '--play' in sys.argv: flags.append('-DST_PLAYTEST')   # tools/st_play.py: a 4-player deathmatch preset, the players logged
+if '--net' in sys.argv:                                   # tools/st_match.py, tools/crossplay.py: host (or join) a room on SPACE, the room's state logged
+    i = sys.argv.index('--net')
+    flags += [f'-DST_NETTEST={1 if sys.argv[i + 1] == "host" else 2}', f'-DST_NETTEST_PLAYERS={os.environ.get("PLAYERS", 2)}',
+              f'-DST_NETTEST_LOCAL={os.environ.get("LOCAL", 1)}']
 c = os.path.join(ROOT, 'c')
 src = [f'{c}/core/{n}.c' for n in ('bomber', 'netplay', 'data', 'map', 'game', 'input', 'video', 'enemy', 'bomb', 'player')]
-src += [f'{c}/platform/atarist/plat_st.c', f'{c}/platform/amiga/tables.c', f'{c}/common/netdev_none.c']   # the Amiga's glyph tables
+src += [f'{c}/platform/atarist/plat_st.c', f'{c}/platform/amiga/tables.c']   # the Amiga's glyph tables
+if '--test' in sys.argv: src += [f'{c}/common/netdev_none.c']      # a replay needs no network
+else: src += [f'{c}/platform/atarist/tcp_modem.c', f'{c}/common/netdev_soft.c', f'{c}/common/ws.c']
 inc = [f'-I{c}/core', f'-I{c}/common', f'-I{c}/platform/atarist', f'-I{c}/platform/amiga', f'-I{out}']
 exe = os.path.join(out, 'BOMBER.PRG')
 flags.append('-Dmain=bomber_main')                 # the core's main; plat_st.c's main enters supervisor mode around it

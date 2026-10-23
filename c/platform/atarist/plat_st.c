@@ -90,6 +90,24 @@ static uint32_t st_time(void) {           /* in 1/38400 s */
 #ifdef ST_PLAYTEST
 static FILE *playlog;                     /* tools/st_play.py reads it: the players' places every frame */
 #endif
+#ifdef ST_NETTEST
+#include "netdev.h"
+static long netlog = -1;                  /* C:\NET.LOG (GEMDOS): tools/st_match.py, tools/crossplay.py read it, the room's state every frame */
+static char log_buf[16384];
+static uint16_t log_len;
+static void log_out(void) { if (log_len) { Fwrite((short)netlog, log_len, log_buf); log_len = 0; } }
+static void log_s(const char *t) { while (*t) log_buf[log_len++] = *t++; }
+static void log_dec(uint32_t v) {
+  char d[10]; uint8_t n = 0;
+  do { d[n++] = (char)('0' + v % 10); v /= 10; } while (v);
+  while (n) log_buf[log_len++] = d[--n];
+}
+static void log_hex(uint8_t v) {
+  static const char digit[] = "0123456789abcdef";
+  log_buf[log_len++] = digit[v >> 4]; log_buf[log_len++] = digit[v & 15];
+}
+#endif
+void (*st_net_cleanup)(void);             /* the network driver's: its serial buffer given back to TOS */
 #ifdef ST_TEST
 #include "rec_data.h"                     /* a recording to replay (tools/build_st.py --test) */
 #define TEST_FRAMES ((REC_LEN - 16) / 6)
@@ -171,6 +189,15 @@ uint8_t plat_keys_a(void) {
 #ifdef ST_TEST
   return title_mode && (frames & 1) ? KEY_SPACE : 0;
 #endif
+#if defined(ST_NETTEST) && ST_NETTEST == 2
+  {                                       /* joining: the room code from C:\CODE.TXT, once the test wrote it */
+    static uint8_t poll, got;
+    if (title_mode && !got && !(++poll & 15)) {
+      FILE *f = fopen("C:\\CODE.TXT", "r");
+      if (f) { if (fread(net_code, 1, 4, f) == 4) { net_code[4] = 0; got = 1; } fclose(f); }
+    }
+  }
+#endif
   if (keydown[K_UP]) k |= KEY_UP;
   if (keydown[K_DOWN]) k |= KEY_DOWN;
   if (keydown[K_LEFT]) k |= KEY_LEFT;
@@ -220,8 +247,14 @@ uint8_t plat_break(void) { return keydown[K_ESC]; }
 static uint32_t last_tick;
 static uint8_t hz60, hz60_step;
 
+#ifdef ST_NETTEST
+static uint32_t sync_in, sync_out, work_t, wait_t;   /* timer A's ticks: the frame's work, its wait at the sync */
+#endif
 void plat_frame_sync(void) {                    /* 60 ms: 3 TV frames at 50 Hz, or 4,3,4,3,4 at 60 Hz (3.6) */
   uint8_t need = 3;
+#ifdef ST_NETTEST
+  sync_in = st_ta_ticks; work_t += sync_in - sync_out;
+#endif
   if (hz60) { need = (hz60_step & 1) ? 3 : 4; if (++hz60_step == 5) hz60_step = 0; }
 #ifdef ST_TEST
   if (t_start && test.n < TEST_FRAMES) {
@@ -232,6 +265,9 @@ void plat_frame_sync(void) {                    /* 60 ms: 3 TV frames at 50 Hz, 
 #endif
   while (FRCLOCK - last_tick < need) Vsync();
   last_tick = FRCLOCK;
+#ifdef ST_NETTEST
+  sync_out = st_ta_ticks; wait_t += sync_out - sync_in;
+#endif
   {                                       /* ESC on the title screen leaves the game: a new press (not one held from */
     static uint8_t esc_was;               /* cancelling a room code), on a frame nothing asked for typed keys */
     uint8_t esc = keydown[K_ESC];
@@ -241,7 +277,15 @@ void plat_frame_sync(void) {                    /* 60 ms: 3 TV frames at 50 Hz, 
   }
 }
 
-void plat_delay(void) { Vsync(); }
+#ifdef ST_NETTEST
+static uint16_t delays;                   /* plat_delay calls since the last frame logged */
+#endif
+void plat_delay(void) {
+#ifdef ST_NETTEST
+  delays++;
+#endif
+  Vsync();
+}
 
 /* the YM's register written with the interrupts off: timer A's interrupt writes one too */
 static void ym(uint8_t reg, uint8_t v) {
@@ -397,6 +441,34 @@ void flush_screen(void) {
     if (!(++every & 7)) fflush(playlog);
   }
 #endif
+#ifdef ST_NETTEST
+  if (netlog >= 0) {                      /* the state tools/crossplay.py reads from the other machines' memory: */
+    static uint8_t every;                 /* formatted by hand into RAM, written out every 32 frames (Hatari's */
+    static uint32_t log_t;                /* drive costs a frame's time a write; fprintf a third of a frame) */
+    uint32_t log_in = st_ta_ticks;
+    if (log_len > sizeof(log_buf) - 2300) log_out();
+    log_s("frame "); log_dec(frame_no); log_s(" title "); log_dec(title_mode);
+    log_s(" code "); { uint8_t k; for (k = 0; k < 4; k++) log_buf[log_len++] = net_code[k] ? net_code[k] : ' '; }
+    log_s(" active "); log_dec(net_active); log_s(" abort "); log_dec(net_abort); log_s(" slot "); log_dec(net_slot);
+    log_s(" delay "); log_dec(net_delay); log_s(" table ");
+    { uint8_t k; for (k = 0; k < 4; k++) log_hex(net_table[k]); }
+    log_s(" hash "); log_hex((uint8_t)(state_hash >> 8)); log_hex((uint8_t)state_hash); log_s(" map ");
+#ifndef ST_NETTEST_NOMAP
+    if (title_mode || frame_no % 16 == 1)  /* the map: on the hashed frames' lines (what the tools compare) */
+      for (i = 0; i < SCREEN_CELLS; i++) log_hex(map_layer[i]);
+    else
+#endif
+    log_s("none");
+    { extern uint32_t st_send_ticks, st_recv_calls, st_recv_bytes;   /* after the 20 fields the tools read */
+      log_s(" vbl "); log_dec(FRCLOCK); log_s(" work "); log_dec(work_t); log_s(" wait "); log_dec(wait_t);
+      log_s(" log "); log_dec(log_t); log_s(" send "); log_dec(st_send_ticks); log_s(" recvcalls "); log_dec(st_recv_calls);
+      log_s(" recvbytes "); log_dec(st_recv_bytes); log_s("\n");
+      st_send_ticks = st_recv_calls = st_recv_bytes = 0; work_t = wait_t = 0; }
+    delays = 0;
+    if (!(++every & 31)) log_out();
+    log_t = st_ta_ticks - log_in;
+  }
+#endif
 #ifdef ST_TEST
   if (!title_mode) {
     if (rec_pos + 6 <= REC_LEN) { uint32_t d = st_time() - t_flush; test.flush += d; if (test.n < TEST_FRAMES) test.fl[test.n] = d; }
@@ -428,6 +500,7 @@ static uint8_t started;                   /* plat_init done: the timer, the YM, 
 static void cleanup(void) {
   static const char mouse_on[1] = {0x08};       /* the IKBD's relative mouse mode: the mouse back on port 0 */
   if (!started) return;
+  if (st_net_cleanup) st_net_cleanup();         /* hung up, TOS's serial buffer back */
   *(volatile uint8_t *)0xfffffa19 = 0;          /* timer A stopped (its control register), its interrupt off */
   Jdisint(13);
   if (have_ym) { ym(8, 0); ym(7, old_mixer); }
@@ -438,6 +511,9 @@ static void cleanup(void) {
   }
 #ifdef ST_PLAYTEST
   if (playlog) fclose(playlog);
+#endif
+#ifdef ST_NETTEST
+  if (netlog >= 0) { log_out(); Fclose((short)netlog); netlog = -1; }
 #endif
   if (old_rez >= 0) Setscreen((void *)-1, (void *)-1, old_rez);
   Setpalette(old_palette);
@@ -513,6 +589,12 @@ void plat_init(void) {
   hash_period = rec[12];
 #endif
   replay_active = 1;
+#endif
+#ifdef ST_NETTEST                         /* 1: host a room of ST_NETTEST_PLAYERS on SPACE; 2: join */
+  netlog = Fopen("C:\\NET.LOG", 1);             /* appended to: a run's start marked */
+  if (netlog < 0) netlog = Fcreate("C:\\NET.LOG", 0);
+  if (netlog >= 0) { Fseek(0, (short)netlog, 2); log_s("start\n"); log_out(); }
+  menu_mode = 1; menu_players = ST_NETTEST_PLAYERS; menu_net = ST_NETTEST; menu_local = ST_NETTEST_LOCAL;
 #endif
 #ifdef ST_PLAYTEST
   playlog = fopen("C:\\PLAY.LOG", "w");

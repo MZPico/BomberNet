@@ -135,8 +135,9 @@ def adf_map(d, name=b'bomber'):
 
 
 def big_endian(d):
-    """an AmigaOS executable (a hunk file, 000003F3 first): its 68000 reads the port's two bytes high first"""
-    return d[:4] == b'\x00\x00\x03\xf3' or d[:3] == b'DOS'
+    """a 68000's file, which reads the port's two bytes high first: an AmigaOS executable (a hunk file,
+    000003F3 first) or an Amiga disk (DOS), a TOS program (601A first: a C64 .prg begins with its load address)"""
+    return d[:4] == b'\x00\x00\x03\xf3' or d[:3] == b'DOS' or d[:2] == b'\x60\x1a'
 
 
 def load(path):

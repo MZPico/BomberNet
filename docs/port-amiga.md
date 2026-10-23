@@ -318,7 +318,10 @@ had ended the Amiga's session, while the Amiga itself kept playing (its
 screen and log showed no crash). Six reruns, with the relay's ping and
 pong frames logged, with them unlogged and with its keepalive pings off,
 all ran the full 300 frames; every ping was answered. The cause is not
-known; to watch for on hardware.
+known; to watch for on hardware. It happened a third time with the Atari
+ST hosting the Amiga (docs/port-atari-st.md, step 2): the match crawled to
+frame 90 in four minutes, then the Amiga's connection ended; the rerun
+was clean. Every time the Amiga was the joiner.
 
 **The production relay** (`RELAY=api.mzpico.com:80 tools/amiga_match.py
 60`): two Amigas, 1004 frames at the full 16.7 game frames a second, 63

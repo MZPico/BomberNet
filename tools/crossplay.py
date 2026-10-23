@@ -10,7 +10,7 @@ by side, one TV frame each in turn, and compares their state hashes. The
 C64 runs in VICE with a WiC64 (tools/vice.py), in real time on its own: its
 TV frame is 20 ms of waiting, and it stands still while it is read.
 
-  tools/crossplay.py [steps] [host] [joiner]   machines: mz, zx, cpc, esp, c64, amiga; default mz zx
+  tools/crossplay.py [steps] [host] [joiner]   machines: mz, zx, cpc, esp, c64, amiga, st; default mz zx
                                                (esp: build/zx128, an eLeMeNt with its ESP-01)
                                                (the second argument alone: mz or zx hosts the other)
   PLAYERS=3 LOCAL_HOST=2 LOCAL_JOIN=1   seats: players in total, local players per machine
@@ -257,6 +257,61 @@ class Amiga:
     def close(self): self.p.kill()
 
 
+class AtariST:
+    """Hatari with a WiFi modem emulated on its serial port (tools/st_modem.py),
+    running in real time: a tools/build_st.py --net host|join build (the menu
+    preset; a joiner takes the room code from C:\\CODE.TXT), its keys as scan
+    codes through Hatari's command FIFO, its state read from the log it
+    writes (C:\\NET.LOG, written out every 32 frames: the state read may be
+    a second or two old, which only makes the harness wait)."""
+    kind = 'ST'
+    keys = {'fire': 0x39, 'walk': 0x4d}
+
+    def __init__(self):
+        import st_match
+        self.m = st_match.ST('host' if HOST == 'st' else 'join', nomap=False)
+        self.last, self.cached = {}, None
+        self.flushes, self.read_to = [], 0       # (frame, hash) of every game frame logged: collect() takes them
+
+    def _new_lines(self):
+        try:
+            with open(f'{self.m.hd}/NET.LOG', 'rb') as f:
+                f.seek(self.read_to); data = f.read()
+        except FileNotFoundError: return
+        end = data.rfind(b'\n') + 1
+        self.read_to += end
+        for l in data[:end].decode('latin-1').split('\n'):
+            p = l.split()
+            if len(p) >= 20 and p[0] == 'frame' and p[3] == '0': self.flushes.append((int(p[1]), int(p[17], 16)))
+
+    def _state(self):
+        if self.cached is None: self.cached = self.m.state() or self.last
+        self.last = self.cached
+        return self.cached
+
+    def rd(self, n, k=1):
+        st = self._state()
+        if n == '_net_code': return st.get('code', '    ').encode()
+        if n == '_net_table': return bytes.fromhex(st.get('table', 'ffffffff'))
+        if n == '_map_layer':                      # the newest line with a map (the hashed frames' lines carry one)
+            for l in reversed(self.m.lines()):
+                p = l.split()
+                if len(p) >= 20 and p[0] == 'frame' and len(p[19]) == 2000: return bytes.fromhex(p[19])
+            return None
+        return self.r16(n).to_bytes(2, 'little')[:k]
+    def r8(self, n): return self.r16(n) & 0xff
+    def r16(self, n):
+        st = self._state()
+        if n == '_state_hash': return int(st.get('hash', '0'), 16)
+        return int(st.get(n.lstrip('_').replace('net_', '').replace('title_mode', 'title').replace('frame_no', 'frame'), '0'))
+    def wr(self, n, bs):
+        if n == '_net_code': open(f'{self.m.hd}/CODE.TXT', 'wb').write(bytes(bs))   # the rest is the build's preset
+    def tv_frame(self): time.sleep(0.02); self.cached = None; self._new_lines()
+    def press(self, k): self.m.key(self.keys.get(k, k), True)
+    def release(self, k): self.m.key(self.keys.get(k, k), False)
+    def close(self): self.m.close()
+
+
 def run(n, *ms):
     for _ in range(n):
         for m in ms: m.tv_frame()
@@ -270,7 +325,7 @@ def until(cond, limit, *ms):
 
 
 t0 = time.time()
-MACHINES = {'mz': MZ, 'zx': Spectrum, 'cpc': Amstrad, 'esp': Element, 'c64': Commodore, 'amiga': Amiga}
+MACHINES = {'mz': MZ, 'zx': Spectrum, 'cpc': Amstrad, 'esp': Element, 'c64': Commodore, 'amiga': Amiga, 'st': AtariST}
 host, join = MACHINES[HOST](), MACHINES[JOIN]()
 both = (host, join)
 run(90, *both)                                                    # both titles up and settled
@@ -347,6 +402,10 @@ for m in both:
     elif m.kind == 'C64': m.v.screenshot('build/cross_c64.png')
     elif m.kind == 'AMIGA': subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-f', 'x11grab', '-video_size', '1024x768', '-i',
                                             m.env['DISPLAY'], '-frames:v', '1', 'build/cross_amiga.png'], env=m.env)
+    elif m.kind == 'ST':
+        import st_match
+        subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-f', 'x11grab', '-video_size', '1024x768', '-i', st_match.DISPLAY,
+                        '-frames:v', '1', 'build/cross_st.png'], env=dict(os.environ, DISPLAY=st_match.DISPLAY))
     elif m.kind == 'CPC': m.c.screenshot('build/cross_cpc.png')
     else: m.e.screenshot('build/cross_mz.png')
 for m in both: m.close()

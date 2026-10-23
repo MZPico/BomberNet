@@ -23,6 +23,7 @@ platform layer and a new network transport.
    ESP8266 with Hayes firmware: `ATDT host:port`, then a byte stream), in
    Hatari through its serial port and a modem emulator on the host; the
    lobby's delay; cross-play with every machine; the production relay.
+   Done, see below.
 3. **Release**: `BOMBER.PRG` and an `.ST` floppy image (the game in its
    AUTO folder); `set_relay.py` on both (the program is a plain file, the
    image FAT12); the README.
@@ -151,11 +152,85 @@ five beeps, 14.3-15.4 ms, the pitch within the YM's rounding (2161 Hz for
 desktop, from the AUTO folder, from the desktop, and from a desktop in
 medium resolution. All recordings still replay with every hash equal.
 
+## Step 2: the network over a WiFi modem
+
+**The driver** (`c/platform/atarist/tcp_modem.c`): `tcp.h` over a WiFi
+modem on the serial port, 19200 bps 8N1, no flow control. At start: `AT`
+(answered OK: a modem), `ATE0` (no echo), `ATNET0` (no telnet: a telnet
+modem doubles every 0xff byte, and the binary messages are full of them;
+an ERROR where the firmware has no such setting). If nothing at all
+answers the first `AT` there is no modem and the game starts at once
+(about 4 s of timeouts otherwise); if something answers that is not OK,
+the modem may still be online from before: a second's quiet, `+++`, a
+second's quiet, `ATH`, `AT` again. `tcp_open` dials `ATDThost:port` and
+waits up to 20 s for CONNECT (NO CARRIER, ERROR, BUSY: no connection);
+the line is then a byte stream. `tcp_close` escapes and hangs up (about
+2 s, when a match or a lobby is left). The far end closing shows as the
+modem's "NO CARRIER" in the stream (the last 14 bytes are compared).
+
+TOS's RS-232 input buffer (256 bytes) is replaced by one of 4 KB while the
+game runs and read directly (supervisor mode); TOS's interrupt fills it.
+The original buffer is given back at the end, before the program's memory
+is freed (else TOS's interrupt would write into it). Bytes go out through
+`Bconout` (AUX:), 1-3 ms a frame.
+
+Found on the way: the modem's answer is `CONNECT 19200` followed by CR LF;
+the line reader stopped at the CR, the LF became the first byte of the
+data, and the WebSocket handshake's status line was read one byte out
+(NO CONNECTION). The LF after CONNECT is now dropped.
+
+**The test bench.** `tools/st_modem.py` emulates the modem on a pty, which
+Hatari opens as the ST's serial port (`--rs232-in`, `--rs232-out`): the
+AT commands, `ATDT host:port` opening a TCP connection, `+++` with its
+guard times, `ATH`, `ATO`, NO CARRIER when the far end closes; bytes to
+the ST paced at the line's speed (Hatari paces the ST's output itself);
+`--trace` logs every byte with its time. `tools/st_match.py`: two STs,
+each with its modem, through the relay (`RELAY=`), the keys through each
+Hatari's command FIFO; `tools/crossplay.py` takes `st` as a machine.
+
+The test builds (`tools/build_st.py --net host|join`, `ST_NETTEST`) log the
+room's state every frame to `C:\NET.LOG`. Logged with `fprintf` and
+flushed every frame, the log cost the ST 170 ms a frame on Hatari's
+drive and the match ran at 6 frames a second; it is now formatted by hand
+into RAM and written every 32 frames (5 ms a frame), the map only on the
+hashed frames' lines. A frame's work in a match is then 18 ms on average
+(the replay's 9, the log's 5, the network's few).
+
+**Results** (`tools/crossplay.py 300`, the local relay; the ST in Hatari in
+real time; the hashes of every 16th frame and the maps at the end compared):
+
+| Host | Joiner | Frames | Hashed frames | Mismatches | Delay |
+|---|---|---|---|---|---|
+| ST | ZX Spectrum | 320 | 19 | 0 | 1 |
+| ZX Spectrum | ST | 332 | 20 | 0 | 1 |
+| ST | Sharp MZ-800 | 325 | 20 | 0 | 3 |
+| Sharp MZ-800 | ST | 314 | 19 | 0 | 1 |
+| ST | Amstrad CPC | 349 | 19 | 0 | 1 |
+| ST | Commodore 64 | 322 | 18 | 0 | 3 |
+| ST | Amiga | 332 | 20 | 0 | 2 |
+| Amiga | ST | 314 | 19 | 0 | 1 |
+
+The fields were identical at the end of every run. Once the ST hosting
+the Amiga crawled to frame 90 in four minutes and the Amiga's connection
+ended (the ST's abort flag 5); the rerun was clean. That is the third such
+stall with the Amiga as the joiner, under two hosts (docs/port-amiga.md,
+step 3): an Amiga or FS-UAE matter, not the ST's.
+
+`tools/st_match.py`: two STs, 2018 frames in 150 s, 127 hashed frames
+compared, 0 mismatches; 4 players (2 local on each), 997 frames, 0
+mismatches; through the production relay (`RELAY=api.mzpico.com:80`),
+1012 frames at 16.3 frames a second, 0 mismatches. The lobby measures the
+delay as 2 (120 ms) between two STs, locally and through production.
+
+Not yet: real hardware (a modem's firmware, its speed setting, its
+telnet setting), and the release files (step 3).
+
 ## Risks and open questions
 
 - The network: a WiFi modem runs at 19200 bps (about 1900 bytes/s); a
   4-player match needs about 600 bytes/s from the relay and 220 to it.
-  TOS's serial receive buffer is small: it may need enlarging (`Iorec`).
+  The modem must be set to 19200 bps and to no telnet translation; the
+  firmwares differ in how (`AT$SB=19200`, `ATB19200`, `ATNET0`).
 - STiNG cannot be tested in Hatari.
 - MiNTLib's stdio makes the program 141 KB; libcmini would make it
   smaller if that matters for a floppy (it does not: 720 KB).
