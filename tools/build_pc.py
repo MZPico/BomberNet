@@ -36,7 +36,7 @@ c = os.path.join(ROOT, 'c')
 src = [f'{c}/core/{n}.c' for n in ('bomber', 'netplay', 'data', 'map', 'game', 'input', 'video', 'enemy', 'bomb', 'player')]
 src += [f'{c}/platform/pc/plat_pc.c', f'{c}/platform/amiga/tables.c']   # the Amiga's glyph tables
 if '--test' in sys.argv: src += [f'{c}/common/netdev_none.c']      # a replay needs no network
-else: src += [f'{c}/platform/pc/tcp_modem.c', f'{c}/common/netdev_soft.c', f'{c}/common/ws.c']
+else: src += [f'{c}/platform/pc/tcp_pc.c', f'{c}/platform/pc/tcp_pkt.c', f'{c}/platform/pc/tcp_modem.c', f'{c}/common/netdev_soft.c', f'{c}/common/ws.c']
 inc = [f'-i={c}/core', f'-i={c}/common', f'-i={c}/platform/pc', f'-i={c}/platform/amiga', f'-i={out}']
 objs = []
 for s in src:

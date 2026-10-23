@@ -24,8 +24,9 @@ with its own modem), Ethernet through a packet driver later.
    cross-play with every machine; the production relay. Done, see below.
 3. **Release**: `BOMBER.EXE` and a disk image; the relay on the command
    line (`/RELAY=`, no `set_relay.py`); the README.
-4. Optional: Ethernet through a packet driver (NE2000 in DOSBox-X, our own
-   small TCP/IP); Tandy, Hercules, MDA renderers.
+4. Ethernet through a packet driver, our own small TCP/IP. Done, see
+   below. Optional: AdLib/Sound Blaster tones; Tandy, Hercules, MDA
+   renderers.
 
 ## Design
 
@@ -274,6 +275,57 @@ glyph, the others zeros: 16 memory writes and 2 port writes, the flush
 2.8-3.0 ms a frame at cycles 3000 against 2.6). Nothing hidden is left to
 an emulator.
 
+## Ethernet
+
+Any network card with a DOS packet driver (the FTP Software
+specification: Crynwr's drivers, the makers' own), loaded before the game,
+for example `NE2000 0x60 3 0x300`. The game looks for it on interrupts 60h
+to 80h (the "PKT DRVR" signature) and takes two packet types, IP and ARP;
+`tcp_pc.c` uses it in preference to the modem. On top of it a TCP/IP of
+our own, `tcp_pkt.c`, about 600 lines:
+
+- **The driver's upcall** (in its interrupt, twice a frame: a buffer, then
+  "filled") is a few instructions of inline assembly that hand out one of
+  16 far slots of 1514 bytes (24 KB from the far heap, not in the .EXE).
+  The game takes the frames out whenever it reads the network.
+- **ARP:** one entry, the next hop; requests for our address answered.
+  **IPv4** without options or fragments; **ICMP** echo answered.
+- **DHCP** (the address, the mask, the gateway, the DNS server) on the first
+  connection, unless `/IP=` is given; **DNS**: one A record (the built-in
+  relay is a name).
+- **TCP:** one client connection. Every segment acknowledged at once;
+  data beyond a gap kept (one island, in the receive ring) until the gap
+  comes again; go-back-N retransmission on a timeout from the measured
+  round trip (Karn, 100 ms to 3 s) or on the second duplicate ACK. ESC or
+  the end sends RST and gives the packet types back (else the driver would
+  call into freed memory).
+
+**Test bench.** DOSBox-X's NE2000 with its slirp back end
+(`[ne2000] ne2000=true backend=slirp`): the guest gets 10.0.2.15 by DHCP,
+the host is 10.0.2.2, DNS 10.0.2.3. `PC_NET=pkt tools/pc_match.py` and
+`tools/crossplay.py` (which uses it) set that up, with Crynwr's
+`NE2000.COM` (GPL, from crynwr.com's pktd11.zip, fetched once into
+`build/pc/pktdrv`). `CFLAGS_PC=-dPKT_DROP=n` loses every n-th segment
+going out and every (n+2)-th coming in, for the retransmission. The test
+builds log a line with the TCP state when the game stands still 2 s.
+
+**Results** (0 mismatches in all):
+
+| match | frames a second |
+|---|---|
+| PC-PC, local relay, 2 min, 7 runs | 16.3 |
+| PC-PC, production relay (by DNS) | 16.2 |
+| PC-ZX, MZ-PC, PC-ST | fields identical |
+| 1 segment in 40 lost | 15.8 |
+| 1 in 7 lost going out, 1 in 9 coming in | 9.3 |
+| XT speed (cycles 300), CGA | 6.1 (the test's log: 1.5 s a write) |
+
+Two early runs stood still after about 90 frames: with six slots, the
+frames that came during the test log's disk writes overflowed them, and
+slirp's TCP backed off for seconds before sending again. Sixteen slots
+and the kept island fixed it. The network test now logs once a game
+frame (a line a loop had slowed an XT to a crawl).
+
 ## The command line
 
 `BOMBER.EXE` takes options, `/` or `-`, in any case (`BOMBER /?` lists them):
@@ -285,6 +337,9 @@ an emulator.
 /COM1 /COM2          the WiFi modem's port (else both are tried)
 /BAUD=n              the modem's speed (else 19200, then 115200)
 /NOSOUND             no sound
+/NET=PKT /NET=MODEM  Ethernet or the modem only (else Ethernet where a packet
+                     driver is loaded, the modem otherwise)
+/IP= /MASK= /GW= /DNS=  Ethernet's addresses (else DHCP's)
 ```
 
 An unknown option prints the list and returns to DOS with error level 1.

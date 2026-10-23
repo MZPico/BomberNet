@@ -1,4 +1,4 @@
-/* tcp.h over a WiFi modem on a PC's serial port (docs/port-pc.md): an
+/* tcp.h (through tcp_pc.c) over a WiFi modem on a PC's serial port (docs/port-pc.md): an
  * ESP8266 with Hayes firmware (Zimodem, WiFi232, RetroWiFi and the like)
  * that dials a TCP connection, ATDT host:port, and is then a plain byte
  * stream both ways until "+++" and ATH; the same commands as the Atari
@@ -18,7 +18,6 @@
 #include <conio.h>
 #include <dos.h>
 #include <i86.h>
-#include "tcp.h"
 
 uint32_t pc_ms(void);                     /* plat_pc.c: milliseconds */
 extern uint8_t pc_modem_port;             /* plat_pc.c, the command line: 0 either, 1 COM1, 2 COM2 */
@@ -185,7 +184,7 @@ static uint8_t probe(uint16_t port, uint8_t line_irq, uint32_t bps) {
   return command("AT", 500) == 0;
 }
 
-uint8_t tcp_present(void) {
+uint8_t modem_present(void) {
   static uint8_t done;
   static const uint16_t ports[2] = {0x3f8, 0x2f8};
   static const uint8_t irqs[2] = {4, 3};
@@ -205,11 +204,11 @@ uint8_t tcp_present(void) {
   return 1;
 }
 
-uint8_t tcp_open(const char *host, uint16_t port) {
+uint8_t modem_open(const char *host, uint16_t port) {
   char cmd[72], l[48];
   uint32_t t;
   if (!have_modem) return 1;
-  tcp_close();
+  modem_close();
   sprintf(cmd, "ATDT%s:%u\r", host, (unsigned)port);
   tx_str(cmd);
   t = pc_ms();
@@ -227,14 +226,14 @@ uint8_t tcp_open(const char *host, uint16_t port) {
   return 4;
 }
 
-uint8_t tcp_send(const uint8_t *buf, uint16_t n) {
+uint8_t modem_send(const uint8_t *buf, uint16_t n) {
   if (!online) return 1;
   pc_modem_tx += n;
   tx((const char *)buf, n);
   return 0;
 }
 
-int16_t tcp_recv(uint8_t *buf, uint16_t max) {
+int16_t modem_recv(uint8_t *buf, uint16_t max) {
   static const char nc[14] = "\r\nNO CARRIER\r\n";
   int16_t n = 0;
   int c;
@@ -249,7 +248,7 @@ int16_t tcp_recv(uint8_t *buf, uint16_t max) {
   return n;
 }
 
-void tcp_close(void) {
+void modem_close(void) {
   if (!online) return;
   escape();
   command("ATH", 2000);

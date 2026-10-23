@@ -9,6 +9,10 @@ builds write (C:\\NET.LOG: the room's state every frame, written every 32).
   PLAYERS=4 LOCAL_HOST=2 LOCAL_JOIN=2 ... seats, as in tools/crossplay.py
   RELAY=api.mzpico.com:80                 the relay (default the local one, 127.0.0.1:8765)
   PC_VIDEO=cga|ega|vga  PC_CYCLES=3000    the adapter, DOSBox-X's speed
+  PC_NET=pkt                              Ethernet instead: an NE2000 (DOSBox-X's, slirp) and Crynwr's
+                                          packet driver NE2000.COM (GPL; fetched from crynwr.com once,
+                                          kept in build/pc/pktdrv); the local relay is then 10.0.2.2,
+                                          slirp's address for the host
   AMIGA_DISPLAY=:97 AMIGA_DISPLAY2=:98    the two X displays (Xvfb), one PC each: the keys go to the window with the focus
 """
 import os, shutil, subprocess, sys, time
@@ -20,6 +24,18 @@ os.chdir(ROOT)
 SECS = int(sys.argv[1]) if len(sys.argv) > 1 else 30
 DISPLAYS = {'host': os.environ.get('AMIGA_DISPLAY', ':97'), 'join': os.environ.get('AMIGA_DISPLAY2', ':98')}
 VIDEO = os.environ.get('PC_VIDEO', 'vga')
+NET = os.environ.get('PC_NET', 'modem')
+PKTDRV = os.path.join(ROOT, 'build', 'pc', 'pktdrv', 'NE2000.COM')
+
+
+def packet_driver():
+    """Crynwr's NE2000.COM, from the packet driver collection (pktd11.zip, GPL)"""
+    if os.path.exists(PKTDRV): return PKTDRV
+    import io, urllib.request, zipfile
+    data = urllib.request.urlopen('http://crynwr.com/drivers/pktd11.zip', timeout=60).read()
+    os.makedirs(os.path.dirname(PKTDRV), exist_ok=True)
+    open(PKTDRV, 'wb').write(zipfile.ZipFile(io.BytesIO(data)).read('NE2000.COM'))
+    return PKTDRV
 
 
 class PC:
@@ -30,11 +46,14 @@ class PC:
                     LOCAL=os.environ.get('LOCAL_HOST' if role == 'host' else 'LOCAL_JOIN', '1'))
         r = subprocess.run([sys.executable, 'tools/build_pc.py', '--net', role, '--out', out], capture_output=True, text=True, env=benv)
         if r.returncode: sys.exit(f'build ({role}) failed: ' + r.stdout[-2000:] + r.stderr[-1000:])
-        set_relay.main([f'{out}/BOMBER.EXE', os.environ.get('RELAY', '127.0.0.1:8765')])
+        relay = os.environ.get('RELAY', '127.0.0.1:8765')
+        if NET == 'pkt': relay = relay.replace('127.0.0.1', '10.0.2.2')   # slirp: the host's own address
+        set_relay.main([f'{out}/BOMBER.EXE', relay])
         self.cdir = f'{out}/c'
         shutil.rmtree(self.cdir, ignore_errors=True)
         os.makedirs(self.cdir)
         shutil.copy(f'{out}/BOMBER.EXE', f'{self.cdir}/BOMBER.EXE')
+        if NET == 'pkt': shutil.copy(packet_driver(), self.cdir)
         open(f'{self.cdir}/CODE.TXT', 'w').write('????')        # made now: DOSBox caches the folder's files (the joiner waits for letters)
         conf = f'{out}/dosbox.conf'
         open(conf, 'w').write(f"""[sdl]
@@ -52,11 +71,18 @@ nosound=true
 [joystick]
 joysticktype=none
 [serial]
-serial1=modem
+serial1={'disabled' if NET == 'pkt' else 'modem'}
 serial2=disabled
+[ne2000]
+ne2000={'true' if NET == 'pkt' else 'false'}
+nicbase=300
+nicirq=3
+macaddr=random
+backend=slirp
 [autoexec]
 mount c "{self.cdir}"
 c:
+{'NE2000 0x60 3 0x300' if NET == 'pkt' else ''}
 BOMBER.EXE
 """)
         self.p = subprocess.Popen(['dosbox-x', '-conf', conf, '-fastlaunch', '-nopromptfolder', '-defaultmapper'],

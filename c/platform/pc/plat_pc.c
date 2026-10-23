@@ -113,12 +113,19 @@ uint32_t pc_ms(void) { return now(); }    /* the network driver's clock */
  *   /COM1 /COM2          the modem's port, else both looked at
  *   /BAUD=n              the modem's speed (19200, 115200 ...), else both tried
  *   /NOSOUND             no sound
+ *   /NET=PKT, /NET=MODEM Ethernet (a packet driver) or the modem only, else Ethernet where a driver is loaded
+ *   /IP= /MASK= /GW= /DNS= Ethernet's addresses, else DHCP's
  * (a dash serves as well as the slash; upper or lower case) */
 uint8_t pc_modem_port;                    /* 0: either; 1, 2: COM1, COM2 (tcp_modem.c) */
 uint32_t pc_modem_baud;                   /* 0: 19200 then 115200 */
+uint8_t pc_net;                           /* 0: either; 'P', 'M' (tcp_pc.c) */
+uint8_t pc_ip[4], pc_mask[4], pc_gw[4], pc_dns[4];   /* 0.0.0.0: DHCP's (tcp_pkt.c) */
 static uint8_t force_adapter;             /* 0: the one found; 'C', 'E', 'V' */
 static uint8_t no_sound;
 
+#ifndef PC_TEST
+uint8_t pc_parse_ip(const char *s, uint8_t *out);   /* tcp_pkt.c: a dotted quad, 1 */
+#endif
 static uint8_t opt(const char *arg, const char *name) {   /* arg is /NAME or -NAME (any case): 1 */
   if (*arg != '/' && *arg != '-') return 0;
   arg++;
@@ -146,6 +153,12 @@ static void options(void) {
       if (colon) { *colon = 0; net_relay_port = (uint16_t)atoi(colon + 1); }
       net_relay_host = v + 1;
     }
+    else if (opt(a, "NET") && v && (v[1] & 0xdf) == 'P') pc_net = 'P';
+    else if (opt(a, "NET") && v && (v[1] & 0xdf) == 'M') pc_net = 'M';
+    else if (opt(a, "IP") && v && pc_parse_ip(v + 1, pc_ip)) ;
+    else if (opt(a, "MASK") && v && pc_parse_ip(v + 1, pc_mask)) ;
+    else if (opt(a, "GW") && v && pc_parse_ip(v + 1, pc_gw)) ;
+    else if (opt(a, "DNS") && v && pc_parse_ip(v + 1, pc_dns)) ;
 #endif
     else {
       printf("BomberNet for DOS\n"
@@ -153,7 +166,10 @@ static void options(void) {
              "  /CGA /EGA /VGA       the adapter's look (else the one found)\n"
              "  /COM1 /COM2          the WiFi modem's port (else both are tried)\n"
              "  /BAUD=n              the modem's speed (else 19200, then 115200)\n"
-             "  /NOSOUND             no sound\n");
+             "  /NOSOUND             no sound\n"
+             "  /NET=PKT /NET=MODEM  Ethernet or the modem only (else Ethernet\n"
+             "                       where a packet driver is loaded)\n"
+             "  /IP= /MASK= /GW= /DNS=  the addresses (else DHCP's)\n");
       exit(opt(a, "?") || opt(a, "H") ? 0 : 1);
     }
   }
@@ -164,6 +180,8 @@ void (*pc_net_cleanup)(void);             /* the network driver's: hung up, its 
 static FILE *netlog;                      /* C:\NET.LOG: tools/pc_match.py, tools/crossplay.py read it, the room's state every frame */
 static char __far log_buf[16384];         /* formatted by hand, written every 32 frames (far: the data segment is 64 KB) */
 static uint16_t log_len;
+static uint32_t stall_at;                 /* when the game frame last moved on */
+static uint16_t logged_frame = 0xffff;    /* the game frame last logged */
 static void log_out(void) {
   static char chunk[512];
   uint16_t i = 0, n;
@@ -660,9 +678,10 @@ void flush_screen(void) {
   }
 #endif
 #ifdef PC_NETTEST
-  if (netlog) {                           /* the state the tools read from the other machines' memory */
-    static uint8_t every;
+  if (netlog && (title_mode || frame_no != logged_frame)) {   /* the state the tools read from the other machines' memory: */
+    static uint8_t every;                 /* in a game once a frame (a line a loop slowed an XT to a crawl) */
     extern uint32_t pc_modem_tx, pc_modem_rx;
+    logged_frame = frame_no; stall_at = now();
     if (log_len > sizeof(log_buf) - 2300) log_out();
     log_s("frame "); log_dec(frame_no); log_s(" title "); log_dec(title_mode);
     log_s(" code "); { uint8_t k; for (k = 0; k < 4; k++) log_buf[log_len++] = net_code[k] ? net_code[k] : ' '; }
@@ -675,6 +694,13 @@ void flush_screen(void) {
     else log_s("none");
     log_s(" ms "); log_dec(now()); log_s(" tx "); log_dec(pc_modem_tx); log_s(" rx "); log_dec(pc_modem_rx); log_s("\n");
     if (!(++every & 31)) log_out();
+  } else if (netlog && now() - stall_at > 2000) {   /* the game stood still 2 s: the network's state, written at once */
+    char d[240];
+    void pkt_debug(char *out);
+    stall_at = now();
+    pkt_debug(d);
+    log_s("stall frame "); log_dec(frame_no); log_s(" ms "); log_dec(now()); log_s(" "); log_s(d); log_s("\n");
+    log_out();
   }
 #endif
 #ifdef PC_TEST
