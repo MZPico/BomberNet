@@ -445,15 +445,15 @@ static void dhcp_send(uint8_t type) {
 static uint8_t dhcp(void) {               /* 1: configured */
   uint8_t try;
   memset(ip, 0, 4);
-  for (try = 0; try < 4; try++) {
+  for (try = 0; try < 3; try++) {          /* 4.5 s at most where nothing answers (a server answers in milliseconds) */
     uint32_t t;
     dhcp_xid = pc_ms() ^ ((uint32_t)my_mac[4] << 24 | (uint32_t)my_mac[5] << 16) ^ 0x42e7UL;
     dhcp_got = 0;
     dhcp_send(1);
-    for (t = pc_ms(); dhcp_got != 2 && pc_ms() - t < 2000; ) poll();
+    for (t = pc_ms(); dhcp_got != 2 && pc_ms() - t < 1500; ) poll();
     if (dhcp_got != 2) continue;
     dhcp_send(3);
-    for (t = pc_ms(); dhcp_got == 2 && pc_ms() - t < 2000; ) poll();
+    for (t = pc_ms(); dhcp_got == 2 && pc_ms() - t < 1500; ) poll();
     if (dhcp_got == 5) return 1;
   }
   return 0;

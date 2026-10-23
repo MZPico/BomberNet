@@ -50,7 +50,13 @@ your WiFi, with telnet translation off. The game finds it by itself
 when no packet driver is loaded.
 
 In DOSBox-X: [ne2000] ne2000=true, backend=slirp and the packet driver
-for Ethernet; or [serial] serial1=modem for a modem.
+for Ethernet; or [serial] serial1=modem for a modem. On Windows, the
+MinGW build of DOSBox-X: the Visual Studio build has no slirp (its log
+says "Backend not supported in this build: slirp"), and the game
+freezes when it first sends. (backend=pcap needs Npcap installed.)
+
+When nothing answers (no DHCP, no relay), NO CONNECTION shows after a
+few seconds.
 
 Choose NETWORK in the menu, then HOST to open a room (its four letters
 appear) or JOIN to enter one. Everybody presses SPACE when ready, the

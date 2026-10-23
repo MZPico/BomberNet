@@ -9,6 +9,7 @@ builds write (C:\\NET.LOG: the room's state every frame, written every 32).
   PLAYERS=4 LOCAL_HOST=2 LOCAL_JOIN=2 ... seats, as in tools/crossplay.py
   RELAY=api.mzpico.com:80                 the relay (default the local one, 127.0.0.1:8765)
   PC_VIDEO=cga|ega|vga  PC_CYCLES=3000    the adapter, DOSBox-X's speed
+  PC_CPU=8088                             DOSBox-X's CPU type (default 286)
   PC_NET=pkt                              Ethernet instead: an NE2000 (DOSBox-X's, slirp) and Crynwr's
                                           packet driver NE2000.COM (GPL; fetched from crynwr.com once,
                                           kept in build/pc/pktdrv); the local relay is then 10.0.2.2,
@@ -64,7 +65,7 @@ machine={'cga' if VIDEO == 'cga' else 'ega' if VIDEO == 'ega' else 'svga_s3'}
 memsize=1
 [cpu]
 core=normal
-cputype=286
+cputype={os.environ.get('PC_CPU', '286')}
 cycles=fixed {os.environ.get('PC_CYCLES', '3000')}
 [mixer]
 nosound=true

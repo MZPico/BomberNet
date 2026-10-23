@@ -330,6 +330,15 @@ the host is 10.0.2.2, DNS 10.0.2.3. `PC_NET=pkt tools/pc_match.py` and
 going out and every (n+2)-th coming in, for the retransmission. The test
 builds log a line with the TCP state when the game stands still 2 s.
 
+**Windows.** DOSBox-X's Visual Studio build has no slirp ("Backend not
+supported in this build: slirp" in its log). Its NE2000 is then there for
+the packet driver, but with nothing behind it, and the game freezes when
+it first sends: tried in the 2026.10.01 release under Wine, after a user's
+report. The MinGW build of the same release has slirp 4.9.3 and hosts a
+room on the production relay at once (also under Wine). With Linux's
+`backend=nothing` the game does not freeze: DHCP gives up (3 tries of
+1.5 s) and the lobby says NO CONNECTION.
+
 **Results** (0 mismatches in all):
 
 | match | frames a second |
