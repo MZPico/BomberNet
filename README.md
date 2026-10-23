@@ -56,6 +56,7 @@ mkdir -p build/cpc && cd build/cpc && cmake -DPLATFORM=cpc ../../c && make  # ->
 tools/build_host.sh && c/build/sim 30000 2                                 # the game on a PC (key bot)
 tools/build_amiga.py --adf                                                 # -> build/amiga/bomber, bombernet.adf (bebbo's gcc in Docker)
 tools/build_st.py --st                                                     # -> build/st/BOMBER.PRG, bombernet.st (m68k-atari-mint-gcc)
+tools/build_pc.py --img                                                    # -> build/pc/BOMBER.EXE, bombernet.img (OpenWatcom v2)
 ```
 
 The MZ build uses the environment of the MZPico-800-Manager (`+mz` target,
@@ -116,6 +117,7 @@ measured.
 | WiC64, or an Ultimate's own network | Commodore 64 | the same, over the WiC64's TCP commands or the Ultimate Command Interface (Ultimate 64, Ultimate-II+; enabled in its menu) |
 | any TCP/IP stack (Roadshow, AmiTCP, Miami, ...) | Amiga | the same, over `bsdsocket.library`; WinUAE and FS-UAE bring their own |
 | WiFi modem on the serial port (ESP8266, Hayes commands) | Atari ST | the same, over `ATDT host:port` at 19200 bps (in progress) |
+| Ethernet with a DOS packet driver, or a WiFi modem on COM1/COM2 | IBM PC (DOS) | the same, over our own small TCP/IP (DHCP, DNS) or `ATDT host:port` |
 | Unicard, NET firmware | Sharp MZ-800 | JSON lines over TCP: a self-hosted `relay/relay.py` (LAN), not the production relay |
 
 The production relay is `ws://api.mzpico.com/net` (Cloudflare, one Durable
@@ -140,6 +142,7 @@ Then point each machine at that PC (192.168.1.10 here):
 
 | Machine | Where the relay is set |
 |---|---|
+| IBM PC (DOS) | `BOMBER /RELAY=192.168.1.10` (the port 8765 unless given as `host:port`) |
 | ZX Spectrum, CPC, Atari, C64, Amiga, Atari ST | `tools/set_relay.py bomber.tap 192.168.1.10` rewrites the release file (`.tap`, `.dsk`, `.cpc`, `.xex`, `.prg`, `.d64`, the Amiga's executable or `.adf`, the ST's `.PRG` or `.st`; the port is 8765 unless given as `host:port`); without an address it shows the file's relay; `api.mzpico.com:80` sets production again |
 | MZ-800 with an MZPico | `mzpico.ini`: `[cloud]` `net_relay = 192.168.1.10`, `net_port = 8765` |
 | MZ-800 with a Unicard | `/unicard/network.cfg`: `NETRELAYADDR`, `NETRELAYPORT` (8766, the TCP port) |
@@ -162,8 +165,9 @@ measurements and the reasoning behind the delay rule: `docs/net-timing.md`.
 | `tools/lockstep_test.py`, `tools/nettest.py` | two MZ-800s (mz800emu, MZPico card emulated) through the local relay |
 | `tools/lockstep_zx.py` | two Spectrums (`tools/zxemu.py`, Spectranet emulated at its programming interface) through the local relay or production |
 | `tools/replay_cpc.py`, `tools/lockstep_cpc.py` | the same recordings on the Amstrad CPC build; two CPCs with M4 boards (`tools/cpcemu.py`) through the local relay or production |
-| `tools/crossplay.py` | two different machines in one match: MZ-800, Spectrum, CPC, the 128K with its ESP-01 (`esp`), C64, Amiga, Atari ST |
+| `tools/crossplay.py` | two different machines in one match: MZ-800, Spectrum, CPC, the 128K with its ESP-01 (`esp`), C64, Amiga, Atari ST, PC (`PC_NET=pkt`: over Ethernet) |
 | `tools/st_test.py`, `tools/st_play.py`, `tools/st_match.py`, `tools/st_modem.py`, `tools/st_netplay.py` | the Atari ST build in Hatari: a recording replayed, the inputs and the sound, two STs in a match; a WiFi modem emulated on Hatari's serial port; the networked game in a window to play by hand |
+| `tools/pc_test.py`, `tools/pc_play.py`, `tools/pc_match.py` | the PC build in DOSBox-X: a recording replayed and timed, the inputs and the sound (speaker or FM), two PCs in a match (the modem, or `PC_NET=pkt` Ethernet) |
 | `tools/fusex_match.py` | two FuseX with the real Spectranet firmware (`tools/fusex.py` drives FuseX through its GDB server) |
 | `tools/softnet_test.sh` | the software network device on a PC: two processes in one room |
 | `tools/set_relay.py` | not a test: points a release file (Spectrum, CPC, Atari, C64, Amiga) at another relay |
@@ -207,6 +211,7 @@ changed on purpose and how fast it runs: `docs/original.md`.
 | `docs/port-c64.md` | the Commodore 64 port (WiC64 or an Ultimate's network): plan, measurements, VICE as the test bench |
 | `docs/port-amiga.md` | the Amiga port (any 68000 Amiga, `bsdsocket.library`): plan, measurements, FS-UAE with a free AROS ROM as the test bench |
 | `docs/port-atari-st.md` | the Atari ST port (a WiFi modem on the serial port): plan, measurements, Hatari with EmuTOS as the test bench |
+| `docs/port-pc.md` | the IBM PC port (DOS; CGA, EGA, VGA; Ethernet or a WiFi modem; AdLib/Sound Blaster): plan, measurements, DOSBox-X as the test bench |
 | `docs/portability.md` | the rules that keep one C game for Z80, 6502 and 68000 machines |
 | `docs/port-zx128-esp01.md` | the 128K Spectrum with an ESP-01 (Milan Stava's port, brought in step by step): plan and progress |
 | `PLAN.md` | the multiplayer plan the C port followed |

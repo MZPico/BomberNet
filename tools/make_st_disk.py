@@ -4,7 +4,11 @@ FAT12, single sided, 80 tracks of 9 sectors (360 KB), which every ST's
 drive reads. TOS runs the programs in the boot disk's AUTO folder at
 startup, so no boot code is needed: AUTO\\BOMBER.PRG starts the game.
 
-  tools/make_st_disk.py out.st [ATARI\\NAME=hostfile ...] [--label NAME]
+  tools/make_st_disk.py out.st [ATARI\\NAME=hostfile ...] [--label NAME] [--pc]
+
+--pc: a PC's 360 KB 5.25" floppy instead (the same layout: 40 tracks, two
+sides, media byte FD), its boot sector a few bytes that say it is no
+system disk and boot again on a key (tools/build_pc.py --img).
 
 e.g. tools/make_st_disk.py build/st/bombernet.st AUTO\\BOMBER.PRG=build/st/BOMBER.PRG
 
@@ -41,7 +45,14 @@ def entry(name, attr, cluster, size, t):
     return raw_entry(base.ljust(8).encode() + ext.ljust(3).encode(), attr, cluster, size, t)
 
 
-def make(files, label='BOMBERNET'):
+# the PC's boot code at 1Eh (the jump's target): its message by the BIOS, a key, INT 19h (boot again)
+PC_BOOT = bytes([0x0e, 0x1f, 0xe8, 0, 0, 0x5e, 0x83, 0xc6, 0x18, 0xb4, 0x0e, 0xbb, 7, 0,   # push cs; pop ds; call $+3; pop si; add si, 18h; mov ah, 0Eh; mov bx, 7
+                 0xac, 0x0a, 0xc0, 0x74, 0x04, 0xcd, 0x10, 0xeb, 0xf7,                       # lodsb; or al, al; jz +4; int 10h; jmp lodsb
+                 0x31, 0xc0, 0xcd, 0x16, 0xcd, 0x19])                                       # xor ax, ax; int 16h; int 19h
+PC_MESSAGE = b'\r\nNot a system disk: start DOS, then BOMBER.EXE from this disk.\r\nPress a key to boot again.\r\n\0'
+
+
+def make(files, label='BOMBERNET', pc=False):
     """files: {'AUTO\\\\BOMBER.PRG': bytes, 'README.TXT': bytes}; folders one level deep"""
     img = bytearray(TOTAL * SECTOR)
     fat = [0xff8, 0xfff] + [0] * CLUSTERS
@@ -89,12 +100,21 @@ def make(files, label='BOMBERNET'):
         img[at:at + len(packed)] = packed
 
     boot = bytearray(SECTOR)                        # BRA.S, the OEM bytes, a serial number, the BPB (little-endian)
-    boot[0:2] = b'\x60\x1c'
-    boot[2:8] = b'BNET  '
-    boot[8:11] = struct.pack('<I', int(now) & 0xffffff)[:3]
-    boot[11:30] = struct.pack('<HBHBHHBHHHH', SECTOR, SPC, 1, 2, ROOT_ENTRIES, TOTAL, 0xf8, FAT_SECTORS, SPT, SIDES, 0)
-    s = sum(struct.unpack('>256H', bytes(boot))) & 0xffff
-    if s == 0x1234: boot[510] ^= 1                  # never executable by chance
+    if pc:                                          # JMP SHORT 1Eh, NOP; the OEM name; the BPB; the code; 55 AA
+        boot[0:3] = b'\xeb\x1c\x90'
+        boot[3:11] = b'BNET1.0 '
+        boot[11:30] = struct.pack('<HBHBHHBHHHH', SECTOR, SPC, 1, 2, ROOT_ENTRIES, TOTAL, 0xfd, FAT_SECTORS, SPT, 2, 0)
+        code = PC_BOOT + PC_MESSAGE
+        boot[0x1e:0x1e + len(code)] = code
+        boot[510:512] = b'\x55\xaa'
+        for k in range(2): img[(1 + k * FAT_SECTORS) * SECTOR] = 0xfd   # the media byte in the FATs too
+    else:
+        boot[0:2] = b'\x60\x1c'
+        boot[2:8] = b'BNET  '
+        boot[8:11] = struct.pack('<I', int(now) & 0xffffff)[:3]
+        boot[11:30] = struct.pack('<HBHBHHBHHHH', SECTOR, SPC, 1, 2, ROOT_ENTRIES, TOTAL, 0xf8, FAT_SECTORS, SPT, SIDES, 0)
+        s = sum(struct.unpack('>256H', bytes(boot))) & 0xffff
+        if s == 0x1234: boot[510] ^= 1              # never executable by chance
     img[0:SECTOR] = boot
     return bytes(img)
 
@@ -135,5 +155,5 @@ if __name__ == '__main__':
     for spec in args[1:]:
         name, _, host = spec.partition('=')
         files[name] = open(host, 'rb').read()
-    open(args[0], 'wb').write(make(files, label))
+    open(args[0], 'wb').write(make(files, label, '--pc' in sys.argv))
     print(f'{args[0]}: {TOTAL * SECTOR} bytes, {", ".join(files)}')

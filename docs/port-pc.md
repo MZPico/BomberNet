@@ -23,7 +23,7 @@ with its own modem), Ethernet through a packet driver later.
    UART, interrupt-driven), DOSBox-X's own modem emulation for the tests;
    cross-play with every machine; the production relay. Done, see below.
 3. **Release**: `BOMBER.EXE` and a disk image; the relay on the command
-   line (`/RELAY=`, no `set_relay.py`); the README.
+   line (`/RELAY=`, no `set_relay.py`); the README. Done, see below.
 4. Ethernet through a packet driver, our own small TCP/IP; AdLib/Sound
    Blaster FM tones. Done, see below. Optional: Tandy, Hercules, MDA
    renderers.
@@ -274,6 +274,27 @@ written plane by plane through the Map Mask (the colour's planes the
 glyph, the others zeros: 16 memory writes and 2 port writes, the flush
 2.8-3.0 ms a frame at cycles 3000 against 2.6). Nothing hidden is left to
 an emulator.
+
+## Step 3: the release files
+
+`tools/build_pc.py --img` writes, beside `BOMBER.EXE`, `bombernet.img`: a
+360 KB 5.25" floppy image (40 tracks, two sides, 9 sectors; media byte
+FD), which every PC drive and the floppy emulators read, made by
+`tools/make_st_disk.py --pc` (the ST's 360 KB layout is the PC's own).
+On it `BOMBER.EXE` and `README.TXT` (`c/platform/pc/README.TXT`, CR LF:
+the keys, the options, the network, DOSBox-X's settings). Not bootable:
+that would need a DOS on it. Its boot sector says so and boots again on a
+key (29 bytes of code: the message by INT 10h, a key, INT 19h), instead
+of hanging. The relay is a command-line option, so nothing patches the
+files.
+
+Tested in DOSBox-X: the image mounted as A: (`imgmount a bombernet.img -t
+floppy`) lists both files and starts the game; booted (`boot
+bombernet.img`), it shows the message. mtools reads it (`minfo`: 2 heads,
+40 cylinders, FD) and gives `BOMBER.EXE` back byte for byte.
+
+Still open: real machines (an XT's speed, the joysticks, a packet driver
+on a real card, a WiFi modem's firmware), Tandy, Hercules, MDA.
 
 ## Ethernet
 

@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
 """The IBM PC build (OpenWatcom v2, 16-bit DOS, small model): build/pc/BOMBER.EXE.
 
-  tools/build_pc.py [--test recording.bnr [--frames n] | --play | --net host|join] [--out dir]
+  tools/build_pc.py [--test recording.bnr [--frames n] | --play | --net host|join] [--out dir] [--img]
 
 OpenWatcom from $WATCOM, else ~/src/openwatcom (the Linux snapshot from
 github.com/open-watcom/open-watcom-v2, unpacked). --test: PC_TEST, the
 recording compiled in and replayed from the title on; each game frame's
 work is timed (tools/pc_test.py runs it in DOSBox-X and reads the figures
-it writes to C:\\RESULT.TXT). CFLAGS_PC: more flags."""
+it writes to C:\\RESULT.TXT). --img: also bombernet.img, a 360 KB floppy
+image (tools/make_st_disk.py --pc) with BOMBER.EXE and README.TXT on it,
+not bootable (start DOS first). CFLAGS_PC: more flags."""
 import os, shutil, subprocess, sys
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
@@ -52,3 +54,10 @@ open(lnk, 'w').write('system dos\noption quiet, map=' + os.path.join(out, 'bombe
 r = subprocess.run(['wlink', f'@{lnk}'], capture_output=True, text=True, env=env)
 if r.returncode: sys.exit(r.stdout[-3000:] + r.stderr[-1000:])
 print(f'{exe}: {os.path.getsize(exe)} bytes ({" ".join(flags)})')
+if '--img' in sys.argv:
+    sys.path.insert(0, os.path.join(ROOT, 'tools'))
+    import make_st_disk
+    readme = open(os.path.join(c, 'platform', 'pc', 'README.TXT'), 'rb').read().replace(b'\r\n', b'\n').replace(b'\n', b'\r\n')
+    img = os.path.join(out, 'bombernet.img')
+    open(img, 'wb').write(make_st_disk.make({'BOMBER.EXE': open(exe, 'rb').read(), 'README.TXT': readme}, 'BOMBERNET', pc=True))
+    print(f'{img}: {os.path.getsize(img)} bytes')
