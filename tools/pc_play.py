@@ -12,7 +12,10 @@ the menu's cursor moves, and each beep's length (its envelope) and pitch
 The joysticks are not tested: DOSBox-X emulates the game port only with a
 host joystick, and there is none here.
 
-  tools/pc_play.py [build/pc/BOMBER.EXE] [--cycles n] [--video ega|vga|cga]
+  tools/pc_play.py [build/pc/BOMBER.EXE] [--cycles n] [--video ega|vga|cga] [--sound speaker|fm]
+
+--sound fm: a Sound Blaster 16 in DOSBox-X (its OPL, the speaker muted), the
+game's FM tones measured; speaker (the default): no Sound Blaster at all.
 """
 import glob, os, shutil, subprocess, sys, time, wave
 
@@ -21,6 +24,7 @@ arg = lambda name, default: sys.argv[sys.argv.index(name) + 1] if name in sys.ar
 args = [a for i, a in enumerate(sys.argv[1:], 1) if not a.startswith('--') and not sys.argv[i - 1].startswith('--')]
 exe = args[0] if args else os.path.join(ROOT, 'build', 'pc', 'BOMBER.EXE')
 cycles, video = arg('--cycles', '3000'), arg('--video', 'vga')
+sound = arg('--sound', 'speaker')
 DISPLAY = os.environ.get('AMIGA_DISPLAY', ':97')   # the invisible X display (Xvfb), never the desktop's
 env = dict(os.environ, DISPLAY=DISPLAY)
 cdir = os.path.join(ROOT, 'build', 'pc', 'c')
@@ -53,7 +57,10 @@ cycles=fixed {cycles}
 nosound={'false' if capture else 'true'}
 rate=44100
 [speaker]
-pcspeaker={'true' if capture else 'false'}
+pcspeaker={'true' if capture and sound == 'speaker' else 'false'}
+[sblaster]
+sbtype={'sb16' if sound == 'fm' else 'none'}
+oplmode=opl2
 [joystick]
 joysticktype=none
 [autoexec]

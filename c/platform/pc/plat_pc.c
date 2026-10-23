@@ -61,13 +61,19 @@ static void (__interrupt __far *old_int8)(void);
 static volatile uint32_t ticks;           /* timer interrupts since the start, ~1 ms each */
 static volatile uint16_t bios_acc;        /* the BIOS's tick owed: 65536 counts of the timer's input */
 static volatile uint16_t tone_ms;         /* the tone's time left */
+static uint16_t opl;                      /* an AdLib / Sound Blaster FM chip's port (388h); 0: the speaker */
+static uint8_t opl_b0;                    /* the tone's B0h register (its octave, the frequency's top bits) */
+static void opl_write(uint8_t reg, uint8_t v);
 static uint8_t started;
 static void (__interrupt __far *old_int9)(void);
 static volatile uint8_t keydown[128];
 
 static void __interrupt __far timer_isr(void) {
   ticks++;
-  if (tone_ms && !--tone_ms) outp(0x61, inp(0x61) & 0xfc);   /* the speaker off */
+  if (tone_ms && !--tone_ms) {
+    if (opl) opl_write(0xb0, opl_b0);     /* the key off */
+    else outp(0x61, inp(0x61) & 0xfc);    /* the speaker off */
+  }
   bios_acc += TICK_DIV;
   if (bios_acc < TICK_DIV) _chain_intr(old_int8);   /* carried past 65536: the BIOS's 18.2 Hz tick is due (it ends the interrupt) */
   outp(0x20, 0x20);
@@ -113,6 +119,7 @@ uint32_t pc_ms(void) { return now(); }    /* the network driver's clock */
  *   /COM1 /COM2          the modem's port, else both looked at
  *   /BAUD=n              the modem's speed (19200, 115200 ...), else both tried
  *   /NOSOUND             no sound
+ *   /SPEAKER             the PC speaker even where an AdLib or Sound Blaster is found
  *   /NET=PKT, /NET=MODEM Ethernet (a packet driver) or the modem only, else Ethernet where a driver is loaded
  *   /IP= /MASK= /GW= /DNS= Ethernet's addresses, else DHCP's
  * (a dash serves as well as the slash; upper or lower case) */
@@ -121,7 +128,7 @@ uint32_t pc_modem_baud;                   /* 0: 19200 then 115200 */
 uint8_t pc_net;                           /* 0: either; 'P', 'M' (tcp_pc.c) */
 uint8_t pc_ip[4], pc_mask[4], pc_gw[4], pc_dns[4];   /* 0.0.0.0: DHCP's (tcp_pkt.c) */
 static uint8_t force_adapter;             /* 0: the one found; 'C', 'E', 'V' */
-static uint8_t no_sound;
+static uint8_t no_sound, no_fm;
 
 #ifndef PC_TEST
 uint8_t pc_parse_ip(const char *s, uint8_t *out);   /* tcp_pkt.c: a dotted quad, 1 */
@@ -144,6 +151,7 @@ static void options(void) {
     else if (opt(a, "COM2")) pc_modem_port = 2;
     else if (opt(a, "BAUD") && v) pc_modem_baud = (uint32_t)atol(v + 1);
     else if (opt(a, "NOSOUND")) no_sound = 1;
+    else if (opt(a, "SPEAKER")) no_fm = 1;
 #ifndef PC_TEST
     else if (opt(a, "RELAY") && v) {        /* host or host:port, the host kept where it is (argv lives on) */
       extern const char *net_relay_host;
@@ -167,6 +175,7 @@ static void options(void) {
              "  /COM1 /COM2          the WiFi modem's port (else both are tried)\n"
              "  /BAUD=n              the modem's speed (else 19200, then 115200)\n"
              "  /NOSOUND             no sound\n"
+             "  /SPEAKER             the PC speaker (else an AdLib or Sound Blaster's FM)\n"
              "  /NET=PKT /NET=MODEM  Ethernet or the modem only (else Ethernet\n"
              "                       where a packet driver is loaded)\n"
              "  /IP= /MASK= /GW= /DNS=  the addresses (else DHCP's)\n");
@@ -374,12 +383,89 @@ void plat_delay(void) {                         /* a TV frame's worth: 20 ms */
 /* frequency = 1108400 / ratio Hz on the MZ, whose 8253 counts 1108400 Hz:
  * the PC's counts 1193182, so the divider is ratio * 1193182 / 1108400.
  * The length: len units of about 0.93 ms (len * 238 / 256 ms). */
+/* ---- an AdLib's or a Sound Blaster's FM chip (a YM3812, OPL2; an OPL3
+ * the same here) at 388h, else at the BLASTER variable's port + 8: one
+ * channel, two operators, a tone near the MZ's square wave (OPL_MOD
+ * below); held while the key is on, the key off from the timer's
+ * interrupt. A register wants 6 status reads after
+ * its index, 35 after its value (3.3 and 23 microseconds on an AdLib). */
+static void opl_write(uint8_t reg, uint8_t v) {
+  uint8_t k;
+  outp(opl, reg);
+  for (k = 0; k < 6; k++) (void)inp(opl);
+  outp(opl + 1, v);
+  for (k = 0; k < 35; k++) (void)inp(opl);
+}
+
+static uint8_t opl_found(uint16_t port) { /* the timer test: timer 1 started, its flag up within a millisecond */
+  uint8_t a, b;
+  uint32_t t;
+  opl = port;
+  opl_write(4, 0x60); opl_write(4, 0x80);   /* the timers off, their flags cleared */
+  a = (uint8_t)inp(port);
+  opl_write(2, 0xff); opl_write(4, 0x21);   /* timer 1: 80 microseconds */
+  t = now(); while (now() - t < 3) ;
+  b = (uint8_t)inp(port);
+  opl_write(4, 0x60); opl_write(4, 0x80);
+  if ((a & 0xe0) == 0 && (b & 0xe0) == 0xc0) return 1;
+  opl = 0;
+  return 0;
+}
+
+#ifndef OPL_MOD                           /* the voice, measured (tools/pc_play.py --sound fm): the modulator */
+#define OPL_MOD 0x22                      /* at twice the carrier's frequency puts the sidebands on the odd    */
+#define OPL_TL 0x20                       /* harmonics only, as a square wave's; 24 dB down, the harmonics up  */
+#define OPL_FB 0x00                       /* to the 9th within 2 dB of DOSBox-X's speaker (3rd -9 dB, 5th -12, */
+#endif                                    /* 7th -28, 9th -41); feedback changed nothing here */
+static void opl_init(void) {
+  static const uint8_t regs[] = {
+    0x01, 0x20,                           /* the waveforms selectable */
+    0x20, OPL_MOD, 0x23, 0x21,               /* modulator, carrier: held (sustained); twice, once the frequency */
+    0x40, OPL_TL, 0x43, 0x00,               /* the modulator down (how bright), the carrier loud */
+    0x60, 0xf0, 0x63, 0xf0,               /* attack at once, no decay */
+    0x80, 0x0f, 0x83, 0x0f,               /* sustained at full, released at once */
+    0xe0, 0x00, 0xe3, 0x00,               /* sines */
+    0xc0, OPL_FB,                           /* the feedback, FM */
+    0xb0, 0x00 };
+  const char *b = getenv("BLASTER");
+  uint8_t k;
+  if (no_fm || no_sound) return;
+  if (!opl_found(0x388) && b) {
+    for (; *b; b++) if ((*b & 0xdf) == 'A') { if (!opl_found((uint16_t)(strtoul(b + 1, NULL, 16) + 8))) opl = 0; break; }
+  }
+  if (!opl) return;
+  for (k = 1; k < 0xf6; k++) opl_write(k, 0);   /* everything silent */
+  for (k = 0; k < sizeof(regs); k += 2) opl_write(regs[k], regs[k + 1]);
+}
+
+static void opl_off(void) {
+  uint8_t k;
+  if (!opl) return;
+  for (k = 0xb0; k < 0xb9; k++) opl_write(k, 0);   /* the keys off */
+  for (k = 0x40; k < 0x56; k++) opl_write(k, 0x3f); /* every operator quiet */
+}
+
 void plat_tone(uint16_t ratio, uint8_t len) {
   uint32_t d;
 #ifdef PC_NO_TONES
   return;
 #endif
   if (!ratio || no_sound) return;
+  if (opl) {                              /* f = 1108400 / ratio Hz; the F-number f * 2^(20 - block) / 49716 under 1024 */
+    uint32_t f = (1108400UL << 4) / (ratio < 16 ? 16 : ratio);   /* in sixteenths of a Hz: under 2^21 */
+    uint8_t block = 7;                    /* from the top octave down while the F-number has room (more precision) */
+    uint32_t fn = (f << 9) / 49716UL;     /* f * 2^(16 - block) / 49716, f in sixteenths */
+    while (block && fn < 512) { block--; fn = (f << (16 - block)) / 49716UL; }
+    if (fn > 1023) fn = 1023;
+    _disable();
+    opl_b0 = (uint8_t)(block << 2 | (uint8_t)(fn >> 8));
+    opl_write(0xb0, opl_b0);              /* the key off first: the envelope starts again */
+    opl_write(0xa0, (uint8_t)fn);
+    opl_write(0xb0, (uint8_t)(opl_b0 | 0x20));
+    tone_ms = (uint16_t)(((uint16_t)len * 238) >> 8) + 1;
+    _enable();
+    return;
+  }
   d = (uint32_t)ratio * 1193182UL / 1108400UL;
   if (d > 0xffff) d = 0xffff;
   _disable();
@@ -742,6 +828,7 @@ static void cleanup(void) {
   _dos_setvect(0x09, old_int9);
   outp(0x61, inp(0x61) & 0xfc);                  /* the speaker off */
   _enable();
+  opl_off();
 #ifdef PC_PLAYTEST
   if (playlog) fclose(playlog);
 #endif
@@ -849,6 +936,7 @@ void plat_init(void) {
   _enable();
   started = 1;
   atexit(cleanup);
+  opl_init();                                    /* after the timer: its test waits a few milliseconds */
   joy_type = joy_present ? 1 : JOY_NONE;
   set_mode(1);
 #ifdef PC_TEST

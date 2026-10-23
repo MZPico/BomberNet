@@ -24,8 +24,8 @@ with its own modem), Ethernet through a packet driver later.
    cross-play with every machine; the production relay. Done, see below.
 3. **Release**: `BOMBER.EXE` and a disk image; the relay on the command
    line (`/RELAY=`, no `set_relay.py`); the README.
-4. Ethernet through a packet driver, our own small TCP/IP. Done, see
-   below. Optional: AdLib/Sound Blaster tones; Tandy, Hercules, MDA
+4. Ethernet through a packet driver, our own small TCP/IP; AdLib/Sound
+   Blaster FM tones. Done, see below. Optional: Tandy, Hercules, MDA
    renderers.
 
 ## Design
@@ -326,6 +326,31 @@ slirp's TCP backed off for seconds before sending again. Sixteen slots
 and the kept island fixed it. The network test now logs once a game
 frame (a line a loop had slowed an XT to a crawl).
 
+## AdLib and Sound Blaster
+
+The game's sound is short square-wave tones (the MZ's 8253 divider and a
+length). Where an FM chip answers (an AdLib's or any Sound Blaster's OPL2,
+or an OPL3, at 388h, else at the BLASTER variable's port + 8) the tones
+are FM, else the speaker; `/SPEAKER` keeps the speaker. Not the Sound
+Blaster's DSP: an exact square wave from it needs DMA and its interrupt,
+several times the code, for little gain.
+
+- **Detection:** the AdLib timer test (timer 1 started, its flag up within
+  3 ms), after the game's 1 kHz timer is running.
+- **The voice:** one channel, two operators; the modulator at twice the
+  frequency (the sidebands on odd harmonics only, as a square's), 24 dB
+  down; held while the key is on, the key off from the timer's interrupt
+  as the speaker's is. The octave and F-number from the top octave down
+  while the F-number has room: the pitches within 0.2 %.
+- **Writes:** 6 status reads after a register's index, 35 after its
+  value (AdLib's 3.3 and 23 microseconds), interrupts off around a tone's
+  three writes. ESC or the end: every key off, every operator quiet.
+
+`tools/pc_play.py --sound fm` gives DOSBox-X a Sound Blaster 16 with the
+speaker muted (`--sound speaker`: no Sound Blaster). Both pass: 5 beeps,
+12.9 to 13.4 ms (13 asked), 2121 and 1423 Hz (2123 and 1425 asked). The
+harmonics, through the 9th, are within 2 dB of DOSBox-X's speaker's.
+
 ## The command line
 
 `BOMBER.EXE` takes options, `/` or `-`, in any case (`BOMBER /?` lists them):
@@ -337,6 +362,7 @@ frame (a line a loop had slowed an XT to a crawl).
 /COM1 /COM2          the WiFi modem's port (else both are tried)
 /BAUD=n              the modem's speed (else 19200, then 115200)
 /NOSOUND             no sound
+/SPEAKER             the PC speaker (else an AdLib or Sound Blaster's FM)
 /NET=PKT /NET=MODEM  Ethernet or the modem only (else Ethernet where a packet
                      driver is loaded, the modem otherwise)
 /IP= /MASK= /GW= /DNS=  Ethernet's addresses (else DHCP's)
