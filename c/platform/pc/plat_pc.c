@@ -5,8 +5,8 @@
  * Screen: mode 0Dh, 320 x 200 in 16 colours, 40 x 25 cells of 8 x 8; the
  * four bitplanes in parallel at A000:0000, 40 bytes a line. A cell is
  * drawn by the EGA's own logic: Set/Reset holds the colour for all four
- * planes, the latches hold zeros (loaded by reading a byte past the
- * screen that is never written), and each of the glyph's 8 rows is one
+ * planes, the latches hold zeros (loaded by reading the byte just past
+ * the screen, zeroed first: every frame), and each of the glyph's 8 rows is one
  * Bit Mask write and one memory write: the colour where the row has its
  * bits, black elsewhere. The glyphs, colours and palette are the Amiga's
  * tables (the same 16-colour cells). A VGA shows the palette as it is
@@ -103,6 +103,36 @@ static void __interrupt __far key_isr(void) {
 #ifdef PC_PLAYTEST
 static FILE *playlog;                     /* tools/pc_play.py reads it: the players' places every frame */
 #endif
+uint32_t pc_ms(void) { return now(); }    /* the network driver's clock */
+void (*pc_net_cleanup)(void);             /* the network driver's: hung up, its UART's interrupt given back */
+#ifdef PC_NETTEST
+#include "netdev.h"
+static FILE *netlog;                      /* C:\NET.LOG: tools/pc_match.py, tools/crossplay.py read it, the room's state every frame */
+static char __far log_buf[16384];         /* formatted by hand, written every 32 frames (far: the data segment is 64 KB) */
+static uint16_t log_len;
+static void log_out(void) {
+  static char chunk[512];
+  uint16_t i = 0, n;
+  while (i < log_len) {                   /* through a near buffer: fwrite takes near pointers in the small model */
+    n = (uint16_t)(log_len - i > sizeof(chunk) ? sizeof(chunk) : log_len - i);
+    _fmemcpy(chunk, log_buf + i, n);
+    fwrite(chunk, 1, n, netlog);
+    i += n;
+  }
+  fflush(netlog); _dos_commit(fileno(netlog));
+  log_len = 0;
+}
+static void log_s(const char *t) { while (*t) log_buf[log_len++] = *t++; }
+static void log_dec(uint32_t v) {
+  char d[10]; uint8_t n = 0;
+  do { d[n++] = (char)('0' + v % 10); v /= 10; } while (v);
+  while (n) log_buf[log_len++] = d[--n];
+}
+static void log_hex(uint8_t v) {
+  static const char digit[] = "0123456789abcdef";
+  log_buf[log_len++] = digit[v >> 4]; log_buf[log_len++] = digit[v & 15];
+}
+#endif
 
 #ifdef PC_TEST
 static uint32_t pc_time(void) {           /* in the timer's counts (1.19 MHz, 0.84 us) */
@@ -153,6 +183,20 @@ uint8_t plat_keys_a(void) {
   uint8_t k = 0;
 #ifdef PC_TEST
   return title_mode && (frames & 1) ? KEY_SPACE : 0;
+#endif
+#if defined(PC_NETTEST) && PC_NETTEST == 2
+  {                                       /* joining: the room code from C:\CODE.TXT, once the test wrote it */
+    static uint8_t poll, got;
+    if (title_mode && !got && !(++poll & 15)) {
+      FILE *f = fopen("C:\\CODE.TXT", "r");
+      if (f) {                            /* (made before the start with a placeholder: DOSBox caches the folder's files) */
+        char c[4];
+        if (fread(c, 1, 4, f) == 4 && c[0] >= 'A' && c[0] <= 'Z' && c[1] >= 'A' && c[1] <= 'Z' && c[2] >= 'A' && c[2] <= 'Z'
+            && c[3] >= 'A' && c[3] <= 'Z') { memcpy(net_code, c, 4); net_code[4] = 0; got = 1; }
+        fclose(f);
+      }
+    }
+  }
 #endif
   if (keydown[K_UP]) k |= KEY_UP;
   if (keydown[K_DOWN]) k |= KEY_DOWN;
@@ -324,11 +368,14 @@ static void set_mode(uint8_t title) {           /* everything is drawn again */
   }
 }
 
-static void ega_ready(void) {                   /* the latches zero, Bit Mask selected (the EGA's; nothing on a CGA) */
-  if (cga) return;
-  (void)vram[0xffff];
+#define LATCH_ZERO 8000                   /* the byte just past the screen (40 x 200): zeroed, then read into the latches */
+static void ega_ready(void) {             /* the latches zero, Bit Mask selected (the EGA's; nothing on a CGA). The byte is */
+  if (cga) return;                        /* zeroed every time: a byte far past the screen (FFFFh, as at first) was not */
+  outp(GC_INDEX, 0); outp(GC_DATA, 0);    /* zero on a user's DOSBox-X (the VGA BIOS keeps its fonts up there): */
+  outp(GC_INDEX, 8); outp(GC_DATA, 0xff); /* stripes wherever black should be */
+  vram[LATCH_ZERO] = 0;
+  (void)vram[LATCH_ZERO];
   cur_colour = 0xff;
-  outp(GC_INDEX, 8);
 }
 
 void flush_screen(void) {
@@ -344,7 +391,7 @@ void flush_screen(void) {
   if (!title_mode) t_start = t_flush = pc_time();
 #endif
   if (mode != title_mode) set_mode(title_mode);
-  ega_ready();                                  /* the latches: zeros (that byte is never written) */
+  ega_ready();                                  /* the latches: zeros */
   if (title_mode) {
     for (i = 0; i < SCREEN_CELLS; i++) {
       a = draw_buf[i]; draw_buf[i] = C_SPACE;
@@ -384,6 +431,24 @@ void flush_screen(void) {
     if (!(++every & 7)) { fflush(playlog); _dos_commit(fileno(playlog)); }
   }
 #endif
+#ifdef PC_NETTEST
+  if (netlog) {                           /* the state the tools read from the other machines' memory */
+    static uint8_t every;
+    extern uint32_t pc_modem_tx, pc_modem_rx;
+    if (log_len > sizeof(log_buf) - 2300) log_out();
+    log_s("frame "); log_dec(frame_no); log_s(" title "); log_dec(title_mode);
+    log_s(" code "); { uint8_t k; for (k = 0; k < 4; k++) log_buf[log_len++] = net_code[k] ? net_code[k] : ' '; }
+    log_s(" active "); log_dec(net_active); log_s(" abort "); log_dec(net_abort); log_s(" slot "); log_dec(net_slot);
+    log_s(" delay "); log_dec(net_delay); log_s(" table ");
+    { uint8_t k; for (k = 0; k < 4; k++) log_hex(net_table[k]); }
+    log_s(" hash "); log_hex((uint8_t)(state_hash >> 8)); log_hex((uint8_t)state_hash); log_s(" map ");
+    if (title_mode || frame_no % 16 == 1)  /* the map: on the hashed frames' lines (what the tools compare) */
+      for (i = 0; i < SCREEN_CELLS; i++) log_hex(map_layer[i]);
+    else log_s("none");
+    log_s(" ms "); log_dec(now()); log_s(" tx "); log_dec(pc_modem_tx); log_s(" rx "); log_dec(pc_modem_rx); log_s("\n");
+    if (!(++every & 31)) log_out();
+  }
+#endif
 #ifdef PC_TEST
   if (!title_mode) {
     if (rec_pos + 6 <= REC_LEN) { uint32_t d = pc_time() - t_flush; test.flush += d; if (test.n < TEST_FRAMES) test.fl[test.n] = d; }
@@ -416,6 +481,7 @@ void plat_hud_colour(uint8_t x, uint8_t n, uint8_t player, uint8_t blank) {
 static void cleanup(void) {
   union REGS r;
   if (!started) return;
+  if (pc_net_cleanup) pc_net_cleanup();          /* hung up, the UART's interrupt given back */
   _disable();
   outp(0x43, 0x36); outp(0x40, 0); outp(0x40, 0);   /* the timer back to 18.2 Hz */
   _dos_setvect(0x08, old_int8);
@@ -424,6 +490,9 @@ static void cleanup(void) {
   _enable();
 #ifdef PC_PLAYTEST
   if (playlog) fclose(playlog);
+#endif
+#ifdef PC_NETTEST
+  if (netlog) { log_out(); fclose(netlog); netlog = NULL; }
 #endif
   if (!cga) {
     outp(GC_INDEX, 1); outp(GC_DATA, 0);         /* Enable Set/Reset off, Bit Mask all: as the BIOS left them */
@@ -485,7 +554,7 @@ void plat_init(void) {
   outp(GC_INDEX, 1); outp(GC_DATA, 0x0f);        /* Set/Reset for all four planes */
   outp(GC_INDEX, 0); outp(GC_DATA, 0);
   outp(GC_INDEX, 8); outp(GC_DATA, 0xff);
-  vram[0xffff] = 0;                              /* the latches' zero (Set/Reset 0, all bits) */
+  ega_ready();
   }
   {                                              /* the game port: which sticks answer, and their centres */
     uint16_t t[4];
@@ -516,6 +585,11 @@ void plat_init(void) {
   hash_period = rec[12];
 #endif
   replay_active = 1;
+#endif
+#ifdef PC_NETTEST                         /* 1: host a room of PC_NETTEST_PLAYERS on SPACE; 2: join */
+  netlog = fopen("C:\\NET.LOG", "a");
+  if (netlog) { log_s("start\n"); log_out(); }
+  menu_mode = 1; menu_players = PC_NETTEST_PLAYERS; menu_net = PC_NETTEST; menu_local = PC_NETTEST_LOCAL;
 #endif
 #ifdef PC_PLAYTEST
   playlog = fopen("C:\\PLAY.LOG", "w");

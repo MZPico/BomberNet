@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The IBM PC build (OpenWatcom v2, 16-bit DOS, small model): build/pc/BOMBER.EXE.
 
-  tools/build_pc.py [--test recording.bnr [--frames n] | --play] [--out dir]
+  tools/build_pc.py [--test recording.bnr [--frames n] | --play | --net host|join] [--out dir]
 
 OpenWatcom from $WATCOM, else ~/src/openwatcom (the Linux snapshot from
 github.com/open-watcom/open-watcom-v2, unpacked). --test: PC_TEST, the
@@ -28,9 +28,15 @@ if '--test' in sys.argv:
         f.write('};\n')
     flags += ['-dPC_TEST', '-dPC_RESULT="C:\\\\RESULT.TXT"']
 if '--play' in sys.argv: flags.append('-dPC_PLAYTEST')   # tools/pc_play.py: a 4-player deathmatch preset, the players logged
+if '--net' in sys.argv:                                  # tools/pc_match.py, tools/crossplay.py: host (or join) a room on SPACE, the room's state logged
+    i = sys.argv.index('--net')
+    flags += [f'-dPC_NETTEST={1 if sys.argv[i + 1] == "host" else 2}', f'-dPC_NETTEST_PLAYERS={os.environ.get("PLAYERS", 2)}',
+              f'-dPC_NETTEST_LOCAL={os.environ.get("LOCAL", 1)}']
 c = os.path.join(ROOT, 'c')
 src = [f'{c}/core/{n}.c' for n in ('bomber', 'netplay', 'data', 'map', 'game', 'input', 'video', 'enemy', 'bomb', 'player')]
-src += [f'{c}/platform/pc/plat_pc.c', f'{c}/platform/amiga/tables.c', f'{c}/common/netdev_none.c']   # the Amiga's glyph tables
+src += [f'{c}/platform/pc/plat_pc.c', f'{c}/platform/amiga/tables.c']   # the Amiga's glyph tables
+if '--test' in sys.argv: src += [f'{c}/common/netdev_none.c']      # a replay needs no network
+else: src += [f'{c}/platform/pc/tcp_modem.c', f'{c}/common/netdev_soft.c', f'{c}/common/ws.c']
 inc = [f'-i={c}/core', f'-i={c}/common', f'-i={c}/platform/pc', f'-i={c}/platform/amiga', f'-i={out}']
 objs = []
 for s in src:

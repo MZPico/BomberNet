@@ -10,7 +10,7 @@ by side, one TV frame each in turn, and compares their state hashes. The
 C64 runs in VICE with a WiC64 (tools/vice.py), in real time on its own: its
 TV frame is 20 ms of waiting, and it stands still while it is read.
 
-  tools/crossplay.py [steps] [host] [joiner]   machines: mz, zx, cpc, esp, c64, amiga, st; default mz zx
+  tools/crossplay.py [steps] [host] [joiner]   machines: mz, zx, cpc, esp, c64, amiga, st, pc; default mz zx
                                                (esp: build/zx128, an eLeMeNt with its ESP-01)
                                                (the second argument alone: mz or zx hosts the other)
   PLAYERS=3 LOCAL_HOST=2 LOCAL_JOIN=1   seats: players in total, local players per machine
@@ -224,6 +224,7 @@ class Amiga:
         if wid: subprocess.run(['xdotool', 'windowfocus', '--sync', wid[-1]], env=self.env, capture_output=True)
         self.last, self.cached = {}, None
         self.flushes, self.read_to = [], 0       # (frame, hash) of every game frame logged: collect() takes them
+        self.maps = {}                           # frame -> the map, from the log
 
     def _new_lines(self):                        # the log comes 32 frames at a time: every line read once
         try:
@@ -234,7 +235,9 @@ class Amiga:
         self.read_to += end
         for l in data[:end].decode('latin-1').split('\n'):
             p = l.split()
-            if len(p) >= 20 and p[0] == 'frame' and p[3] == '0': self.flushes.append((int(p[1]), int(p[17], 16)))
+            if len(p) >= 20 and p[0] == 'frame' and p[3] == '0':
+                self.flushes.append((int(p[1]), int(p[17], 16)))
+                if len(p[19]) == 2000: self.maps[int(p[1])] = bytes.fromhex(p[19])   # the hashed frames' lines carry the map
 
     def _state(self):
         """the last complete line of the log: its tail only, once a TV frame"""
@@ -290,6 +293,7 @@ class AtariST:
         self.m = st_match.ST('host' if HOST == 'st' else 'join', nomap=False)
         self.last, self.cached = {}, None
         self.flushes, self.read_to = [], 0       # (frame, hash) of every game frame logged: collect() takes them
+        self.maps = {}                           # frame -> the map, from the log
 
     def _new_lines(self):
         try:
@@ -300,7 +304,9 @@ class AtariST:
         self.read_to += end
         for l in data[:end].decode('latin-1').split('\n'):
             p = l.split()
-            if len(p) >= 20 and p[0] == 'frame' and p[3] == '0': self.flushes.append((int(p[1]), int(p[17], 16)))
+            if len(p) >= 20 and p[0] == 'frame' and p[3] == '0':
+                self.flushes.append((int(p[1]), int(p[17], 16)))
+                if len(p[19]) == 2000: self.maps[int(p[1])] = bytes.fromhex(p[19])   # the hashed frames' lines carry the map
 
     def _state(self):
         if self.cached is None: self.cached = self.m.state() or self.last
@@ -330,6 +336,64 @@ class AtariST:
     def close(self): self.m.close()
 
 
+class IBMPC:
+    """DOSBox-X with its own Hayes modem on COM1, running in real time: a
+    tools/build_pc.py --net host|join build (the menu preset; a joiner takes
+    the room code from C:\\CODE.TXT), its keys by xdotool to its window
+    (PC_DISPLAY, default AMIGA_DISPLAY), its state read from the log it writes
+    (C:\\NET.LOG, every 32 frames)."""
+    kind = 'PC'
+    keys = {'fire': 'space', 'walk': 'Right'}
+
+    def __init__(self):
+        import pc_match
+        role = 'host' if HOST == 'pc' else 'join'
+        self.m = pc_match.PC(role, os.environ.get('PC_DISPLAY') or os.environ.get('AMIGA_DISPLAY', ':97'))
+        self.last, self.cached = {}, None
+        self.flushes, self.read_to = [], 0       # (frame, hash) of every game frame logged: collect() takes them
+        self.maps = {}                           # frame -> the map, from the log
+
+    def _new_lines(self):
+        try:
+            with open(f'{self.m.cdir}/NET.LOG', 'rb') as f:
+                f.seek(self.read_to); data = f.read()
+        except FileNotFoundError: return
+        end = data.rfind(b'\n') + 1
+        self.read_to += end
+        for l in data[:end].decode('latin-1').split('\n'):
+            p = l.split()
+            if len(p) >= 20 and p[0] == 'frame' and p[3] == '0':
+                self.flushes.append((int(p[1]), int(p[17], 16)))
+                if len(p[19]) == 2000: self.maps[int(p[1])] = bytes.fromhex(p[19])   # the hashed frames' lines carry the map
+
+    def _state(self):
+        if self.cached is None: self.cached = self.m.state() or self.last
+        self.last = self.cached
+        return self.cached
+
+    def rd(self, n, k=1):
+        st = self._state()
+        if n == '_net_code': return st.get('code', '    ').encode()
+        if n == '_net_table': return bytes.fromhex(st.get('table', 'ffffffff'))
+        if n == '_map_layer':                      # the newest line with a map (the hashed frames' lines carry one)
+            for l in reversed(self.m.lines()):
+                p = l.split()
+                if len(p) >= 20 and p[0] == 'frame' and len(p[19]) == 2000: return bytes.fromhex(p[19])
+            return None
+        return self.r16(n).to_bytes(2, 'little')[:k]
+    def r8(self, n): return self.r16(n) & 0xff
+    def r16(self, n):
+        st = self._state()
+        if n == '_state_hash': return int(st.get('hash', '0'), 16)
+        return int(st.get(n.lstrip('_').replace('net_', '').replace('title_mode', 'title').replace('frame_no', 'frame'), '0'))
+    def wr(self, n, bs):
+        if n == '_net_code': open(f'{self.m.cdir}/CODE.TXT', 'wb').write(bytes(bs))   # the file exists (made before the start)
+    def tv_frame(self): time.sleep(0.02); self.cached = None; self._new_lines()
+    def press(self, k): self.m.key(self.keys.get(k, k), True)
+    def release(self, k): self.m.key(self.keys.get(k, k), False)
+    def close(self): self.m.close()
+
+
 def run(n, *ms):
     for _ in range(n):
         for m in ms: m.tv_frame()
@@ -343,7 +407,7 @@ def until(cond, limit, *ms):
 
 
 t0 = time.time()
-MACHINES = {'mz': MZ, 'zx': Spectrum, 'cpc': Amstrad, 'esp': Element, 'c64': Commodore, 'amiga': Amiga, 'st': AtariST}
+MACHINES = {'mz': MZ, 'zx': Spectrum, 'cpc': Amstrad, 'esp': Element, 'c64': Commodore, 'amiga': Amiga, 'st': AtariST, 'pc': IBMPC}
 host, join = MACHINES[HOST](), MACHINES[JOIN]()
 both = (host, join)
 run(90, *both)                                                    # both titles up and settled
@@ -377,6 +441,7 @@ for m in both:
     if m.kind == 'C64': m.reset_net()
 if not os.environ.get('NOWALK'): host.press('walk'); join.press('walk')   # inputs cross between the machines
 seen = {m.kind: {} for m in both}
+maps = {m.kind: {} for m in both}          # frame -> the map: compared at a frame both have (the logs give them every 16th)
 start = [m.r16('_frame_no') for m in both]
 
 
@@ -390,11 +455,27 @@ def collect(m):
     else:
         f = m.r16('_frame_no')
         if f % HP: seen[m.kind][(f // HP) * HP] = m.r16('_state_hash')
+    if hasattr(m, 'maps'): maps[m.kind].update(m.maps); m.maps.clear()
+    else:                                  # read from memory: the map at the frames the logs keep (f % 16 == 1)
+        f = m.r16('_frame_no')
+        if f % HP == 1 and f not in maps[m.kind]:
+            mp = m.rd('_map_layer', 1000)
+            if mp: maps[m.kind][f] = bytes(mp)
 
 
 GAP = int(os.environ.get('GAP', 0))       # GAP=n: at game frame n the C64 stops polling for 5 s
+still, last = 0, None
 while min(m.r16('_frame_no') - s0 for m, s0 in zip(both, start)) < N:
     run(1, *both)
+    now_frames = tuple(m.r16('_frame_no') for m in both)
+    still = still + 1 if now_frames == last else 0
+    last = now_frames
+    if still == 300:                      # no game frame for a while: a message waiting for fire (a round won): fire, as players would
+        print(f'no progress at frames {now_frames}: fire on both', flush=True)
+        for m in both: m.press('fire')
+        run(TAP, *both)
+        for m in both: m.release('fire')
+        still = 0
     for m in both:
         if GAP and m.kind == 'C64' and m.r16('_frame_no') >= GAP:
             print(f'C64 at frame {m.r16("_frame_no")}: 5 s without polling', flush=True)
@@ -408,8 +489,15 @@ for f in common: print(f'frame {f}: {H} {seen[H][f]:04x} {J} {seen[J][f]:04x} {"
 aborts = (host.r8('_net_abort'), join.r8('_net_abort'))
 print(f'done: frames {H} {host.r16("_frame_no")} {J} {join.r16("_frame_no")}, {len(common)} hashed frames compared, '
       f'{len(mism)} mismatches; abort flags {H}/{J} {aborts}; {time.time() - t0:.0f} s')
-fh, fj = host.rd('_map_layer', 1000), join.rd('_map_layer', 1000)
-print(f'fields identical: {fh == fj} (read at frames {H} {host.r16("_frame_no")}, {J} {join.r16("_frame_no")})')
+for m in both: collect(m)
+both_maps = sorted(set(maps[H]) & set(maps[J]))
+if both_maps:                              # the same frame on both
+    f = both_maps[-1]
+    print(f'fields identical: {maps[H][f] == maps[J][f]} (at frame {f}, {len(both_maps)} frames with both maps, '
+          f'{sum(maps[H][g] != maps[J][g] for g in both_maps)} differ)')
+else:
+    fh, fj = host.rd('_map_layer', 1000), join.rd('_map_layer', 1000)
+    print(f'fields identical: {fh == fj} (read at frames {H} {host.r16("_frame_no")}, {J} {join.r16("_frame_no")})')
 for m in both:
     if m.kind == 'C64': m.report(m.r16('_frame_no'))
     if m.kind == 'C64' and os.environ.get('C64_DUMP'):
@@ -420,6 +508,9 @@ for m in both:
     elif m.kind == 'C64': m.v.screenshot('build/cross_c64.png')
     elif m.kind == 'AMIGA': subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-f', 'x11grab', '-video_size', '1024x768', '-i',
                                             m.env['DISPLAY'], '-frames:v', '1', 'build/cross_amiga.png'], env=m.env)
+    elif m.kind == 'PC':
+        subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-f', 'x11grab', '-video_size', '1024x768', '-i', m.m.env['DISPLAY'],
+                        '-frames:v', '1', 'build/cross_pc.png'], env=m.m.env)
     elif m.kind == 'ST':
         import st_match
         subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-f', 'x11grab', '-video_size', '1024x768', '-i', st_match.DISPLAY,

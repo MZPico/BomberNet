@@ -21,7 +21,7 @@ with its own modem), Ethernet through a packet driver later.
    below.
 2. **The network**: `tcp.h` over a WiFi modem on a COM port (the 8250/16550
    UART, interrupt-driven), DOSBox-X's own modem emulation for the tests;
-   cross-play with every machine; the production relay.
+   cross-play with every machine; the production relay. Done, see below.
 3. **Release**: `BOMBER.EXE` and a disk image; `set_relay.py` on both; the
    README.
 4. Optional: Ethernet through a packet driver (NE2000 in DOSBox-X, our own
@@ -170,6 +170,63 @@ play test passes; the title, a deathmatch and a co-op frame look as the
 mockups. Speed: at cycles 3000 a frame's work is 5.4 ms (median), at 300
 (an XT) 61 ms, the flush 37 ms of it: an XT with a CGA is slower than with
 an EGA (the 2-bit pixels: a table and a word a row, in C).
+
+## Step 2: the network over a WiFi modem
+
+**The driver** (`c/platform/pc/tcp_modem.c`): the Atari ST's Hayes logic
+(AT, ATE0, ATNET0, ATDThost:port, CONNECT and its LF dropped, "+++" with
+its guard seconds, ATH, NO CARRIER in the stream) over the PC's UART
+(8250 or 16550, its FIFO when there is one), driven by its interrupt both
+ways: a 4 KB ring for what comes in, a 1 KB ring for what goes out (the
+transmitter's interrupt empties it), so the game never waits for the line.
+The modem is looked for on COM1 and COM2 at 19200 and 115200 bps, the
+first that answers AT with OK; a port where nothing at all answers costs
+0.4 s. The UART's interrupt is given back at the end, after hanging up.
+
+**The test bench.** DOSBox-X emulates the modem itself (`serial1=modem`:
+its ATDT host:port opens a TCP connection), so no emulator of ours is
+needed. `tools/pc_match.py`: two PCs, each on an X display of its own
+(the keys go to the window with the focus), through the relay (`RELAY=`),
+the adapter `PC_VIDEO=`; `tools/crossplay.py` takes `pc`. The test builds
+(`tools/build_pc.py --net host|join`) log the room's state as the ST's do:
+formatted into a far RAM buffer, written every 32 frames, the map on the
+hashed frames' lines. DOSBox caches the mounted folder's file list, so the
+joiner's `C:\CODE.TXT` is made before the start with "????", and the
+build takes it only when it holds four letters.
+
+**Results** (`tools/crossplay.py 300`, the local relay; the PC in DOSBox-X
+in real time, VGA, cycles 3000; every 16th frame's hash, and the maps at
+every frame both machines have one, compared):
+
+| Host | Joiner | Frames | Hashed frames | Mismatches | Delay |
+|---|---|---|---|---|---|
+| PC | ZX Spectrum | 305 | 19 | 0 | 2 |
+| ZX Spectrum | PC | 317 | 19 | 0 | 2 |
+| PC | Sharp MZ-800 | 312 | 19 | 0 | 2 |
+| PC | Amstrad CPC | 305 | 18 | 0 | 2 |
+| PC | Commodore 64 | 305 | 19 | 0 | 3 |
+| PC | Atari ST | 323 | 20 | 0 | 2 |
+| PC | Amiga | 308 | 19 | 0 | 2 |
+| Amiga | PC | 304 | 18 | 0 | 1 |
+
+`tools/pc_match.py`: two PCs, 2542 frames in 150 s, 159 hashed frames, 0
+mismatches; 4 players (2 local each), 1056 frames; on CGA, 711 frames;
+through the production relay, 1007 frames at 15.7 frames a second: all 0
+mismatches. The lobby's delay: 2-3 (120-180 ms).
+
+Two harness matters found on the way, neither the PC's: with the MZ
+(stepped slowly) a ready tap of SPACE reached the game, player 1 bombed
+itself, and the "wins the round" message waited for fire forever (the
+harness now fires on both machines when no game frame comes for a
+while); and the maps were compared at different frames (the logs keep one
+every 16 frames), which showed a C64 run as different: they are now
+compared at the frames both machines have.
+
+**Found by a user** (DOSBox-X on Windows): stripes wherever black should
+be on VGA. The latches were loaded from a byte at FFFFh, zeroed once at
+the start; on that DOSBox-X it did not stay zero (the VGA BIOS keeps its
+fonts up there). Now the byte just past the screen (offset 8000) is zeroed
+and read back every frame.
 
 ## Risks and open questions
 
