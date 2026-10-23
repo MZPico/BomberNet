@@ -4,7 +4,12 @@ figures: the recording replayed with the hashes checked, each game frame's
 work (flush .. next frame sync) timed by the ST's own MFP timer, so the
 times are the emulated machine's even with Hatari fast-forwarding.
 
-  tools/st_test.py [build/st/BOMBER.PRG] [--60hz] [--png out.png] [--machine st|ste]
+  tools/st_test.py [build/st/BOMBER.PRG] [--60hz] [--png out.png] [--machine st|ste] [--st]
+
+--st: the program (built with --result-drive A) in the AUTO folder of a
+floppy image (tools/make_st_disk.py), booted from drive A: with no drive C:
+(EmuTOS boots from a hard disk when there is one); the result goes to the
+floppy, read from the image after Hatari is quit (and has saved it).
 
 Hatari on the X display AMIGA_DISPLAY (an Xvfb, :97), with EmuTOS
 (build/st/rom/etos192uk.img: 50 Hz; with --60hz etos192us.img, which sets
@@ -26,29 +31,59 @@ if not tos: sys.exit('no TOS image: build EmuTOS (~/src/emutos, make 192) or set
 hd = os.path.join(ROOT, 'build', 'st', 'hd')
 shutil.rmtree(hd, ignore_errors=True)
 os.makedirs(os.path.join(hd, 'AUTO'))
-shutil.copy(exe, os.path.join(hd, 'AUTO', 'BOMBER.PRG'))
+floppy = None
+if '--st' in sys.argv:                                            # the floppy boots; C: has no AUTO program
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import make_st_disk
+    floppy = os.path.join(ROOT, 'build', 'st', 'test.st')
+    open(floppy, 'wb').write(make_st_disk.make({'AUTO\\BOMBER.PRG': open(exe, 'rb').read()}))
+else: shutil.copy(exe, os.path.join(hd, 'AUTO', 'BOMBER.PRG'))
 result = os.path.join(hd, 'RESULT.TXT')
 cfg = os.path.join(ROOT, 'build', 'st', 'hatari.cfg')            # a configuration of its own: never the user's ~/.config/hatari
 open(cfg, 'w').write('')
-cmd = ['hatari', '--configfile', cfg, '--tos', tos, '--machine', machine, '--memsize', '1', '--harddrive', hd,
+fifo = os.path.join(ROOT, 'build', 'st', 'test.fifo')
+if os.path.exists(fifo): os.remove(fifo)
+cmd = ['hatari', '--configfile', cfg, '--tos', tos, '--machine', machine, '--memsize', '1', '--harddrive', hd, '--cmd-fifo', fifo,
        '--fast-forward', 'yes', '--sound', 'off', '--confirm-quit', 'no', '--statusbar', 'no', '--drive-led', 'no', '--window', '--monitor', 'rgb']
+if floppy:
+    i = cmd.index('--harddrive'); del cmd[i:i + 2]
+    cmd += ['--disk-a', floppy, '--drive-a-heads', '1', '--protect-floppy', 'off']
 env = dict(os.environ, DISPLAY=os.environ.get('AMIGA_DISPLAY', ':97'))   # the invisible X display (Xvfb), never the desktop's
 log = open(os.path.join(ROOT, 'build', 'st', 'hatari.log'), 'w')
 p = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env)
 t0 = time.time()
 
 
+def result_text():
+    if not floppy:
+        try: return open(result).read()
+        except FileNotFoundError: return ''
+    data = make_st_disk.read(open(floppy, 'rb').read(), 'RESULT.TXT')
+    return data.decode('latin-1') if data else ''
+
+
 def complete():
     """the result file written out: its header line says how many frame lines follow"""
-    try: lines = open(result).read().split('\n')
-    except FileNotFoundError: return False
+    lines = result_text().split('\n')
     if not lines[0].startswith('frames '): return False
     return len([l for l in lines[1:] if l.strip()]) >= int(lines[0].split()[1])
 
 
 try:
     shot = png + '.part.png'
-    while time.time() - t0 < 600 and not complete() and p.poll() is None:
+    if floppy:                                                    # no way to see the end from here: the recording's
+        rec = os.path.join(os.path.dirname(exe), 'rec_data.h')    # length decides the wait (fast-forward: ~80 frames a second)
+        frames = int(open(rec).read().split('REC_LEN ')[1].split('u')[0]) // 6 if os.path.exists(rec) else 3000
+        deadline = time.time() + 25 + frames / 60
+        while time.time() < deadline and p.poll() is None:
+            time.sleep(1)
+            subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-f', 'x11grab', '-video_size', '1024x768', '-i', env['DISPLAY'],
+                            '-frames:v', '1', shot], env=env)
+            if os.path.exists(shot): os.replace(shot, png)
+        with open(fifo, 'w') as f: f.write('hatari-shortcut quit\n')   # quit: Hatari writes the floppy's changes back
+        t = time.time()
+        while time.time() - t < 15 and p.poll() is None: time.sleep(0.5)
+    while not floppy and time.time() - t0 < 600 and not complete() and p.poll() is None:
         time.sleep(1)                                             # a picture every second (fast-forward: a run takes seconds);
         if complete(): break                                      # the last one before the result shows the game
         subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-f', 'x11grab', '-video_size', '1024x768', '-i', env['DISPLAY'],
@@ -57,7 +92,7 @@ try:
 finally:
     p.kill()
 if not complete(): sys.exit(f'no result after {time.time() - t0:.0f} s (Hatari log: build/st/hatari.log)')
-lines = open(result).read().split('\n')
+lines = result_text().split('\n')
 head = dict(zip(lines[0].split()[::2], map(int, lines[0].split()[1::2])))
 rows = [list(map(int, l.split())) for l in lines[1:] if l.strip()]
 work = sorted(r[0] for r in rows)

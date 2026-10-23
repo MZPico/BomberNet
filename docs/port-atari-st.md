@@ -26,7 +26,7 @@ platform layer and a new network transport.
    Done, see below.
 3. **Release**: `BOMBER.PRG` and an `.ST` floppy image (the game in its
    AUTO folder); `set_relay.py` on both (the program is a plain file, the
-   image FAT12); the README.
+   image FAT12); the README. Done, see below.
 4. Optional: STiNG (the TCP/IP stack of NetUSBee and EtherNEC owners),
    tested on hardware only: Hatari has no network card.
 
@@ -224,6 +224,33 @@ delay as 2 (120 ms) between two STs, locally and through production.
 
 Not yet: real hardware (a modem's firmware, its speed setting, its
 telnet setting), and the release files (step 3).
+
+## Step 3: the release files
+
+`tools/build_st.py --st` writes, beside `BOMBER.PRG`, `bombernet.st`: a
+floppy image (the sectors in order, as Hatari, Steem and the floppy
+emulators take it) made by `tools/make_st_disk.py`: FAT12, single sided,
+80 tracks of 9 sectors (360 KB, which every ST's drive reads, the 520 ST's
+SF354 too), the program in its AUTO folder, no boot code: TOS runs the
+boot disk's AUTO programs at startup, so the ST boots into the game, and
+ESC on the title goes on to the desktop. At the desktop the program can be
+started again from the AUTO folder. A hard-drive ST copies `BOMBER.PRG`
+anywhere and starts it from the desktop.
+
+`tools/set_relay.py` patches the program (a plain file; the TOS program's
+header, 601A, tells it the port is big-endian) and the image: it reads
+the image's BPB, finds `BOMBER.PRG` in the root or a folder of it, and
+follows its FAT12 chain. Checked by patching an image and reading the
+program back with mtools.
+
+Tested in Hatari: the release image boots to the title on an ST (no hard
+drive: EmuTOS boots from a hard disk when there is one, whatever Hatari's
+boot setting says); `tools/st_test.py --st` boots a replay from an image
+(the result written back to the floppy, read from the image after Hatari
+quits): dm2, every hash equal.
+
+Still open: hardware testers (a WiFi modem's firmware and settings: 19200
+bps, no telnet), a mono monitor mode, STiNG (step 4, optional).
 
 ## Risks and open questions
 

@@ -13,10 +13,11 @@ standard or extended; the field may cross sectors), .cpc (an AMSDOS file),
 .xex (Atari), .prg and .d64 (C64; on the disk the file BOMBERNET, or its
 first program, whose sector chain the field may cross), an AmigaOS
 executable and .adf (an OFS disk with the file bomber; the port's bytes in
-the 68000's order). The MZ-800 takes its relay from its card: mzpico.ini
+the 68000's order), the Atari ST's .PRG and .st (a FAT12 floppy image with
+BOMBER.PRG in its root or a folder, AUTO; big-endian too). The MZ-800 takes its relay from its card: mzpico.ini
 ([cloud] net_relay, net_port) on an MZPico, /unicard/network.cfg on a Unicard.
 """
-import os, sys
+import os, struct, sys
 
 MARK = b'BNRELAY\0'
 FIELD = 56                               # the marker (8), the host (46), the port (2)
@@ -134,10 +135,51 @@ def adf_map(d, name=b'bomber'):
     return offs, fix
 
 
+def st_map(d, names=(b'BOMBER  PRG',)):
+    """the data bytes of an Atari ST floppy image's (.st: FAT12, any geometry, its
+    BPB read) BOMBER.PRG, in the root or a folder of it, in cluster order"""
+    sec, spc, res, nfats, nroot, total, _, spf = struct.unpack('<HBHBHHBH', bytes(d[11:24]))
+    if sec != 512 or not spc or not spf or total * sec > len(d): raise ValueError('not an Atari ST disk image (no BPB)')
+    fat_at, root_at = res * sec, (res + nfats * spf) * sec
+    data_at = root_at + nroot * 32
+    csize = spc * sec
+    def nxt(c):
+        v = d[fat_at + c * 3 // 2] | d[fat_at + c * 3 // 2 + 1] << 8
+        return v >> 4 if c & 1 else v & 0xfff
+    def chain(c):
+        out = []
+        while 2 <= c < 0xff0: out.append(c); c = nxt(c)
+        return out
+    def entries(at, n):
+        for i in range(n):
+            e = d[at + 32 * i:at + 32 * (i + 1)]
+            if e[0] == 0: return
+            if e[0] != 0xe5: yield bytes(e[:11]), e[11], e[26] | e[27] << 8, struct.unpack('<I', bytes(e[28:32]))[0]
+    found = None
+    for name, attr, c, size in entries(root_at, nroot):
+        if name in names and not attr & 0x18: found = (c, size); break
+        if attr & 0x10 and not name.startswith(b'.'):
+            for cl in chain(c):
+                for n2, a2, c2, s2 in entries(data_at + (cl - 2) * csize, csize // 32):
+                    if n2 in names and not a2 & 0x18: found = found or (c2, s2)
+    if not found: raise ValueError('no BOMBER.PRG on the disk')
+    c, size = found
+    offs = []
+    for cl in chain(c): offs += range(data_at + (cl - 2) * csize, data_at + (cl - 1) * csize)
+    return offs[:size], None
+
+
+def st_disk(d):
+    """an Atari ST floppy image: a 512-byte-sector BPB, 9-11 sectors a track, a size of whole tracks"""
+    try: sec, spt = struct.unpack('<H', bytes(d[11:13]))[0], struct.unpack('<H', bytes(d[24:26]))[0]
+    except struct.error: return False
+    return sec == 512 and 9 <= spt <= 11 and len(d) % (512 * spt) == 0 and len(d) <= 2 * 84 * 11 * 512
+
+
 def big_endian(d):
     """a 68000's file, which reads the port's two bytes high first: an AmigaOS executable (a hunk file,
     000003F3 first) or an Amiga disk (DOS), a TOS program (601A first: a C64 .prg begins with its load address)"""
-    return d[:4] == b'\x00\x00\x03\xf3' or d[:3] == b'DOS' or d[:2] == b'\x60\x1a'
+    return d[:4] == b'\x00\x00\x03\xf3' or d[:3] == b'DOS' or d[:2] == b'\x60\x1a' or st_disk(d)
 
 
 def load(path):
@@ -148,6 +190,7 @@ def load(path):
     elif low.endswith('.dsk'): offs, fix = dsk_map(d)
     elif low.endswith('.d64'): offs, fix = d64_map(d)
     elif low.endswith('.adf'): offs, fix = adf_map(d)
+    elif low.endswith('.st'): offs, fix = st_map(d)
     elif low.endswith('.xex'): offs, addrs = xex_map(d)
     else: offs = list(range(len(d)))                 # .cpc and anything plain
     stream = bytes(d[o] for o in offs)

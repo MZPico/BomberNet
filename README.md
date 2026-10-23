@@ -55,6 +55,7 @@ mkdir -p build/zx128 && cd build/zx128 && cmake -DPLATFORM=zx128 ../../c && make
 mkdir -p build/cpc && cd build/cpc && cmake -DPLATFORM=cpc ../../c && make  # -> build/cpc/bomber.cpc, bomber.dsk (in progress)
 tools/build_host.sh && c/build/sim 30000 2                                 # the game on a PC (key bot)
 tools/build_amiga.py --adf                                                 # -> build/amiga/bomber, bombernet.adf (bebbo's gcc in Docker)
+tools/build_st.py --st                                                     # -> build/st/BOMBER.PRG, bombernet.st (m68k-atari-mint-gcc)
 ```
 
 The MZ build uses the environment of the MZPico-800-Manager (`+mz` target,
@@ -139,7 +140,7 @@ Then point each machine at that PC (192.168.1.10 here):
 
 | Machine | Where the relay is set |
 |---|---|
-| ZX Spectrum, CPC, Atari, C64, Amiga, Atari ST | `tools/set_relay.py bomber.tap 192.168.1.10` rewrites the release file (`.tap`, `.dsk`, `.cpc`, `.xex`, `.prg`, `.d64`, the Amiga's executable or `.adf`, the ST's `.PRG`; the port is 8765 unless given as `host:port`); without an address it shows the file's relay; `api.mzpico.com:80` sets production again |
+| ZX Spectrum, CPC, Atari, C64, Amiga, Atari ST | `tools/set_relay.py bomber.tap 192.168.1.10` rewrites the release file (`.tap`, `.dsk`, `.cpc`, `.xex`, `.prg`, `.d64`, the Amiga's executable or `.adf`, the ST's `.PRG` or `.st`; the port is 8765 unless given as `host:port`); without an address it shows the file's relay; `api.mzpico.com:80` sets production again |
 | MZ-800 with an MZPico | `mzpico.ini`: `[cloud]` `net_relay = 192.168.1.10`, `net_port = 8765` |
 | MZ-800 with a Unicard | `/unicard/network.cfg`: `NETRELAYADDR`, `NETRELAYPORT` (8766, the TCP port) |
 

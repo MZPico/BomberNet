@@ -2,7 +2,10 @@
 """The Atari ST build (m68k-atari-mint-gcc, MiNTLib; Vincent Riviere's
 cross tools): build/st/BOMBER.PRG, a TOS program.
 
-  tools/build_st.py [--test recording.bnr [--frames n] | --play | --net host|join] [-O2|-Os] [--out dir]
+  tools/build_st.py [--test recording.bnr [--frames n] [--result-drive A] | --play | --net host|join] [-O2|-Os] [--out dir] [--st]
+
+--st: also bombernet.st, a 360 KB floppy image with the program in its AUTO
+folder (tools/make_st_disk.py): it starts when the ST boots from it.
 
 --test: ST_TEST, the recording compiled in and replayed from the title on;
 each game frame's work is timed (tools/st_test.py runs it in Hatari and
@@ -22,7 +25,8 @@ if '--test' in sys.argv:
         f.write(f'#define REC_LEN {len(data)}u\nstatic const uint8_t rec[REC_LEN] = {{\n')
         for i in range(0, len(data), 24): f.write('  ' + ', '.join(str(b) for b in data[i:i + 24]) + ',\n')
         f.write('};\n')
-    flags += ['-DST_TEST', '-DST_RESULT="C:\\\\RESULT.TXT"']
+    drive = sys.argv[sys.argv.index('--result-drive') + 1] if '--result-drive' in sys.argv else 'C'   # A: for a floppy-booted test
+    flags += ['-DST_TEST', f'-DST_RESULT="{drive}:\\\\RESULT.TXT"']
 if '--play' in sys.argv: flags.append('-DST_PLAYTEST')   # tools/st_play.py: a 4-player deathmatch preset, the players logged
 if '--net' in sys.argv:                                   # tools/st_match.py, tools/crossplay.py: host (or join) a room on SPACE, the room's state logged
     i = sys.argv.index('--net')
@@ -40,3 +44,9 @@ r = subprocess.run(['m68k-atari-mint-gcc', *flags, *inc, *src, '-o', exe], captu
 if r.returncode: sys.exit(r.stderr[-4000:])
 if r.stderr.strip(): print(r.stderr.strip()[-2000:])
 print(f'{exe}: {os.path.getsize(exe)} bytes ({" ".join(flags)})')
+if '--st' in sys.argv:
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    import make_st_disk
+    disk = os.path.join(out, 'bombernet.st')
+    open(disk, 'wb').write(make_st_disk.make({'AUTO\\BOMBER.PRG': open(exe, 'rb').read()}))
+    print(f'{disk}: {os.path.getsize(disk)} bytes, AUTO\\BOMBER.PRG')
