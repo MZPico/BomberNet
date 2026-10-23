@@ -47,11 +47,10 @@ at 8 MHz about 1000, at 12 MHz about 2500). Hardware testers will give the
 real figures. No BIOS images are needed.
 
 **The platform** (`c/platform/pc/plat_pc.c`): mode 0Dh, 320 x 200 in 16
-colours, four bitplanes in parallel at A000:0000. A cell is drawn by the
-EGA's own logic: Set/Reset holds the colour for all four planes, the
-latches hold zeros (loaded by reading a byte past the screen that is never
-written), and each of the glyph's 8 rows is one Bit Mask write and one
-memory write: the colour where the row has bits, black elsewhere. The
+colours, four bitplanes in parallel at A000:0000. A cell is written plane
+by plane through the Map Mask: the colour's planes get the glyph's rows,
+the others zeros (step 0 drew through Set/Reset and the latches; see step
+2 for why not any more). The
 glyphs and colours are the Amiga's tables. A VGA shows the palette exactly
 (its DAC). An EGA in a 200-line mode has only the CGA's 16 colours; the
 nearest of them made players 3 and 4 both grey, so the colours are chosen
@@ -222,11 +221,15 @@ while); and the maps were compared at different frames (the logs keep one
 every 16 frames), which showed a C64 run as different: they are now
 compared at the frames both machines have.
 
-**Found by a user** (DOSBox-X on Windows): stripes wherever black should
-be on VGA. The latches were loaded from a byte at FFFFh, zeroed once at
-the start; on that DOSBox-X it did not stay zero (the VGA BIOS keeps its
-fonts up there). Now the byte just past the screen (offset 8000) is zeroed
-and read back every frame.
+**Found by a user** (DOSBox-X on Windows, with this port's conf; its own
+default conf and plain DOSBox were fine): stripes wherever black should
+be. The cells were drawn through Set/Reset with the latches holding zeros,
+loaded from a byte past the screen; zeroing that byte every frame cured
+VGA but not EGA there. So the latches are not used any more: a cell is
+written plane by plane through the Map Mask (the colour's planes the
+glyph, the others zeros: 16 memory writes and 2 port writes, the flush
+2.8-3.0 ms a frame at cycles 3000 against 2.6). Nothing hidden is left to
+an emulator.
 
 ## Risks and open questions
 

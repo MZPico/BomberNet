@@ -4,11 +4,10 @@
  *
  * Screen: mode 0Dh, 320 x 200 in 16 colours, 40 x 25 cells of 8 x 8; the
  * four bitplanes in parallel at A000:0000, 40 bytes a line. A cell is
- * drawn by the EGA's own logic: Set/Reset holds the colour for all four
- * planes, the latches hold zeros (loaded by reading the byte just past
- * the screen, zeroed first: every frame), and each of the glyph's 8 rows is one
- * Bit Mask write and one memory write: the colour where the row has its
- * bits, black elsewhere. The glyphs, colours and palette are the Amiga's
+ * written plane by plane through the Map Mask: the planes of its colour
+ * get the glyph's 8 rows, the others zeros (16 memory writes, 2 port
+ * writes). An earlier way, through Set/Reset and the latches (8 Bit Mask
+ * writes), striped the black on a user's DOSBox-X: no latches now. The glyphs, colours and palette are the Amiga's
  * tables (the same 16-colour cells). A VGA shows the palette as it is
  * (its DAC); an EGA in a 200-line mode has only the CGA's 16 colours,
  * chosen for each of the game's by hand (ega_colours).
@@ -320,7 +319,6 @@ void plat_tone(uint16_t ratio, uint8_t len) {
 
 /* ---- screen ---- */
 static uint8_t mode = 0xff;
-static uint8_t cur_colour = 0xff;
 
 static uint8_t cga;                       /* the adapter is a CGA: mode 4 */
 static uint16_t cga_expand[256];          /* a glyph row: each bit as a 2-bit pixel, the two bytes in memory order */
@@ -350,12 +348,12 @@ static void cell(uint8_t x, uint8_t y, uint8_t g, uint8_t col) {
   uint8_t l;
   if (cga) { cga_cell(x, y, g, col); return; }
   col = col_map[col & 15];
-  if (col != cur_colour) {                      /* Set/Reset: the colour, then Bit Mask selected again */
-    outp(GC_INDEX, 0); outp(GC_DATA, col);
-    outp(GC_INDEX, 8);
-    cur_colour = col;
+  outp(SEQ_DATA, col);                          /* the colour's planes: the glyph (the Map Mask is selected: ega_ready) */
+  for (l = 0; l < 8; l++) d[l * 40] = s[l];
+  if (col != 15) {                              /* the other planes: zeros */
+    outp(SEQ_DATA, (uint8_t)(~col & 15));
+    for (l = 0; l < 8; l++) d[l * 40] = 0;
   }
-  for (l = 0; l < 8; l++, d += 40) { outp(GC_DATA, *s++); *d = 0; }
 }
 
 static void set_mode(uint8_t title) {           /* everything is drawn again */
@@ -368,14 +366,13 @@ static void set_mode(uint8_t title) {           /* everything is drawn again */
   }
 }
 
-#define LATCH_ZERO 8000                   /* the byte just past the screen (40 x 200): zeroed, then read into the latches */
-static void ega_ready(void) {             /* the latches zero, Bit Mask selected (the EGA's; nothing on a CGA). The byte is */
-  if (cga) return;                        /* zeroed every time: a byte far past the screen (FFFFh, as at first) was not */
-  outp(GC_INDEX, 0); outp(GC_DATA, 0);    /* zero on a user's DOSBox-X (the VGA BIOS keeps its fonts up there): */
-  outp(GC_INDEX, 8); outp(GC_DATA, 0xff); /* stripes wherever black should be */
-  vram[LATCH_ZERO] = 0;
-  (void)vram[LATCH_ZERO];
-  cur_colour = 0xff;
+static void ega_ready(void) {             /* the EGA's writes as cell() needs them, the Map Mask selected (nothing on a CGA): */
+  if (cga) return;                        /* the CPU's byte as it is (no Set/Reset, every bit, replace, write mode 0) */
+  outp(GC_INDEX, 1); outp(GC_DATA, 0);
+  outp(GC_INDEX, 3); outp(GC_DATA, 0);
+  outp(GC_INDEX, 5); outp(GC_DATA, 0);
+  outp(GC_INDEX, 8); outp(GC_DATA, 0xff);
+  outp(SEQ_INDEX, 2);
 }
 
 void flush_screen(void) {
@@ -494,10 +491,7 @@ static void cleanup(void) {
 #ifdef PC_NETTEST
   if (netlog) { log_out(); fclose(netlog); netlog = NULL; }
 #endif
-  if (!cga) {
-    outp(GC_INDEX, 1); outp(GC_DATA, 0);         /* Enable Set/Reset off, Bit Mask all: as the BIOS left them */
-    outp(GC_INDEX, 8); outp(GC_DATA, 0xff);
-  }
+  if (!cga) { outp(SEQ_INDEX, 2); outp(SEQ_DATA, 0x0f); }   /* all four planes written again, as the BIOS left them */
   r.h.ah = 0; r.h.al = old_mode;                 /* the screen mode back */
   int86(0x10, &r, &r);
   started = 0;
@@ -548,12 +542,6 @@ void plat_init(void) {
       col_map[i] = i;
     }
   } else for (i = 0; i < 16; i++) col_map[i] = ega_colours[i];   /* an EGA: its 16, chosen by hand */
-  outp(SEQ_INDEX, 2); outp(SEQ_DATA, 0x0f);      /* all four planes written */
-  outp(GC_INDEX, 3); outp(GC_DATA, 0);           /* no rotation, replace */
-  outp(GC_INDEX, 5); outp(GC_DATA, 0);           /* write mode 0 */
-  outp(GC_INDEX, 1); outp(GC_DATA, 0x0f);        /* Set/Reset for all four planes */
-  outp(GC_INDEX, 0); outp(GC_DATA, 0);
-  outp(GC_INDEX, 8); outp(GC_DATA, 0xff);
   ega_ready();
   }
   {                                              /* the game port: which sticks answer, and their centres */
