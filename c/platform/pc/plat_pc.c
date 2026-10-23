@@ -373,9 +373,107 @@ static void cell(uint8_t x, uint8_t y, uint8_t g, uint8_t col) {
   }
 }
 
+/* The CGA's fast path (an XT drew a frame in 37 ms in C: two divisions
+ * and a call a cell, a colour decided per cell): every code's 8 screen
+ * words worked out when the screen switches (title or game: its glyph,
+ * players 3 and 4 hollow, its colour's row masks), so drawing a cell is 8
+ * word copies; the cells' offsets in a table; the changed cells found by
+ * REPE CMPSW. The status line (its inverse marks) and the players'
+ * recolouring keep cga_cell. */
+static uint16_t cga_words[256][8];        /* by code: the cell's 8 rows as they go to the screen (4 KB) */
+static uint16_t cga_off[SCREEN_CELLS];    /* by cell: its even line's offset in B800 */
+static uint8_t hollow_glyphs[632];        /* the glyphs with their blocks' centres cut out (players 3 and 4) */
+
+static void cga_tables(uint8_t title) {
+  uint16_t c, m0, m1;
+  uint8_t l;
+  for (c = 0; c < 256; c++) {
+    uint8_t g = title ? amiga_title_glyph[c] : amiga_game_glyph[c];
+    uint8_t col = (uint8_t)((title ? amiga_title_colour[c] : amiga_game_colour[c]) & 15);
+    uint8_t fig = title ? (uint8_t)(glyph_mosaic[g >> 3] & (1 << (g & 7)))
+                        : (uint8_t)((c >= C_ENEMY_BASE && c < C_FIRE) || (c & 0xe0) == C_BOMB_TILE);
+    const uint8_t *gl = amiga_glyphs + ((uint16_t)g << 3);
+    if (fig) {
+      const uint8_t *f = (title ? cga_title_fig : cga_game_fig)[col];
+      m0 = cga_pair[f[0]][f[1]][0]; m1 = cga_pair[f[0]][f[1]][1];
+    } else m0 = m1 = (uint16_t)(0x5555u * (title ? cga_title_map : cga_game_map)[col]);
+    if (!title && (col == 10 || col == 11)) gl = hollow_glyphs + ((uint16_t)g << 3);   /* players 3 and 4, in the field */
+    for (l = 0; l < 8; l++) cga_words[c][l] = cga_expand[gl[l]] & ((l & 1) ? m1 : m0);
+  }
+}
+
+/* one cell: its code's 8 words copied, the even rows to the even lines'
+ * bank, the odd ones to the odd lines' (2000h on), the rows 80 bytes apart */
+static void cga_draw(uint16_t off, uint16_t code) {
+  _asm {
+    push si
+    push di
+    push es
+    mov di, off
+    mov si, code
+    mov cl, 4
+    shl si, cl
+    add si, offset cga_words
+    mov ax, 0b800h
+    mov es, ax
+    movsw
+    add di, 1ffeh
+    movsw
+    sub di, 1fb2h
+    movsw
+    add di, 1ffeh
+    movsw
+    sub di, 1fb2h
+    movsw
+    add di, 1ffeh
+    movsw
+    sub di, 1fb2h
+    movsw
+    add di, 1ffeh
+    movsw
+    pop es
+    pop di
+    pop si
+  }
+}
+
+/* the first word of the field rows (draw_buf against shadow_vram) from
+ * word w on that differs, or end: REPE CMPSW */
+static uint16_t cga_next(uint16_t w, uint16_t end) {
+  uint16_t r = end;
+  _asm {
+    push si
+    push di
+    push es
+    push ds
+    pop es
+    mov cx, end
+    sub cx, w
+    jbe done
+    mov si, w
+    shl si, 1
+    mov di, si
+    add si, offset draw_buf
+    add di, offset shadow_vram
+    cld
+    repe cmpsw
+    je done
+    sub si, offset draw_buf
+    shr si, 1
+    dec si
+    mov r, si
+  done:
+    pop es
+    pop di
+    pop si
+  }
+  return r;
+}
+
 static void set_mode(uint8_t title) {           /* everything is drawn again */
   mode = title;
   memset(shadow_vram, 0xff, SCREEN_CELLS);
+  if (cga) cga_tables(title);
   if (cga) {                                    /* the CGA's palette: 1 for the title, 0 for the game; bright, black behind */
     union REGS r;
     r.h.ah = 0x0b; r.h.bh = 0; r.h.bl = 0x10; int86(0x10, &r, &r);
@@ -411,7 +509,8 @@ void flush_screen(void) {
       a = draw_buf[i]; draw_buf[i] = C_SPACE;
       if (a == shadow_vram[i]) continue;
       shadow_vram[i] = a;
-      cell((uint8_t)(i % SCREEN_W), (uint8_t)(i / SCREEN_W), amiga_title_glyph[a], amiga_title_colour[a]);
+      if (cga) cga_draw(cga_off[i], a);
+      else cell((uint8_t)(i % SCREEN_W), (uint8_t)(i / SCREEN_W), amiga_title_glyph[a], amiga_title_colour[a]);
     }
   } else {
     /* rows 0-23, two cells a compare (every game frame begins with
@@ -419,6 +518,13 @@ void flush_screen(void) {
      * status line, cleared */
     const uint16_t *d2 = (const uint16_t *)draw_buf, *s2 = (const uint16_t *)shadow_vram;
     uint16_t w;
+    if (cga)                                    /* the fast path: the changed words found by REPE CMPSW, their cells copied */
+      for (w = 0; (w = cga_next(w, (HUD_ROW * SCREEN_W) / 2)) < (HUD_ROW * SCREEN_W) / 2; w++) {
+        i = (uint16_t)(w * 2);
+        if ((a = draw_buf[i]) != shadow_vram[i]) { shadow_vram[i] = a; cga_draw(cga_off[i], a); }
+        if ((a = draw_buf[i + 1]) != shadow_vram[i + 1]) { shadow_vram[i + 1] = a; cga_draw(cga_off[i + 1], a); }
+      }
+    else
     for (w = 0; w < (HUD_ROW * SCREEN_W) / 2; w++) {
       if (d2[w] == s2[w]) continue;
       for (i = (uint16_t)(w * 2); i < (uint16_t)(w * 2 + 2); i++) {
@@ -570,6 +676,9 @@ void plat_init(void) {
         }
       if (ok && any) glyph_mosaic[b >> 3] |= (uint8_t)(1 << (b & 7));
     }
+    for (b = 0; b < sizeof(hollow_glyphs); b++)    /* rows 2 and 6 without columns 2 and 6 */
+      hollow_glyphs[b] = (uint8_t)(((b & 7) == 2 || (b & 7) == 6) ? amiga_glyphs[b] & ~0x22 : amiga_glyphs[b]);
+    for (b = 0; b < SCREEN_CELLS; b++) cga_off[b] = (uint16_t)((b / SCREEN_W) * 320 + (b % SCREEN_W) * 2);
   } else {
   r.h.ah = 0; r.h.al = 0x0d; int86(0x10, &r, &r);
   vram = (volatile uint8_t far *)MK_FP(0xa000, 0);

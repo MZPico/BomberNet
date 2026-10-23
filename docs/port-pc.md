@@ -181,9 +181,29 @@ and dropped (the status line could not match).
 
 Tested: every hash equal (dm4, coop4) on DOSBox-X's `machine=cga`; the
 play test passes; the title, a deathmatch and a co-op frame look as the
-mockups. Speed: at cycles 3000 a frame's work is 5.4 ms (median), at 300
-(an XT) 61 ms, the flush 37 ms of it: an XT with a CGA is slower than with
-an EGA (the 2-bit pixels: a table and a word a row, in C).
+mockups.
+
+**Speed on an XT.** In C the CGA flush took 37 ms of an XT's frame (DOSBox
+cycles 300), the frame's work 61 ms: too slow. The CGA's fast path: when
+the screen switches (title or game) every code's 8 screen words are
+worked out (its glyph, players 3 and 4 hollow, its colour's row masks:
+a 4 KB table), so a cell is 8 word copies (MOVSW, the banks 2000h apart),
+its offset from a table (no division); the changed cells are found by
+REPE CMPSW (`cga_next`), both in Watcom's inline assembly. The status
+line and the players' recolouring keep the C path (cga_cell). DOSBox's
+cycles count instructions, not an 8088's clocks (a division costs it as
+much as a move), so the XT figures are a guide:
+
+| dm4, cycles 300, 8086 | Median | 90th percentile | Over 60 ms | The flush |
+|---|---|---|---|---|
+| CGA in C | 61.0 ms | 82.8 ms | 272 of 498 | 37.5 ms |
+| CGA, the fast path | 37.6 ms | 51.5 ms | 29 | 8.5 ms |
+| CGA, the fast path, no state hash (a local game) | 34.0 ms | 45.8 ms | 12 | 8.4 ms |
+| EGA (still C), no state hash | 52.1 ms | 68.8 ms | 90 | 33.2 ms |
+
+An XT with a CGA now plays at full speed but for a short catch-up in big
+explosions; a round start is 0.7 s (the tables, the 1000 cells). An XT
+with an EGA (rare) would want the same treatment.
 
 ## Step 2: the network over a WiFi modem
 
@@ -249,5 +269,5 @@ an emulator.
 ## Risks and open questions
 
 - Speed on an 8088 is an estimate until a tester runs it.
-- An XT is too slow in C on either adapter (CGA 61 ms a frame, EGA
-  49): the flush in assembly would be the remedy, if testers want it.
+- An XT with an EGA is still slow (the EGA's flush in C); with a CGA it
+  plays. Both are DOSBox estimates until a tester has a real XT.
