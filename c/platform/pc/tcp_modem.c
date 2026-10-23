@@ -33,6 +33,7 @@ static volatile uint8_t tx_busy;          /* the transmitter's interrupt is on (
 static uint16_t base;                     /* the UART's port; 0: none open */
 static uint8_t irq, vector, fifo;
 static void (__interrupt __far *old_vector)(void);
+void modem_close(void);
 static uint8_t online, have_modem, heard;  /* heard: any byte at all came in (since it was cleared) */
 static char nc_tail[14];                  /* the last bytes received online: "\r\nNO CARRIER\r\n" ends the call */
 
