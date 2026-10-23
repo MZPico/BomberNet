@@ -164,7 +164,7 @@ measurements and the reasoning behind the delay rule: `docs/net-timing.md`.
 | `tools/fusex_match.py` | two FuseX with the real Spectranet firmware (`tools/fusex.py` drives FuseX through its GDB server) |
 | `tools/softnet_test.sh` | the software network device on a PC: two processes in one room |
 | `tools/set_relay.py` | not a test: points a release file (Spectrum, CPC, Atari, C64, Amiga) at another relay |
-| `tools/amiga_test.py`, `tools/amiga_play.py`, `tools/amiga_match.py` | the Amiga build in FS-UAE: a recording replayed (from `DH0:` or the ADF), the inputs played, two Amigas in a match |
+| `tools/amiga_test.py`, `tools/amiga_play.py`, `tools/amiga_match.py`, `tools/amiga_icon_test.py` | the Amiga build in FS-UAE: a recording replayed (from `DH0:` or the ADF), the inputs played, two Amigas in a match, the icons and a start from Workbench |
 | `tools/test_portable.sh` | the PC simulator natively and on big-endian PowerPC (qemu), replaying `tests/recordings`: the core's byte-order check |
 | `tools/sim6502.py` | the core on a 6502 (llvm-mos and its simulator, `c/platform/sim6502`): a recording replayed with its hashes checked, frames timed in cycles |
 | `tools/netbench.py` | network timing of a real-time match, local relay or production, including the play page (`tools/web_join.mjs`, `tools/netproxy.py`) |

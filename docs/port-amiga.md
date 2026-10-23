@@ -249,11 +249,42 @@ real hardware; see step 3.
 
 **Release files.** `tools/build_amiga.py --adf` writes, beside the
 executable `bomber`, `bombernet.adf`: an OFS floppy made by amitools'
-`xdftool` (in the project's venv), bootable, with `bomber` and an
-`s/startup-sequence` that runs it. It boots to the title on an A500 with
-the AROS ROM. A hard-drive Amiga copies `bomber` anywhere and runs it
-from the Shell (a Workbench icon is not made yet). Either way a TCP/IP
-stack must be running before the game starts, for the network rows.
+`xdftool` (in the project's venv), bootable, with `bomber`, its icon,
+the disk's icon and an `s/startup-sequence` that runs the game. It boots
+to the title on an A500 with the AROS ROM; put into a running Workbench
+it shows as a BomberNet disk with the game's icon inside. A hard-drive
+Amiga copies `bomber` and `bomber.info` anywhere and starts it from the
+icon or the Shell. Either way a TCP/IP stack must be running before the
+game starts, for the network rows.
+
+**Icons** (`tools/make_amiga_icon.py`, written in Python as the tables
+are): Workbench 2 icons in its four colours (grey, black, white, blue).
+`bomber.info` shows the game's player and bomb in the MZ's mosaic blocks
+(6 x 3 pixels a block: Workbench's high-resolution pixels are twice as
+tall as wide); selected, the bomb's fuse is lit. It asks for 8 KB of
+stack (the game switches to its own 64 KB). `disk.info` is a floppy with
+the bomb on its label. `--preview file.png` draws them as Workbench shows
+them.
+
+**Leaving the game.** The core never returns: an 8-bit machine has
+nowhere to go back to. On the Amiga ESC on the title screen ends the
+program (a `longjmp` back to the wrapper `main`, which swaps the stack
+back and returns; the atexit cleanup closes the screen, the socket and
+the audio channel), so a game started from its icon returns to
+Workbench, which gets its start message replied. ESC keeps its other
+meanings: it cancels the room code and the lobby (the platform knows them
+by their asking for typed keys, `plat_key_char`, that frame), leaves a
+match, and an ESC still held from cancelling does not quit.
+
+`tools/amiga_icon_test.py` checks both in FS-UAE. The AROS ROM has
+`icon.library` (44.9) but no Workbench to click in, so two small programs
+(`tools/amiga/`) do Workbench's part: one reads the icons through
+`icon.library` and draws their images; the other starts the game as a
+double-click does (`LoadSeg`, a new process with the icon's stack, the
+`WBStartup` message), and the test presses ESC on the title and waits for
+the reply. Checked by hand as well: ESC in the room code returns to the
+title, a second ESC quits, and the game starts again afterwards from the
+same Shell.
 
 **The relay.** `tools/set_relay.py` patches the executable and the ADF:
 on the disk it finds `bomber` through the root block's hash table, follows
@@ -309,8 +340,8 @@ the game's look, the sound (never heard by anyone yet: FS-UAE here has no
 sound output), the keys and joysticks, the lobby's DELAY against the
 browser player, and a full match without DESYNC or CONNECTION LOST.
 
-Still open: a Workbench icon; the round start's full redraw (313 ms on an
-A500, see step 1); Kickstart 1.3 is not supported (the program needs
+Still open: the round start's full redraw (313 ms on an A500, see
+step 1); Kickstart 1.3 is not supported (the program needs
 version 37 libraries and quits at once without them).
 
 ## Risks and open questions

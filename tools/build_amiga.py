@@ -48,7 +48,11 @@ if '--adf' in sys.argv:
     seq = os.path.join(out, 'startup-sequence')
     open(seq, 'w').write('bomber\n')
     if os.path.exists(adf): os.remove(adf)
+    icons = [os.path.join(out, 'bomber.info'), os.path.join(out, 'disk.info')]      # Workbench's icons: tools/make_amiga_icon.py
+    r = subprocess.run([sys.executable, os.path.join(ROOT, 'tools', 'make_amiga_icon.py'), *icons], capture_output=True, text=True)
+    if r.returncode: sys.exit('make_amiga_icon.py: ' + r.stderr[-2000:])
     r = subprocess.run([xdftool, adf, 'create', '+', 'format', 'BomberNet', '+', 'boot', 'install', '+', 'write', exe, 'bomber',
+                        '+', 'write', icons[0], 'bomber.info', '+', 'write', icons[1], 'disk.info',
                         '+', 'makedir', 's', '+', 'write', seq, 's/startup-sequence'], capture_output=True, text=True)
     if r.returncode: sys.exit('xdftool: ' + r.stderr[-2000:] + r.stdout[-2000:])
-    print(f'{adf}: {os.path.getsize(adf)} bytes, OFS, bootable, bomber and s/startup-sequence')
+    print(f'{adf}: {os.path.getsize(adf)} bytes, OFS, bootable: bomber, bomber.info, disk.info, s/startup-sequence')

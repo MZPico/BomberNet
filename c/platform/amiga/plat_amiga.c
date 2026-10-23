@@ -14,6 +14,7 @@
  * Paula channel (allocated through audio.device) plays a square-wave
  * sample of the tone's length followed by silence, at the MZ's pitch. */
 #include <stdint.h>
+#include <setjmp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,21 +41,27 @@
 /* Our own stack: the Shell gives a program 4-16 KB, a Workbench icon 4 KB
  * unless it says more, and the game with its network needs more. The
  * core's main is compiled as bomber_main (tools/build_amiga.py); this main
- * swaps to a 64 KB stack around it. */
+ * swaps to a 64 KB stack around it. The core never returns (a game on an
+ * 8-bit machine has nowhere to go); ESC on the title screen comes back
+ * here by longjmp (plat_frame_sync), and main returns to the Shell or
+ * Workbench, the atexit cleanup closing the screen. The state is static:
+ * locals are not to be trusted across a change of stack. */
 #define STACK_SIZE 65536
 void bomber_main(void);
+static struct StackSwapStruct sss;
+static void *stack_mem;
+static jmp_buf quit_jmp;
 #undef main                               /* the build renames the core's main, not this one */
 int main(void) {
-  struct StackSwapStruct sss;
-  void *mem = AllocMem(STACK_SIZE, MEMF_ANY);
-  if (!mem) return 20;
-  sss.stk_Lower = mem;
-  sss.stk_Upper = (ULONG)mem + STACK_SIZE;
+  stack_mem = AllocMem(STACK_SIZE, MEMF_ANY);
+  if (!stack_mem) return 20;
+  sss.stk_Lower = stack_mem;
+  sss.stk_Upper = (ULONG)stack_mem + STACK_SIZE;
   sss.stk_Pointer = (APTR)sss.stk_Upper;
   StackSwap(&sss);
-  bomber_main();
+  if (!setjmp(quit_jmp)) bomber_main();
   StackSwap(&sss);
-  FreeMem(mem, STACK_SIZE);
+  FreeMem(stack_mem, STACK_SIZE);
   return 0;
 }
 
@@ -215,8 +222,10 @@ uint8_t plat_joy(uint8_t n) {
 
 /* text entry: letters, BACKSPACE or DEL deletes, ESC cancels */
 static const char letters[3][11] = {"QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"};
+static uint8_t typing;                    /* plat_key_char was asked this frame: a room code or the lobby, where ESC cancels */
 uint8_t plat_key_char(void) {
   uint8_t r, c;
+  typing = 1;
   poll_keys();
   if (keydown[K_ESC]) return 0x1b;
   if (keydown[K_BACKSPACE] || keydown[K_DEL]) return 8;
@@ -244,6 +253,15 @@ void plat_frame_sync(void) {                    /* 60 ms: 3 PAL frames, or 4,3,4
 #endif
   while (amiga_ticks - last_tick < need) WaitTOF();
   last_tick = amiga_ticks;
+  {                                       /* ESC on the title screen leaves the game: a new press (not one held from */
+    static uint8_t esc_was;               /* cancelling a room code), on a frame nothing asked for typed keys */
+    uint8_t esc;
+    poll_keys();
+    esc = keydown[K_ESC];
+    if (title_mode && esc && !esc_was && !typing) longjmp(quit_jmp, 1);
+    esc_was = esc;
+    typing = 0;
+  }
 }
 
 void plat_delay(void) { WaitTOF(); }
