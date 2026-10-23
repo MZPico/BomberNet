@@ -9,6 +9,7 @@ write (DH0:net.log: the room's state every frame).
   AMIGA_MODEL=A500 ...                    the model (default A500)
   AMIGA_DISPLAY=:97 AMIGA_DISPLAY2=:98    the two X displays (Xvfb), one Amiga each
   PLAYERS=4 LOCAL_HOST=2 LOCAL_JOIN=2 ... seats, as in tools/crossplay.py
+  RELAY=api.mzpico.com:80                 the relay (default the local one, 127.0.0.1:8765)
 """
 import os, shutil, subprocess, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -17,6 +18,8 @@ import set_relay
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 os.chdir(ROOT)
 SECS = int(sys.argv[1]) if len(sys.argv) > 1 else 30
+for _n, _f in (('AMIGA_KICKSTART', 'aros-rom.bin'), ('AMIGA_KICKSTART_EXT', 'aros-ext.bin')):   # the AROS nightly ROM in build/amiga/rom
+    if os.path.exists(f'{ROOT}/build/amiga/rom/{_f}'): os.environ.setdefault(_n, f'{ROOT}/build/amiga/rom/{_f}')   # (FS-UAE's bundled one crashes on a 68000)
 DISPLAYS = {'host': os.environ.get('AMIGA_DISPLAY', ':97'), 'join': os.environ.get('AMIGA_DISPLAY2', ':98')}   # one invisible X display each:
 
 
@@ -29,7 +32,7 @@ class Amiga:
                     CFLAGS_AMIGA=os.environ.get('CFLAGS_AMIGA', '') + ' -DAMIGA_NETTEST_NOMAP')   # the map log would halve the speed
         r = subprocess.run([sys.executable, 'tools/build_amiga.py', '--net', role, '--out', out], capture_output=True, text=True, env=benv)
         if r.returncode: sys.exit(f'build ({role}) failed: ' + r.stderr[-2000:])
-        set_relay.main([f'{out}/bomber', '127.0.0.1:8765'])
+        set_relay.main([f'{out}/bomber', os.environ.get('RELAY', '127.0.0.1:8765')])
         self.dh0 = f'{out}/dh0'
         for d in ('C', 'S'): os.makedirs(f'{self.dh0}/{d}', exist_ok=True)
         shutil.copy(f'{out}/bomber', f'{self.dh0}/C/bomber')

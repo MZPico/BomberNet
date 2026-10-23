@@ -26,11 +26,11 @@ big-endian hashing, `PLAT_HASH_PORTABLE`, is already tested on PowerPC).
    title and lobby; play in FS-UAE. Done, see below.
 2. **The network**: `tcp.h` over `bsdsocket.library`; the lobby's delay;
    cross-play with every machine through the local relay (FS-UAE's own
-   `bsdsocket` emulation), then the production relay. Done in FS-UAE, see
-   below; the production relay and the other machines are next.
+   `bsdsocket` emulation), then the production relay. Done, see below.
 3. **Release**: an executable plus an ADF; `set_relay.py` on the executable
    (a plain file: the field is contiguous) and the ADF; hardware testers;
-   the README and the catalog.
+   the README and the catalog. Done but the testers and the catalog, see
+   below.
 
 ## Design
 
@@ -229,9 +229,10 @@ needed, the test bench stays free.
   on one display did not take `xdotool`'s keys), through the local relay,
   both in real time. 2018 game frames in 150 s, 127 hashed frames compared,
   0 mismatches; 4 players (2 local on each Amiga), 981 frames, 0
-  mismatches. The lobby measures the delay as 1 (20 ms) between the two.
-- `tools/crossplay.py 300 amiga zx`: the Amiga hosting a Spectrum (FuseX,
-  stepped by the harness), 300 frames, 18 hashed frames compared, 0
+  mismatches. The lobby measures the delay as 1 (one game frame, 60 ms)
+  between the two.
+- `tools/crossplay.py 300 amiga zx`: the Amiga hosting a Spectrum
+  (`tools/zxemu.py`, stepped by the harness), 300 frames, 18 hashed frames compared, 0
   mismatches, the maps identical at the end.
 - Speed: a 2-Amiga match runs at the full 16.6 game frames a second
   (50 Hz / 3) with the network; the 68000's half-frame headroom of step 0
@@ -241,14 +242,82 @@ needed, the test bench stays free.
 - The replay (`tools/amiga_test.py`, dm4) and the play test
   (`tools/amiga_play.py`) pass unchanged with the network linked in.
 
-Not yet: the production relay (the Internet from FS-UAE), cross-play with
-the MZ, CPC, Atari and C64, and real hardware with a real stack (Roadshow,
-AmiTCP); those are the start of step 3.
+Not yet: the production relay, cross-play with the other machines, and
+real hardware; see step 3.
+
+## Step 3: release files, every machine, the production relay
+
+**Release files.** `tools/build_amiga.py --adf` writes, beside the
+executable `bomber`, `bombernet.adf`: an OFS floppy made by amitools'
+`xdftool` (in the project's venv), bootable, with `bomber` and an
+`s/startup-sequence` that runs it. It boots to the title on an A500 with
+the AROS ROM. A hard-drive Amiga copies `bomber` anywhere and runs it
+from the Shell (a Workbench icon is not made yet). Either way a TCP/IP
+stack must be running before the game starts, for the network rows.
+
+**The relay.** `tools/set_relay.py` patches the executable and the ADF:
+on the disk it finds `bomber` through the root block's hash table, follows
+its data blocks (488 bytes each after a 24-byte header; the field may
+cross two) and redoes each block's checksum. Checked by patching an ADF,
+reading the file back with `xdftool` and booting the disk.
+`tools/amiga_test.py --adf` replays a recording from the floppy, `DH0:`
+only taking the results: dm2, all hashes equal.
+
+**Cross-play** (`tools/crossplay.py 300`, the local relay; the Amiga in
+FS-UAE in real time, the other machine stepped by the harness; the hashes
+of every 16th frame compared, the maps compared at the end):
+
+| Host | Joiner | Frames | Hashed frames | Mismatches | Delay |
+|---|---|---|---|---|---|
+| Amiga | Sharp MZ-800 (mz800emu, MZPico) | 300 | 18 | 0 | 2 |
+| Amiga | Amstrad CPC (M4) | 300 | 18 | 0 | 1 |
+| Amiga | Commodore 64 (VICE, WiC64) | 300 | 18 | 0 | 1 |
+| Amiga | ZX Spectrum (Spectranet) | 300 | 18 | 0 | 1 |
+| ZX Spectrum | Amiga | 300 | 18 | 0 | 1 |
+| Sharp MZ-800 | Amiga | 300 | 18 | 0 | 1 |
+| Amiga | Amiga (`tools/amiga_match.py`) | 2018 | 127 | 0 | 1 |
+
+The fields were identical at the end of every run. The Atari is not in
+the harness (its emulator runs under Wine), so it has not met the Amiga;
+it meets the others through the same relay protocol.
+
+Twice in the first runs the MZ hosting the Amiga ended about 100 s into
+the match with the MZ's abort flag 5 (`NETST_DROPPED`): the local relay
+had ended the Amiga's session, while the Amiga itself kept playing (its
+screen and log showed no crash). Six reruns, with the relay's ping and
+pong frames logged, with them unlogged and with its keepalive pings off,
+all ran the full 300 frames; every ping was answered. The cause is not
+known; to watch for on hardware.
+
+**The production relay** (`RELAY=api.mzpico.com:80 tools/amiga_match.py
+60`): two Amigas, 1004 frames at the full 16.7 game frames a second, 63
+hashed frames compared, 0 mismatches; the lobby's delay 2 (120 ms, as on
+the other machines over the Internet).
+
+**WinUAE.** The same files run in WinUAE on Windows: its own
+`bsdsocket.library` (Misc: bsdsocket.library), the AROS nightly ROM or a
+Kickstart, `bomber` from a directory hard drive or the ADF in DF0:.
+Started and looked at by hand on Windows.
+
+**Hardware testers** need: an Amiga with Kickstart 2.04 or later (the
+program opens Intuition and graphics version 37), memory (tested with 1 MB
+of chip and 8 MB of fast RAM; less is untested), a
+network card or adapter with a TCP/IP stack (Roadshow, AmiTCP or Miami;
+`bsdsocket.library` open before the game starts), and the ADF written to
+a floppy or `bomber` copied to a hard drive. What to report: the title and
+the game's look, the sound (never heard by anyone yet: FS-UAE here has no
+sound output), the keys and joysticks, the lobby's DELAY against the
+browser player, and a full match without DESYNC or CONNECTION LOST.
+
+Still open: a Workbench icon; the round start's full redraw (313 ms on an
+A500, see step 1); Kickstart 1.3 is not supported (the program needs
+version 37 libraries and quits at once without them).
 
 ## Risks and open questions
 
 - Kickstart 1.3 machines (an unexpanded A500 of 1987-1990) have no
-  `bsdsocket` stack: they play locally only. Stated, not solved.
+  `bsdsocket` stack, and the program needs version 37 libraries: they
+  cannot run it at all. Stated, not solved.
 - The vertical-blank server and the hardware joystick reads are the usual
   Amiga practice but not strictly OS-clean; a stack that needs the CPU
   (Roadshow is light) shares it with the game: the frame time with the

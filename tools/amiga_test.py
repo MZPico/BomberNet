@@ -3,7 +3,10 @@
 its figures: the recording replayed with the hashes checked, each game
 frame's work (flush .. next frame sync) as wall time on the emulated Amiga.
 
-  tools/amiga_test.py [build/amiga/bomber] [--ntsc] [--png out.png] [--model A500|A1200]
+  tools/amiga_test.py [build/amiga/bomber] [--ntsc] [--png out.png] [--model A500|A1200] [--adf]
+
+--adf: the program on a bootable floppy (an ADF made as tools/build_amiga.py
+--adf makes it) instead of DH0:, which then only takes the results.
 
 FS-UAE (the Ubuntu package) on the X display DISPLAY (an Xvfb, :97), with
 its AROS replacement ROM unless KICKSTART names a Kickstart ROM image; a
@@ -19,15 +22,31 @@ model = sys.argv[sys.argv.index('--model') + 1] if '--model' in sys.argv else 'A
 dh0 = os.path.join(ROOT, 'build', 'amiga', 'dh0')
 base = os.path.join(ROOT, 'build', 'amiga', 'fsuae-base')
 for d in (os.path.join(dh0, 'C'), os.path.join(dh0, 'S'), base): os.makedirs(d, exist_ok=True)
+seq = 'bomber\necho "done" >DH0:done.txt\n' if '--adf' in sys.argv else 'C:bomber\necho "done" >DH0:done.txt\n'
 shutil.copy(exe, os.path.join(dh0, 'C', 'bomber'))
-open(os.path.join(dh0, 'S', 'Startup-Sequence'), 'w').write('C:bomber\necho "done" >DH0:done.txt\n')
+if '--adf' in sys.argv:                                          # the floppy boots; DH0: has no Startup-Sequence
+    adf = os.path.join(ROOT, 'build', 'amiga', 'test.adf')
+    open(os.path.join(dh0, 'startup-sequence'), 'w').write(seq)
+    if os.path.exists(adf): os.remove(adf)
+    r = subprocess.run([os.path.join(ROOT, 'build', 'venv', 'bin', 'xdftool'), adf, 'create', '+', 'format', 'BomberNet', '+', 'boot', 'install',
+                        '+', 'write', exe, 'bomber', '+', 'makedir', 's', '+', 'write', os.path.join(dh0, 'startup-sequence'), 's/startup-sequence'],
+                       capture_output=True, text=True)
+    if r.returncode: sys.exit('xdftool: ' + r.stderr[-2000:])
+    for f in ('S/Startup-Sequence', 'startup-sequence'):
+        try: os.remove(os.path.join(dh0, f))
+        except FileNotFoundError: pass
+else: open(os.path.join(dh0, 'S', 'Startup-Sequence'), 'w').write(seq)
 for f in ('result.txt', 'done.txt'):
     try: os.remove(os.path.join(dh0, f))
     except FileNotFoundError: pass
 cmd = ['fs-uae', f'--base-dir={base}', f'--amiga-model={model}', '--chip-memory=1024', f'--fast-memory={os.environ.get("FASTMEM", "8192")}',
        f'--hard-drive-0={dh0}', '--fullscreen=0', '--video-sync=0', '--automatic-input-grab=0', '--floppy-drive-speed=0',
        '--ntsc-mode=1' if '--ntsc' in sys.argv else '--ntsc-mode=0']
+if '--adf' in sys.argv: cmd += [f'--floppy-drive-0={adf}', '--hard-drive-0-priority=-128']   # DH0: not bootable: the floppy is
+for n, f in (('KICKSTART', 'aros-rom.bin'), ('KICKSTART_EXT', 'aros-ext.bin')):             # the AROS nightly ROM in build/amiga/rom
+    if os.path.exists(os.path.join(ROOT, 'build', 'amiga', 'rom', f)): os.environ.setdefault(n, os.path.join(ROOT, 'build', 'amiga', 'rom', f))
 if os.environ.get('KICKSTART'): cmd.append(f'--kickstart-file={os.environ["KICKSTART"]}')
+if os.environ.get('KICKSTART_EXT'): cmd.append(f'--kickstart-ext-file={os.environ["KICKSTART_EXT"]}')
 env = dict(os.environ, DISPLAY=os.environ.get('AMIGA_DISPLAY', ':97'))   # the invisible X display (Xvfb), never the desktop's
 log = open(os.path.join(ROOT, 'build', 'amiga', 'fsuae.log'), 'w')
 p = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env)

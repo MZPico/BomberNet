@@ -12,7 +12,8 @@ Files: .tap (ZX Spectrum; the block checksum is redone), .dsk (CPC disk image,
 standard or extended; the field may cross sectors), .cpc (an AMSDOS file),
 .xex (Atari), .prg and .d64 (C64; on the disk the file BOMBERNET, or its
 first program, whose sector chain the field may cross), an AmigaOS
-executable (the port's bytes in the 68000's order). The MZ-800 takes its relay from its card: mzpico.ini
+executable and .adf (an OFS disk with the file bomber; the port's bytes in
+the 68000's order). The MZ-800 takes its relay from its card: mzpico.ini
 ([cloud] net_relay, net_port) on an MZPico, /unicard/network.cfg on a Unicard.
 """
 import os, sys
@@ -104,9 +105,38 @@ def xex_map(d):
     return offs, addrs
 
 
+def adf_map(d, name=b'bomber'):
+    """the data bytes of the OFS disk's file called name, in order: the file header
+    from the root block's hash table, then the data blocks' chain; each holds 488
+    bytes after a 24-byte header whose checksum (every long of the block sums
+    to zero) is redone after the patch"""
+    if len(d) != 901120 or d[:3] != b'DOS': raise ValueError('not an ADF (880 KB, DOS)')
+    if d[3] & 1: raise ValueError('an FFS disk: only OFS disks are patched')
+    be = lambda at: int.from_bytes(d[at:at + 4], 'big')
+    h = len(name)
+    for c in name.upper(): h = (h * 13 + c) & 0x7ff
+    blk = be(880 * 512 + 24 + (h % 72) * 4)                     # the hash chain of the name
+    while blk:
+        at = blk * 512
+        if d[at + 512 - 80 + 1:at + 512 - 80 + 1 + d[at + 512 - 80]].upper() == name.upper() and be(at + 508) == 0xfffffffd: break
+        blk = be(at + 496)
+    if not blk: raise ValueError(f'no file {name.decode()} on the disk')
+    blocks, nxt = [], be(blk * 512 + 16)                         # the first data block, then each one's next
+    while nxt: blocks.append(nxt); nxt = be(nxt * 512 + 16)
+    offs = []
+    for b in blocks: offs += range(b * 512 + 24, b * 512 + 24 + be(b * 512 + 12))
+    def fix(b):
+        for blk in blocks:
+            at = blk * 512
+            b[at + 20:at + 24] = b'\0\0\0\0'
+            total = sum(int.from_bytes(b[at + i:at + i + 4], 'big') for i in range(0, 512, 4))
+            b[at + 20:at + 24] = ((-total) & 0xffffffff).to_bytes(4, 'big')
+    return offs, fix
+
+
 def big_endian(d):
     """an AmigaOS executable (a hunk file, 000003F3 first): its 68000 reads the port's two bytes high first"""
-    return d[:4] == b'\x00\x00\x03\xf3'
+    return d[:4] == b'\x00\x00\x03\xf3' or d[:3] == b'DOS'
 
 
 def load(path):
@@ -116,6 +146,7 @@ def load(path):
     if low.endswith('.tap'): offs, fix = tap_map(d)
     elif low.endswith('.dsk'): offs, fix = dsk_map(d)
     elif low.endswith('.d64'): offs, fix = d64_map(d)
+    elif low.endswith('.adf'): offs, fix = adf_map(d)
     elif low.endswith('.xex'): offs, addrs = xex_map(d)
     else: offs = list(range(len(d)))                 # .cpc and anything plain
     stream = bytes(d[o] for o in offs)

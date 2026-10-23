@@ -54,6 +54,7 @@ mkdir -p build/zx && cd build/zx && cmake -DPLATFORM=zx ../../c && make    # -> 
 mkdir -p build/zx128 && cd build/zx128 && cmake -DPLATFORM=zx128 ../../c && make   # -> 128K + ESP-01: bomber.tap (in progress)
 mkdir -p build/cpc && cd build/cpc && cmake -DPLATFORM=cpc ../../c && make  # -> build/cpc/bomber.cpc, bomber.dsk (in progress)
 tools/build_host.sh && c/build/sim 30000 2                                 # the game on a PC (key bot)
+tools/build_amiga.py --adf                                                 # -> build/amiga/bomber, bombernet.adf (bebbo's gcc in Docker)
 ```
 
 The MZ build uses the environment of the MZPico-800-Manager (`+mz` target,
@@ -112,6 +113,7 @@ measured.
 | M4 board | Amstrad CPC | the same, over the M4's sockets |
 | FujiNet | Atari XL/XE | the same, over FujiNet's N: device on SIO |
 | WiC64, or an Ultimate's own network | Commodore 64 | the same, over the WiC64's TCP commands or the Ultimate Command Interface (Ultimate 64, Ultimate-II+; enabled in its menu) |
+| any TCP/IP stack (Roadshow, AmiTCP, Miami, ...) | Amiga | the same, over `bsdsocket.library`; WinUAE and FS-UAE bring their own |
 | Unicard, NET firmware | Sharp MZ-800 | JSON lines over TCP: a self-hosted `relay/relay.py` (LAN), not the production relay |
 
 The production relay is `ws://api.mzpico.com/net` (Cloudflare, one Durable
@@ -136,7 +138,7 @@ Then point each machine at that PC (192.168.1.10 here):
 
 | Machine | Where the relay is set |
 |---|---|
-| ZX Spectrum, CPC, Atari, C64 | `tools/set_relay.py bomber.tap 192.168.1.10` rewrites the release file (`.tap`, `.dsk`, `.cpc`, `.xex`, `.prg`, `.d64`; the port is 8765 unless given as `host:port`); without an address it shows the file's relay; `api.mzpico.com:80` sets production again |
+| ZX Spectrum, CPC, Atari, C64, Amiga | `tools/set_relay.py bomber.tap 192.168.1.10` rewrites the release file (`.tap`, `.dsk`, `.cpc`, `.xex`, `.prg`, `.d64`, the Amiga's executable or `.adf`; the port is 8765 unless given as `host:port`); without an address it shows the file's relay; `api.mzpico.com:80` sets production again |
 | MZ-800 with an MZPico | `mzpico.ini`: `[cloud]` `net_relay = 192.168.1.10`, `net_port = 8765` |
 | MZ-800 with a Unicard | `/unicard/network.cfg`: `NETRELAYADDR`, `NETRELAYPORT` (8766, the TCP port) |
 
@@ -158,10 +160,11 @@ measurements and the reasoning behind the delay rule: `docs/net-timing.md`.
 | `tools/lockstep_test.py`, `tools/nettest.py` | two MZ-800s (mz800emu, MZPico card emulated) through the local relay |
 | `tools/lockstep_zx.py` | two Spectrums (`tools/zxemu.py`, Spectranet emulated at its programming interface) through the local relay or production |
 | `tools/replay_cpc.py`, `tools/lockstep_cpc.py` | the same recordings on the Amstrad CPC build; two CPCs with M4 boards (`tools/cpcemu.py`) through the local relay or production |
-| `tools/crossplay.py` | two different machines in one match: MZ-800, Spectrum, CPC, or the 128K with its ESP-01 (`esp`) |
+| `tools/crossplay.py` | two different machines in one match: MZ-800, Spectrum, CPC, the 128K with its ESP-01 (`esp`), C64, Amiga |
 | `tools/fusex_match.py` | two FuseX with the real Spectranet firmware (`tools/fusex.py` drives FuseX through its GDB server) |
 | `tools/softnet_test.sh` | the software network device on a PC: two processes in one room |
-| `tools/set_relay.py` | not a test: points a release file (Spectrum, CPC, Atari, C64) at another relay |
+| `tools/set_relay.py` | not a test: points a release file (Spectrum, CPC, Atari, C64, Amiga) at another relay |
+| `tools/amiga_test.py`, `tools/amiga_play.py`, `tools/amiga_match.py` | the Amiga build in FS-UAE: a recording replayed (from `DH0:` or the ADF), the inputs played, two Amigas in a match |
 | `tools/test_portable.sh` | the PC simulator natively and on big-endian PowerPC (qemu), replaying `tests/recordings`: the core's byte-order check |
 | `tools/sim6502.py` | the core on a 6502 (llvm-mos and its simulator, `c/platform/sim6502`): a recording replayed with its hashes checked, frames timed in cycles |
 | `tools/netbench.py` | network timing of a real-time match, local relay or production, including the play page (`tools/web_join.mjs`, `tools/netproxy.py`) |
@@ -199,6 +202,7 @@ changed on purpose and how fast it runs: `docs/original.md`.
 | `docs/port-amstrad-cpc.md` | the Amstrad CPC port with the M4 board: feasibility and plan |
 | `docs/port-atari-xl.md` | the Atari XL/XE port, the first 6502 one: plan and progress |
 | `docs/port-c64.md` | the Commodore 64 port (WiC64 or an Ultimate's network): plan, measurements, VICE as the test bench |
+| `docs/port-amiga.md` | the Amiga port (any 68000 Amiga, `bsdsocket.library`): plan, measurements, FS-UAE with a free AROS ROM as the test bench |
 | `docs/portability.md` | the rules that keep one C game for Z80, 6502 and 68000 machines |
 | `docs/port-zx128-esp01.md` | the 128K Spectrum with an ESP-01 (Milan Stava's port, brought in step by step): plan and progress |
 | `PLAN.md` | the multiplayer plan the C port followed |

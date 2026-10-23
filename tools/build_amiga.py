@@ -2,7 +2,7 @@
 """The Amiga build (bebbo's gcc in Docker, tools/amiga-cc): build/amiga/bomber,
 an AmigaOS executable.
 
-  tools/build_amiga.py [--test recording.bnr [--frames n] | --play | --net host|join] [-O2|-Os] [--out dir]
+  tools/build_amiga.py [--test recording.bnr [--frames n] | --play | --net host|join] [-O2|-Os] [--out dir] [--adf]
 
 --test: AMIGA_TEST, the recording compiled in and replayed from the title on;
 each game frame's work is timed (tools/amiga_test.py runs it in FS-UAE and
@@ -23,6 +23,7 @@ if '--test' in sys.argv:
         for i in range(0, len(data), 24): f.write('  ' + ', '.join(str(b) for b in data[i:i + 24]) + ',\n')
         f.write('};\n')
     flags += ['-DAMIGA_TEST', '-DAMIGA_RESULT="DH0:result.txt"']
+if '--adf' in sys.argv: adf = os.path.join(out, 'bombernet.adf')    # a bootable OFS floppy: the executable and a Startup-Sequence that runs it
 if '--play' in sys.argv: flags.append('-DAMIGA_PLAYTEST')   # tools/amiga_play.py: a 4-player deathmatch preset, the players logged
 if '--net' in sys.argv:                                     # tools/crossplay.py: host (or join) a room on SPACE, the room's state logged
     i = sys.argv.index('--net')
@@ -42,3 +43,12 @@ r = subprocess.run([os.path.join(ROOT, 'tools', 'amiga-cc'), *flags, *inc, *[rel
 if r.returncode: sys.exit(r.stderr[-4000:])
 if r.stderr.strip(): print(r.stderr.strip()[-2000:])
 print(f'{exe}: {os.path.getsize(exe)} bytes ({" ".join(flags)})')
+if '--adf' in sys.argv:
+    xdftool = os.path.join(ROOT, 'build', 'venv', 'bin', 'xdftool')   # amitools, in the project's venv
+    seq = os.path.join(out, 'startup-sequence')
+    open(seq, 'w').write('bomber\n')
+    if os.path.exists(adf): os.remove(adf)
+    r = subprocess.run([xdftool, adf, 'create', '+', 'format', 'BomberNet', '+', 'boot', 'install', '+', 'write', exe, 'bomber',
+                        '+', 'makedir', 's', '+', 'write', seq, 's/startup-sequence'], capture_output=True, text=True)
+    if r.returncode: sys.exit('xdftool: ' + r.stderr[-2000:] + r.stdout[-2000:])
+    print(f'{adf}: {os.path.getsize(adf)} bytes, OFS, bootable, bomber and s/startup-sequence')

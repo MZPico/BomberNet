@@ -179,6 +179,8 @@ class Commodore:
               flush=True)
 
 
+for _n, _f in (('AMIGA_KICKSTART', 'aros-rom.bin'), ('AMIGA_KICKSTART_EXT', 'aros-ext.bin')):   # the AROS nightly ROM in build/amiga/rom
+    if os.path.exists(f'{HERE}/../build/amiga/rom/{_f}'): os.environ.setdefault(_n, f'{HERE}/../build/amiga/rom/{_f}')   # (FS-UAE's bundled one crashes on a 68000)
 class Amiga:
     """FS-UAE with its bsdsocket.library (the host's network), running in real
     time: a tools/build_amiga.py --net host|join build (the menu preset; a
