@@ -18,6 +18,7 @@
 #include "tcp.h"
 
 struct Library *SocketBase;
+uint32_t amiga_send_waits, amiga_recv_calls, amiga_recv_bytes;   /* for the network test's log: Delay(1)s in tcp_send, tcp_recv's calls and bytes */
 static LONG sock = -1;
 
 static void socket_cleanup(void) {
@@ -64,6 +65,7 @@ uint8_t tcp_send(const uint8_t *buf, uint16_t n) {
     if (k > 0) { buf += k; n = (uint16_t)(n - k); tries = 0; continue; }
     if (k < 0 && Errno() != EWOULDBLOCK) return 2;
     if (++tries > 250) return 2;             /* the stack's buffer full for 5 s */
+    amiga_send_waits++;
     Delay(1);                                /* 20 ms: let the stack send */
   }
   return 0;
@@ -72,7 +74,9 @@ uint8_t tcp_send(const uint8_t *buf, uint16_t n) {
 int16_t tcp_recv(uint8_t *buf, uint16_t max) {
   LONG n;
   if (sock < 0) return -1;
+  amiga_recv_calls++;
   n = recv(sock, (APTR)buf, max, 0);
+  if (n > 0) amiga_recv_bytes += (uint32_t)n;
   if (n > 0) return (int16_t)n;
   if (n == 0) return -1;                     /* closed by the other side */
   return Errno() == EWOULDBLOCK ? 0 : -1;

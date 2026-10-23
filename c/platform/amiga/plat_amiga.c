@@ -106,6 +106,9 @@ static struct Interrupt vb_int;
 
 /* the E clock (timer.device): 709379 Hz on PAL, 715909 NTSC */
 static uint32_t eclock_hz;
+#ifdef AMIGA_NETTEST
+static uint32_t eclock_now(void) { struct EClockVal ev; ReadEClock(&ev); return ev.ev_lo; }
+#endif
 #ifdef AMIGA_TEST
 static uint32_t eclock(void) {
   struct EClockVal ev;
@@ -132,6 +135,19 @@ static FILE *playlog;                     /* tools/amiga_play.py reads it: the p
 #ifdef AMIGA_NETTEST
 #include "netdev.h"
 static FILE *netlog;                      /* tools/crossplay.py reads it: the room's state every frame */
+static char log_buf[16384];
+static uint16_t log_len;
+static void log_out(void) { if (log_len) { fwrite(log_buf, 1, log_len, netlog); fflush(netlog); log_len = 0; } }
+static void log_s(const char *t) { while (*t) log_buf[log_len++] = *t++; }
+static void log_dec(uint32_t v) {
+  char d[10]; uint8_t n = 0;
+  do { d[n++] = (char)('0' + v % 10); v /= 10; } while (v);
+  while (n) log_buf[log_len++] = d[--n];
+}
+static void log_hex(uint8_t v) {
+  static const char digit[] = "0123456789abcdef";
+  log_buf[log_len++] = digit[v >> 4]; log_buf[log_len++] = digit[v & 15];
+}
 #endif
 
 /* ---- the keyboard: raw key codes, their state kept ---- */
@@ -407,21 +423,30 @@ void flush_screen(void) {
   }
 #endif
 #ifdef AMIGA_NETTEST
-  if (netlog) {                           /* the state tools/crossplay.py reads from the other machines' memory */
-    static uint8_t every;
-    uint8_t i;
-    fprintf(netlog, "frame %u title %u code %.4s active %u abort %u slot %u delay %u table %02x%02x%02x%02x hash %04x map ",
-            frame_no, title_mode, net_code, net_active, net_abort, net_slot, net_delay, net_table[0], net_table[1], net_table[2],
-            net_table[3], state_hash);
+  if (netlog) {                           /* the state tools/crossplay.py reads from the other machines' memory: */
+    static uint8_t every;                 /* formatted by hand into RAM, written out every 32 frames (written with */
+    static uint32_t last_log;             /* fprintf and flushed every frame on FS-UAE's drive it took 157 ms a frame) */
+    uint32_t log_in = eclock_now();
+    uint16_t i;
+    if (log_len > sizeof(log_buf) - 2300) log_out();
+    log_s("frame "); log_dec(frame_no); log_s(" title "); log_dec(title_mode);
+    log_s(" code "); { uint8_t k; for (k = 0; k < 4; k++) log_buf[log_len++] = net_code[k] ? net_code[k] : ' '; }
+    log_s(" active "); log_dec(net_active); log_s(" abort "); log_dec(net_abort); log_s(" slot "); log_dec(net_slot);
+    log_s(" delay "); log_dec(net_delay); log_s(" table ");
+    { uint8_t k; for (k = 0; k < 4; k++) log_hex(net_table[k]); }
+    log_s(" hash "); log_hex((uint8_t)(state_hash >> 8)); log_hex((uint8_t)state_hash); log_s(" map ");
 #ifndef AMIGA_NETTEST_NOMAP
-    { static char hex[2001]; char *h = hex; const char *digit = "0123456789abcdef";   /* one write, not a thousand */
-      for (i = 0; i < 25; i++) { uint8_t x; for (x = 0; x < 40; x++) { uint8_t v = map_layer[i * 40 + x]; *h++ = digit[v >> 4]; *h++ = digit[v & 15]; } }
-      *h = 0; fputs(hex, netlog); }
-#else
-    fprintf(netlog, "none");
+    if (title_mode || frame_no % 16 == 1)  /* the map: on the hashed frames' lines (what the tools compare) */
+      for (i = 0; i < SCREEN_CELLS; i++) log_hex(map_layer[i]);
+    else
 #endif
-    fputc('\n', netlog);
-    if (!title_mode || !(++every & 3)) fflush(netlog);   /* every game frame: the last one before a crash is wanted */
+    log_s("none");
+    { extern uint32_t amiga_send_waits, amiga_recv_calls, amiga_recv_bytes;   /* after the 20 fields the tools read */
+      log_s(" tick "); log_dec(amiga_ticks); log_s(" log "); log_dec(last_log); log_s(" sendwaits "); log_dec(amiga_send_waits);
+      log_s(" recvcalls "); log_dec(amiga_recv_calls); log_s(" recvbytes "); log_dec(amiga_recv_bytes); log_s("\n");
+      amiga_send_waits = amiga_recv_calls = amiga_recv_bytes = 0; }
+    if (!(++every & 31)) log_out();
+    last_log = eclock_now() - log_in;
   }
 #endif
 #ifdef AMIGA_TEST
@@ -499,7 +524,7 @@ static void cleanup(void) {
   if (playlog) fclose(playlog);
 #endif
 #ifdef AMIGA_NETTEST
-  if (netlog) fclose(netlog);
+  if (netlog) { log_out(); fclose(netlog); }
 #endif
 }
 

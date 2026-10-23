@@ -223,9 +223,21 @@ class Amiga:
         wid = subprocess.run(['xdotool', 'search', '--name', 'FS-UAE'], capture_output=True, text=True, env=self.env).stdout.split()
         if wid: subprocess.run(['xdotool', 'windowfocus', '--sync', wid[-1]], env=self.env, capture_output=True)
         self.last, self.cached = {}, None
+        self.flushes, self.read_to = [], 0       # (frame, hash) of every game frame logged: collect() takes them
+
+    def _new_lines(self):                        # the log comes 32 frames at a time: every line read once
+        try:
+            with open(f'{self.dh0}/net.log', 'rb') as f:
+                f.seek(self.read_to); data = f.read()
+        except FileNotFoundError: return
+        end = data.rfind(b'\n') + 1
+        self.read_to += end
+        for l in data[:end].decode('latin-1').split('\n'):
+            p = l.split()
+            if len(p) >= 20 and p[0] == 'frame' and p[3] == '0': self.flushes.append((int(p[1]), int(p[17], 16)))
 
     def _state(self):
-        """the last complete line of the log: its tail only (the log grows by 2 KB a frame), once a TV frame"""
+        """the last complete line of the log: its tail only, once a TV frame"""
         if self.cached is not None: return self.cached
         try:
             with open(f'{self.dh0}/net.log', 'rb') as f:
@@ -242,7 +254,13 @@ class Amiga:
         st = self._state()
         if n == '_net_code': return st.get('code', '    ').encode()
         if n == '_net_table': return bytes.fromhex(st.get('table', 'ffffffff'))
-        if n == '_map_layer': return bytes.fromhex(st['map']) if st.get('map', 'none') != 'none' else None
+        if n == '_map_layer':                      # the newest line with a map (the hashed frames' lines carry one)
+            try: lines = open(f'{self.dh0}/net.log', 'rb').read().decode('latin-1').split('\n')
+            except FileNotFoundError: return None
+            for l in reversed(lines):
+                p = l.split()
+                if len(p) >= 20 and p[0] == 'frame' and len(p[19]) == 2000: return bytes.fromhex(p[19])
+            return None
         return self.r16(n).to_bytes(2, 'little')[:k]
     def r8(self, n): return self.r16(n) & 0xff
     def r16(self, n):
@@ -251,7 +269,7 @@ class Amiga:
         return int(st.get(n.lstrip('_').replace('net_', '').replace('title_mode', 'title').replace('frame_no', 'frame'), '0'))
     def wr(self, n, bs):
         if n == '_net_code': open(f'{self.dh0}/code.txt', 'wb').write(bytes(bs))    # the rest is the build's preset
-    def tv_frame(self): time.sleep(0.02); self.cached = None
+    def tv_frame(self): time.sleep(0.02); self.cached = None; self._new_lines()
     def press(self, k): subprocess.run(['xdotool', 'keydown', self.keys.get(k, k)], env=self.env)
     def release(self, k): subprocess.run(['xdotool', 'keyup', self.keys.get(k, k)], env=self.env)
     def close(self): self.p.kill()

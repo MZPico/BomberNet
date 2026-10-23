@@ -315,13 +315,25 @@ it meets the others through the same relay protocol.
 Twice in the first runs the MZ hosting the Amiga ended about 100 s into
 the match with the MZ's abort flag 5 (`NETST_DROPPED`): the local relay
 had ended the Amiga's session, while the Amiga itself kept playing (its
-screen and log showed no crash). Six reruns, with the relay's ping and
-pong frames logged, with them unlogged and with its keepalive pings off,
-all ran the full 300 frames; every ping was answered. The cause is not
-known; to watch for on hardware. It happened a third time with the Atari
-ST hosting the Amiga (docs/port-atari-st.md, step 2): the match crawled to
-frame 90 in four minutes, then the Amiga's connection ended; the rerun
-was clean. Every time the Amiga was the joiner.
+screen and log showed no crash); a third time with the Atari ST hosting
+it, after the match had crawled to frame 90 in four minutes. Every time the
+Amiga was the joiner, and every time a crossplay run, whose Amiga build
+logs the map.
+
+Tracked down: the test build itself. Its log (`DH0:net.log`), written with
+`fprintf` and flushed every frame on FS-UAE's drive, took 157 ms of every
+frame (measured with the E clock, eight runs): the Amiga ran at 9 TV
+frames a game frame instead of 3, the match at a third of its speed, and
+a longer stall of the drive left the socket unread long enough for the
+relay's keepalive to end the connection. The network was never waiting:
+`tcp_send` did not once have to wait for the stack. The log is now
+formatted by hand into RAM and written every 32 frames, the map only on
+the hashed frames' lines (as on the Atari ST): 4 ms a frame. Then, the
+Amiga joining in eleven runs (six under the ST, three under the MZ, two
+under the Spectrum): ten clean, 0 mismatches, 3 TV frames a game frame;
+in the eleventh the harness lost track of the ST before the start, while
+the ST and the Amiga played 14,100 frames in 14 minutes without a stall.
+The release build has no log.
 
 **The production relay** (`RELAY=api.mzpico.com:80 tools/amiga_match.py
 60`): two Amigas, 1004 frames at the full 16.7 game frames a second, 63
