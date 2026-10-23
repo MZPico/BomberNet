@@ -163,7 +163,7 @@ measurements and the reasoning behind the delay rule: `docs/net-timing.md`.
 | `tools/lockstep_zx.py` | two Spectrums (`tools/zxemu.py`, Spectranet emulated at its programming interface) through the local relay or production |
 | `tools/replay_cpc.py`, `tools/lockstep_cpc.py` | the same recordings on the Amstrad CPC build; two CPCs with M4 boards (`tools/cpcemu.py`) through the local relay or production |
 | `tools/crossplay.py` | two different machines in one match: MZ-800, Spectrum, CPC, the 128K with its ESP-01 (`esp`), C64, Amiga, Atari ST |
-| `tools/st_test.py`, `tools/st_play.py`, `tools/st_match.py`, `tools/st_modem.py` | the Atari ST build in Hatari: a recording replayed, the inputs and the sound, two STs in a match; a WiFi modem emulated on Hatari's serial port |
+| `tools/st_test.py`, `tools/st_play.py`, `tools/st_match.py`, `tools/st_modem.py`, `tools/st_netplay.py` | the Atari ST build in Hatari: a recording replayed, the inputs and the sound, two STs in a match; a WiFi modem emulated on Hatari's serial port; the networked game in a window to play by hand |
 | `tools/fusex_match.py` | two FuseX with the real Spectranet firmware (`tools/fusex.py` drives FuseX through its GDB server) |
 | `tools/softnet_test.sh` | the software network device on a PC: two processes in one room |
 | `tools/set_relay.py` | not a test: points a release file (Spectrum, CPC, Atari, C64, Amiga) at another relay |
