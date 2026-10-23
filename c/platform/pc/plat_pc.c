@@ -15,8 +15,17 @@
  *
  * Time: the timer chip's channel 0 at about 1 kHz (the BIOS's own 18.2 Hz
  * tick still called on time), a game frame being 60 of its ticks; finer
- * times from its counter (1.19 MHz). Keys, joysticks and the speaker are
- * step 1. */
+ * times from its counter (1.19 MHz).
+ *
+ * Input: the keyboard's interrupt (INT 9) is the game's while it runs: the
+ * make and break codes from port 60h (set 1, the same numbers as the Atari
+ * ST's) keep the state of every key; the E0 prefix of an enhanced
+ * keyboard's cursor keys is skipped. The game port (201h): two joysticks,
+ * their axes timed against the centre found at the start.
+ *
+ * Sound: the speaker, which is the timer chip's channel 2: the MZ-800 has
+ * the same chip, so a tone's divider is the MZ's scaled from its 1.1084 MHz
+ * to the PC's 1.19318; the 1 kHz interrupt ends it on time. */
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -40,14 +49,51 @@ static uint8_t old_mode;
 static void (__interrupt __far *old_int8)(void);
 static volatile uint32_t ticks;           /* timer interrupts since the start, ~1 ms each */
 static volatile uint16_t bios_acc;        /* the BIOS's tick owed: 65536 counts of the timer's input */
+static volatile uint16_t tone_ms;         /* the tone's time left */
 static uint8_t started;
+static void (__interrupt __far *old_int9)(void);
+static volatile uint8_t keydown[128];
 
 static void __interrupt __far timer_isr(void) {
   ticks++;
+  if (tone_ms && !--tone_ms) outp(0x61, inp(0x61) & 0xfc);   /* the speaker off */
   bios_acc += TICK_DIV;
   if (bios_acc < TICK_DIV) _chain_intr(old_int8);   /* carried past 65536: the BIOS's 18.2 Hz tick is due (it ends the interrupt) */
   outp(0x20, 0x20);
 }
+
+static uint32_t now(void) {               /* ticks: 32 bits read whole (a 16-bit CPU reads them in two) */
+  uint32_t t;
+  _disable(); t = ticks; _enable();
+  return t;
+}
+
+/* the keyboard: a byte from port 60h, acknowledged (the XT's way, port 61h
+ * bit 7, harmless on an AT), the interrupt ended; the BIOS never sees it */
+static void __interrupt __far key_isr(void) {
+  static uint8_t prefix;
+  uint8_t b = inp(0x60), k = inp(0x61);
+  outp(0x61, k | 0x80); outp(0x61, k);
+  if (b == 0xe0 || b == 0xe1) prefix = 1;
+  else {
+    if (!(prefix && (b & 0x7f) == 0x2a)) keydown[b & 0x7f] = !(b & 0x80);   /* (an E0 2A: the enhanced keyboard's fake shift) */
+    prefix = 0;
+  }
+  outp(0x20, 0x20);
+}
+#define K_ESC 0x01
+#define K_BACKSPACE 0x0e
+#define K_RETURN 0x1c
+#define K_SPACE 0x39
+#define K_UP 0x48
+#define K_LEFT 0x4b
+#define K_RIGHT 0x4d
+#define K_DOWN 0x50
+#define K_DELETE 0x53
+
+#ifdef PC_PLAYTEST
+static FILE *playlog;                     /* tools/pc_play.py reads it: the players' places every frame */
+#endif
 
 #ifdef PC_TEST
 static uint32_t pc_time(void) {           /* in the timer's counts (1.19 MHz, 0.84 us) */
@@ -77,7 +123,7 @@ static struct {
 } __far test;                             /* far, as the recording: 24 KB for the longest */
 #endif
 
-/* ---- menus and input (step 1) ---- */
+/* ---- menus and input ---- */
 const char *const plat_joy_names[PLAT_JOY_TYPES] = {"NONE    ", "GAMEPORT"};
 const char *const plat_kbd_a_alt_name = "CURSOR AND RET  ";
 const char *plat_input_name(uint8_t input) {
@@ -95,16 +141,82 @@ uint8_t plat_input_allowed(uint8_t input) {
 }
 
 uint8_t plat_keys_a(void) {
+  uint8_t k = 0;
 #ifdef PC_TEST
   return title_mode && (frames & 1) ? KEY_SPACE : 0;
-#else
-  return 0;
 #endif
+  if (keydown[K_UP]) k |= KEY_UP;
+  if (keydown[K_DOWN]) k |= KEY_DOWN;
+  if (keydown[K_LEFT]) k |= KEY_LEFT;
+  if (keydown[K_RIGHT]) k |= KEY_RIGHT;
+  if (kbd_alt_fire ? keydown[K_RETURN] : keydown[K_SPACE]) k |= KEY_SPACE;
+  return k;
 }
-uint8_t plat_keys_b(void) { return 0; }
-uint8_t plat_joy(uint8_t n) { (void)n; return 0; }
-uint8_t plat_key_char(void) { return 0; }
-uint8_t plat_break(void) { return 0; }
+
+uint8_t plat_keys_b(void) {
+  uint8_t k = 0;
+  if (keydown[0x11]) k |= KEY_UP;           /* W */
+  if (keydown[0x1f]) k |= KEY_DOWN;         /* S */
+  if (keydown[0x1e]) k |= KEY_LEFT;         /* A */
+  if (keydown[0x20]) k |= KEY_RIGHT;        /* D */
+  if (keydown[0x12]) k |= KEY_SPACE;        /* E */
+  return k;
+}
+
+/* the game port: a write starts the four timers, each axis's bit stays 1
+ * for a time that grows with the stick's position; counted in loops of
+ * this code (the CPU's speed cancels out: the centre is counted the same
+ * way at the start). Joystick A: axes bits 0-1, buttons 4-5; B: 2-3, 6-7. */
+#define JOY_PORT 0x201
+#define JOY_MAX 4000                      /* loops: an axis not back by then has no stick */
+static uint16_t joy_centre[4];
+static uint8_t joy_present;               /* bit n: joystick n answers */
+
+static void joy_read(uint16_t *t) {       /* the four axes' counts (JOY_MAX for an axis that never ends) */
+  uint16_t n;
+  uint8_t pending = 0x0f, b, k;
+  for (k = 0; k < 4; k++) t[k] = JOY_MAX;
+  _disable();
+  outp(JOY_PORT, 0);
+  for (n = 0; n < JOY_MAX && pending; n++) {
+    b = (uint8_t)(inp(JOY_PORT) & pending);
+    if (b != pending) {
+      for (k = 0; k < 4; k++) if ((pending & (1 << k)) && !(b & (1 << k))) t[k] = n;
+      pending = b;
+    }
+  }
+  _enable();
+}
+
+uint8_t plat_joy(uint8_t n) {             /* n 0: joystick A, 1: B */
+  uint16_t t[4];
+  uint8_t k = 0, b, ax = (uint8_t)(n * 2);
+  if (!(joy_present & (1 << n))) return 0;
+  joy_read(t);
+  if (t[ax] < joy_centre[ax] / 2) k |= KEY_LEFT;
+  else if (t[ax] > joy_centre[ax] + joy_centre[ax] / 2) k |= KEY_RIGHT;
+  if (t[ax + 1] < joy_centre[ax + 1] / 2) k |= KEY_UP;
+  else if (t[ax + 1] > joy_centre[ax + 1] + joy_centre[ax + 1] / 2) k |= KEY_DOWN;
+  b = (uint8_t)~inp(JOY_PORT);            /* the buttons, low while pressed */
+  if (b & (n ? 0xc0 : 0x30)) k |= KEY_SPACE;
+  return k;
+}
+
+/* text entry: letters, BACKSPACE or DELETE deletes, ESC cancels */
+static const char letters[3][11] = {"QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"};
+static uint8_t typing;                    /* plat_key_char was asked this frame: a room code or the lobby, where ESC cancels */
+uint8_t plat_key_char(void) {
+  uint8_t r, c;
+  typing = 1;
+  if (keydown[K_ESC]) return 0x1b;
+  if (keydown[K_BACKSPACE] || keydown[K_DELETE]) return 8;
+  for (r = 0; r < 3; r++)
+    for (c = 0; letters[r][c]; c++)
+      if (keydown[(r == 0 ? 0x10 : r == 1 ? 0x1e : 0x2c) + c]) return (uint8_t)letters[r][c];
+  return 0;
+}
+
+uint8_t plat_break(void) { return keydown[K_ESC]; }
 
 /* ---- time ---- */
 static uint32_t next_frame;
@@ -113,21 +225,45 @@ void plat_frame_sync(void) {                    /* 60 ms */
 #ifdef PC_TEST
   if (t_start && test.n < TEST_FRAMES) {
     test.work[test.n++] = pc_time() - t_start;
-    if ((int32_t)(ticks - next_frame) > 0) test.late++;
+    if ((int32_t)(now() - next_frame) > 0) test.late++;
   }
   t_start = 0;
 #endif
-  while ((int32_t)(ticks - next_frame) < 0) ;
+  while ((int32_t)(now() - next_frame) < 0) ;
   next_frame += FRAME_MS;
-  if ((int32_t)(ticks - next_frame) > FRAME_MS) next_frame = ticks;   /* far behind (a pause): no rush to catch up */
+  if ((int32_t)(now() - next_frame) > FRAME_MS) next_frame = now();   /* far behind (a pause): no rush to catch up */
+  {                                       /* ESC on the title screen ends the program: a new press (not one held from */
+    static uint8_t esc_was;               /* cancelling a room code), on a frame nothing asked for typed keys */
+    uint8_t esc = keydown[K_ESC];
+    if (title_mode && esc && !esc_was && !typing) exit(0);
+    esc_was = esc;
+    typing = 0;
+  }
 }
 
 void plat_delay(void) {                         /* a TV frame's worth: 20 ms */
-  uint32_t t = ticks;
-  while (ticks - t < 20) ;
+  uint32_t t = now();
+  while (now() - t < 20) ;
 }
 
-void plat_tone(uint16_t ratio, uint8_t len) { (void)ratio; (void)len; }   /* the speaker: step 1 */
+/* frequency = 1108400 / ratio Hz on the MZ, whose 8253 counts 1108400 Hz:
+ * the PC's counts 1193182, so the divider is ratio * 1193182 / 1108400.
+ * The length: len units of about 0.93 ms (len * 238 / 256 ms). */
+void plat_tone(uint16_t ratio, uint8_t len) {
+  uint32_t d;
+#ifdef PC_NO_TONES
+  return;
+#endif
+  if (!ratio) return;
+  d = (uint32_t)ratio * 1193182UL / 1108400UL;
+  if (d > 0xffff) d = 0xffff;
+  _disable();
+  outp(0x43, 0xb6);                             /* channel 2, both bytes, square wave */
+  outp(0x42, (uint8_t)d); outp(0x42, (uint8_t)(d >> 8));
+  outp(0x61, inp(0x61) | 3);                     /* its gate and the speaker on */
+  tone_ms = (uint16_t)(((uint16_t)len * 238) >> 8) + 1;
+  _enable();
+}
 
 /* ---- screen ---- */
 static uint8_t mode = 0xff;
@@ -196,6 +332,15 @@ void flush_screen(void) {
       cell((uint8_t)(i - HUD_ROW * SCREEN_W), HUD_ROW, amiga_game_glyph[a], amiga_game_colour[a]);
     }
   }
+#ifdef PC_PLAYTEST
+  if (playlog) {
+    static uint8_t every;
+    fprintf(playlog, "%u %u %u %u %u %u %u %u %u %u %u %u %u %u %u\n", frame_no, title_mode, players[0].x, players[0].y, players[0].state,
+            players[1].x, players[1].y, players[1].state, players[2].x, players[2].y, players[2].state,
+            players[3].x, players[3].y, players[3].state, (unsigned)(kbd_alt_fire | joy_present << 1));
+    if (!(++every & 7)) { fflush(playlog); _dos_commit(fileno(playlog)); }
+  }
+#endif
 #ifdef PC_TEST
   if (!title_mode) {
     if (rec_pos + 6 <= REC_LEN) { uint32_t d = pc_time() - t_flush; test.flush += d; if (test.n < TEST_FRAMES) test.fl[test.n] = d; }
@@ -235,7 +380,12 @@ static void cleanup(void) {
   _disable();
   outp(0x43, 0x36); outp(0x40, 0); outp(0x40, 0);   /* the timer back to 18.2 Hz */
   _dos_setvect(0x08, old_int8);
+  _dos_setvect(0x09, old_int9);
+  outp(0x61, inp(0x61) & 0xfc);                  /* the speaker off */
   _enable();
+#ifdef PC_PLAYTEST
+  if (playlog) fclose(playlog);
+#endif
   outp(GC_INDEX, 1); outp(GC_DATA, 0);           /* Enable Set/Reset off, Bit Mask all: as the BIOS left them */
   outp(GC_INDEX, 8); outp(GC_DATA, 0xff);
   r.h.ah = 0; r.h.al = old_mode;                 /* the screen mode back */
@@ -279,14 +429,24 @@ void plat_init(void) {
   outp(GC_INDEX, 0); outp(GC_DATA, 0);
   outp(GC_INDEX, 8); outp(GC_DATA, 0xff);
   vram[0xffff] = 0;                              /* the latches' zero (Set/Reset 0, all bits) */
+  {                                              /* the game port: which sticks answer, and their centres */
+    uint16_t t[4];
+    uint8_t k;
+    joy_read(t);
+    for (k = 0; k < 4; k++) joy_centre[k] = t[k];
+    if (t[0] < JOY_MAX && t[1] < JOY_MAX) joy_present |= 1;
+    if (t[2] < JOY_MAX && t[3] < JOY_MAX) joy_present |= 2;
+  }
   old_int8 = _dos_getvect(0x08);
+  old_int9 = _dos_getvect(0x09);
   _disable();
   _dos_setvect(0x08, timer_isr);
+  _dos_setvect(0x09, key_isr);
   outp(0x43, 0x36); outp(0x40, TICK_DIV & 0xff); outp(0x40, TICK_DIV >> 8);
   _enable();
   started = 1;
   atexit(cleanup);
-  joy_type = 1;
+  joy_type = joy_present ? 1 : JOY_NONE;
   set_mode(1);
 #ifdef PC_TEST
   match_seed = rec[4] | (uint16_t)(rec[5] << 8);
@@ -299,5 +459,10 @@ void plat_init(void) {
 #endif
   replay_active = 1;
 #endif
-  next_frame = ticks + FRAME_MS;
+#ifdef PC_PLAYTEST
+  playlog = fopen("C:\\PLAY.LOG", "w");
+  menu_mode = 1; menu_players = 4;              /* a deathmatch of 4: key set A, key set B, the two joysticks */
+  menu_inputs[0] = INPUT_KBD_A; menu_inputs[1] = INPUT_KBD_B; menu_inputs[2] = INPUT_JOY1; menu_inputs[3] = INPUT_JOY2;
+#endif
+  next_frame = now() + FRAME_MS;
 }

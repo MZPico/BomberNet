@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The IBM PC build (OpenWatcom v2, 16-bit DOS, small model): build/pc/BOMBER.EXE.
 
-  tools/build_pc.py [--test recording.bnr [--frames n]] [--out dir]
+  tools/build_pc.py [--test recording.bnr [--frames n] | --play] [--out dir]
 
 OpenWatcom from $WATCOM, else ~/src/openwatcom (the Linux snapshot from
 github.com/open-watcom/open-watcom-v2, unpacked). --test: PC_TEST, the
@@ -27,6 +27,7 @@ if '--test' in sys.argv:
         for i in range(0, len(data), 24): f.write('  ' + ', '.join(str(b) for b in data[i:i + 24]) + ',\n')
         f.write('};\n')
     flags += ['-dPC_TEST', '-dPC_RESULT="C:\\\\RESULT.TXT"']
+if '--play' in sys.argv: flags.append('-dPC_PLAYTEST')   # tools/pc_play.py: a 4-player deathmatch preset, the players logged
 c = os.path.join(ROOT, 'c')
 src = [f'{c}/core/{n}.c' for n in ('bomber', 'netplay', 'data', 'map', 'game', 'input', 'video', 'enemy', 'bomb', 'player')]
 src += [f'{c}/platform/pc/plat_pc.c', f'{c}/platform/amiga/tables.c', f'{c}/common/netdev_none.c']   # the Amiga's glyph tables

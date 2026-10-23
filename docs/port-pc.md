@@ -17,7 +17,8 @@ with its own modem), Ethernet through a packet driver later.
    checked and the frames timed. Done, see below.
 1. **The platform layer**: the keyboard (its own INT 9 handler, the state
    of every key), the game port's two joysticks, the speaker, ESC to DOS;
-   the title and lobby; play in DOSBox-X. A CGA renderer.
+   the title and lobby; play in DOSBox-X. Done but the CGA renderer, see
+   below.
 2. **The network**: `tcp.h` over a WiFi modem on a COM port (the 8250/16550
    UART, interrupt-driven), DOSBox-X's own modem emulation for the tests;
    cross-play with every machine; the production relay.
@@ -90,6 +91,52 @@ the edge: about a frame in seven late, the flush (the C loop around the
 cells) more than half of it. An assembly flush and cell loop would win an
 XT its frames back: left until a tester's figures say how real DOSBox's
 300 cycles are.
+
+## Step 1: keys, joysticks, the speaker
+
+**Keyboard.** The game's own INT 9 handler while it runs: the byte from
+port 60h, acknowledged the XT's way (port 61h bit 7, harmless on an AT),
+the interrupt ended, the BIOS never seeing it; the state of every key kept
+from the make and break codes (set 1: the same numbers as the Atari ST's,
+so the key tables are the ST's). An enhanced keyboard's E0 prefix (its
+own cursor keys) is skipped, and its fake shift (E0 2A) ignored.
+
+| Source | Keys |
+|---|---|
+| key set A, "CURSOR AND SPACE" | the cursor keys; SPACE fires (RETURN when another player has key set B) |
+| key set B, "WASD AND E" | W A S D, E fires |
+| joysticks A and B | the game port (201h): two sticks, two buttons each |
+| text entry (the room code) | the letters; BACKSPACE or DELETE deletes, ESC cancels |
+
+ESC leaves a match; on the title it ends the program (the keyboard, the
+timer, the speaker and the screen mode given back). The joysticks: a write
+to 201h starts the four timers, each axis's bit stays 1 for a time that
+grows with the stick's position; counted in loops of the reading code
+against the centre counted the same way at the start (so the CPU's speed
+cancels out); an axis not back within 4000 loops has no stick, and the
+JOYSTICK row is NONE.
+
+**Speaker.** The timer chip's channel 2 in square-wave mode, the divider
+ratio * 1193182 / 1108400 (the MZ's own 8253 counts 1108400 Hz), port 61h
+switching it on; the 1 kHz interrupt switches it off when the tone's
+length is up (len * 238 / 256 ms, plus one).
+
+**Tested** (`tools/pc_play.py`, DOSBox-X in real time, the keys by xdotool,
+a `PC_PLAYTEST` build logging the players' places to `C:\PLAY.LOG`): the
+title, SPACE, key set A and key set B in all four directions, ESC out of
+the match and out of the program (back at the DOS prompt, text mode).
+The sound: DOSBox-X records its output while the program runs
+(`DX-CAPTURE /A BOMBER.EXE` in the autoexec; SDL's dummy audio driver,
+no sound device; its Ctrl+F6 and a mapper binding did nothing here), and
+each beep is measured: five keys, five beeps, 13.6-13.9 ms (13 asked),
+2124 Hz (2123 asked) and 1424 (1425). The pitch is the spectrum's peak:
+counting zero crossings, as on the ST, read DOSBox's filtered speaker
+signal wrongly at 2 kHz (1700-1960 Hz, a different figure every beep).
+
+The joysticks are not tested: DOSBox-X emulates the game port only with a
+host joystick (a mapper binding of keys to its axes did nothing without
+one), WSL has no `/dev/uinput` for a virtual one, and there is no real
+one here. The code is the usual one; a tester's report will tell.
 
 ## Risks and open questions
 
