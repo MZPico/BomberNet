@@ -157,12 +157,27 @@ colours. The choice:
 - The title in palette 1 (cyan, magenta, white): the logo keeps its
   magenta. The game in palette 0 (green, red, yellow): the field's red.
   The palette is chosen through the BIOS (INT 10h AH=0Bh) at each switch.
-- The enemies all red (by their codes), so red is danger and green and
-  yellow are players.
-- Player 1 green, player 2 yellow; players 3 and 4 the same colours
-  hollow (each block of the figure with its centre cut out: rows 2 and 6,
-  columns 2 and 6), their status-line marks (the digit, the figure
-  icon) inverse.
+- Solid is a player, textured an enemy. Player 1 green, player 2
+  yellow; players 3 and 4 the same colours hollow (each block of the
+  figure with its centre cut out: rows 2 and 6, columns 2 and 6), their
+  status-line marks (the digit, the figure icon) inverse; the text always
+  solid.
+- The enemies' four colours (8 types: two shapes, four colours each, an
+  enemy cycling through them) as checkerboards of two palette colours,
+  by their codes (C0-DFh): red solid (red and black would look like the
+  pillars), magenta olive (red and green), cyan lime (green and yellow),
+  yellow dim yellow (yellow and black). A checkerboard is two masks, a
+  row's parity choosing, as cheap as a solid colour.
+- The bombs (60-7Fh, both halves) red and yellow: the game's blue would
+  be palette 0's green, player 1's. Fire solid yellow.
+- On the title the legend's figures (the mosaic glyphs, found at the
+  start: every pixel in four 3 x 3 blocks, each full or empty) textured
+  the same way in palette 1: dim magenta, magenta, dim cyan, pink.
+
+A first version made every enemy red; the variety was asked for and
+chosen from a mockup of a composite frame (the enemy in its four
+colours, both shapes, two bombs). Dithering the players had been tried
+and dropped (the status line could not match).
 
 Tested: every hash equal (dm4, coop4) on DOSBox-X's `machine=cga`; the
 play test passes; the title, a deathmatch and a co-op frame look as the

@@ -16,10 +16,13 @@
  * the odd ones at B800:2000, 80 bytes a line; a glyph's row is one word,
  * each bit two (cga_expand), masked to the colour. The title in palette 1
  * (cyan, magenta, white: the logo keeps its magenta), the game in palette
- * 0 (green, red, yellow: the field's red); the enemies all red, so that
- * red is danger and green and yellow are players: 1 green, 2 yellow, 3 and
- * 4 the same colours hollow (each block of the figure with its centre
- * cut out) and their status-line marks inverse.
+ * 0 (green, red, yellow: the field's red). Solid is a player, textured an
+ * enemy: the players 1 green, 2 yellow, 3 and 4 the same colours hollow
+ * (each block of the figure with its centre cut out), their status-line
+ * marks inverse; the enemies' four colours as checkerboards of two
+ * (red solid, olive, lime, dim yellow), the bombs red and yellow (the
+ * game's blue would be green: player 1's); the text always solid. On the
+ * title the legend's figures (mosaic glyphs) textured the same way.
  *
  * Time: the timer chip's channel 0 at about 1 kHz (the BIOS's own 18.2 Hz
  * tick still called on time), a game frame being 60 of its ticks; finer
@@ -324,21 +327,35 @@ static uint8_t cga;                       /* the adapter is a CGA: mode 4 */
 static uint16_t cga_expand[256];          /* a glyph row: each bit as a 2-bit pixel, the two bytes in memory order */
 static const uint8_t cga_game_map[16] = {0, 1, 2, 2, 1, 1, 3, 3,   1, 3, 1, 3,   3, 3, 1, 1};   /* palette 0: green, red, yellow */
 static const uint8_t cga_title_map[16] = {0, 1, 2, 2, 1, 1, 3, 3,  3, 1, 2, 3,   3, 3, 1, 1};   /* palette 1: cyan, magenta, white */
+/* the figures' colours, by the game's colour: two palette colours in a checkerboard (both the same: solid) */
+static const uint8_t cga_game_fig[16][2] = {   /* palette 0: the bombs (blue) red+yellow; the enemies red, olive, lime, dim yellow */
+  {0, 0}, {2, 3}, {2, 2}, {1, 2}, {1, 1}, {1, 3}, {3, 0}, {3, 3}, {1, 1}, {3, 3}, {1, 1}, {3, 3}, {3, 3}, {3, 3}, {1, 1}, {1, 1}};
+static const uint8_t cga_title_fig[16][2] = {  /* palette 1: the legend: red dim magenta, magenta, cyan dim cyan, yellow pink */
+  {0, 0}, {2, 3}, {2, 0}, {2, 2}, {1, 1}, {1, 0}, {3, 2}, {3, 3}, {3, 3}, {1, 1}, {2, 2}, {3, 3}, {3, 3}, {3, 3}, {1, 1}, {1, 1}};
+static uint16_t cga_pair[4][4][2];        /* the masks of a checkerboard of colours a, b: [a][b][row parity] */
+static uint8_t glyph_mosaic[256 / 8];     /* a bit a glyph: a mosaic figure (four 3 x 3 blocks, each full or empty) */
+#define CGA_FIGURE 0x80                   /* in cga_cell's colour: drawn with the figures' colours */
 
 static void cga_cell(uint8_t x, uint8_t y, uint8_t g, uint8_t col) {
   const uint8_t *s = amiga_glyphs + ((uint16_t)g << 3);
-  uint16_t mask = (uint16_t)(0x5555u * (title_mode ? cga_title_map : cga_game_map)[col & 15]);
-  uint8_t marked = !title_mode && (col == 10 || col == 11);   /* players 3 and 4 */
-  uint8_t hollow = marked && y < HUD_ROW, invert = marked && y == HUD_ROW;
   volatile uint16_t far *even = (volatile uint16_t far *)(vram + (uint16_t)y * 320 + x * 2);
   volatile uint16_t far *odd = (volatile uint16_t far *)(vram + 0x2000 + (uint16_t)y * 320 + x * 2);
-  uint8_t l, b;
+  uint16_t m[2];
+  uint8_t marked, hollow, invert, l, b;
+  if (title_mode && (glyph_mosaic[g >> 3] & (1 << (g & 7)))) col |= CGA_FIGURE;   /* the legend's figures */
+  if (col & CGA_FIGURE) {
+    const uint8_t *f = (title_mode ? cga_title_fig : cga_game_fig)[col & 15];
+    m[0] = cga_pair[f[0]][f[1]][0]; m[1] = cga_pair[f[0]][f[1]][1];
+  } else m[0] = m[1] = (uint16_t)(0x5555u * (title_mode ? cga_title_map : cga_game_map)[col & 15]);
+  col &= 15;
+  marked = (uint8_t)(!title_mode && (col == 10 || col == 11));   /* players 3 and 4 */
+  hollow = (uint8_t)(marked && y < HUD_ROW); invert = (uint8_t)(marked && y == HUD_ROW);
   for (l = 0; l < 8; l++) {
     b = s[l];
     if (hollow && (l == 2 || l == 6)) b &= (uint8_t)~0x22;   /* the blocks' centres: rows 2 and 6, columns 2 and 6 */
     if (invert) b = (uint8_t)~b;
-    if (l & 1) { *odd = cga_expand[b] & mask; odd += 40; }
-    else { *even = cga_expand[b] & mask; even += 40; }
+    if (l & 1) { *odd = cga_expand[b] & m[1]; odd += 40; }
+    else { *even = cga_expand[b] & m[0]; even += 40; }
   }
 }
 
@@ -409,7 +426,7 @@ void flush_screen(void) {
         if (a == shadow_vram[i]) continue;
         shadow_vram[i] = a;
         cell((uint8_t)(i % SCREEN_W), (uint8_t)(i / SCREEN_W), amiga_game_glyph[a],
-             cga && a >= C_ENEMY_BASE && a < C_FIRE ? 2 : amiga_game_colour[a]);   /* a CGA: every enemy red */
+             (uint8_t)(amiga_game_colour[a] | (cga && ((a >= C_ENEMY_BASE && a < C_FIRE) || (a & 0xe0) == C_BOMB_TILE) ? CGA_FIGURE : 0)));   /* bombs: 60-7Fh, both halves */
       }
     }
     for (i = HUD_ROW * SCREEN_W; i < SCREEN_CELLS; i++) {
@@ -528,6 +545,30 @@ void plat_init(void) {
       for (k = 0; k < 8; k++)                    /* pixel k: the first four in the first byte, the leftmost highest */
         if (b & (0x80 >> k)) w |= (uint16_t)(3u << ((k < 4 ? 0 : 8) + 6 - 2 * (k & 3)));
       cga_expand[b] = w;
+    }
+    {                                            /* the checkerboards: pixel k of an even row a's colour when k is even */
+      uint8_t a, c, par, k;
+      for (a = 0; a < 4; a++)
+        for (c = 0; c < 4; c++)
+          for (par = 0; par < 2; par++) {
+            uint16_t w = 0;
+            for (k = 0; k < 8; k++)
+              w |= (uint16_t)((uint16_t)(((k + par) & 1) ? c : a) << ((k < 4 ? 0 : 8) + 6 - 2 * (k & 3)));
+            cga_pair[a][c][par] = w;
+          }
+    }
+    for (b = 0; b < 79 && b < 256; b++) {         /* the mosaic glyphs: every pixel in the four blocks, each full or empty */
+      const uint8_t *gl = amiga_glyphs + (b << 3);
+      uint8_t y, ok = 1, any = 0, qy, qx;
+      for (y = 0; y < 8; y++) if (gl[y] & (uint8_t)~((y & 3) ? 0x77 : 0x00)) ok = 0;
+      for (qy = 1; qy < 8 && ok; qy += 4)
+        for (qx = 1; qx < 8 && ok; qx += 4) {
+          uint8_t n = 0, yy, xx;
+          for (yy = qy; yy < qy + 3; yy++) for (xx = qx; xx < qx + 3; xx++) if (gl[yy] & (0x80 >> xx)) n++;
+          if (n != 0 && n != 9) ok = 0;
+          if (n) any = 1;
+        }
+      if (ok && any) glyph_mosaic[b >> 3] |= (uint8_t)(1 << (b & 7));
     }
   } else {
   r.h.ah = 0; r.h.al = 0x0d; int86(0x10, &r, &r);
