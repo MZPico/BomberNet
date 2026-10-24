@@ -4,3 +4,4 @@ c/build/
 *.mzf
 *.tap
 __pycache__/
+.vscode/
