@@ -26,7 +26,11 @@ The first port to a processor other than the Z80, chosen before the C64
 4. **The network**: `tcp.h` over FujiNet `N:TCP`, emulated in a test harness;
    its cost per frame (the serial bus), lockstep and cross-play tests,
    production relay, FujiNet-PC. In progress, see below.
-5. **Hardware test, release.** Then the C64 on the same 6502 work.
+5. **Hardware test, release.** Then the C64 on the same 6502 work. The
+   network build ships with 0.3.0 untested on a real FujiNet (the emulated
+   chain is ten times slower than real time): the measured SIO cost makes a
+   match 5 to 18 % slow, which a real FujiNet is to confirm before the
+   background SIO is written.
 
 ## Step 0: the core on a 6502
 
@@ -296,9 +300,10 @@ So the JSON lines over SIO do not fit, not even for two. What was done:
 
 - **Binary input lines** (`NET_BINARY_INPUT`, the relay's `bin=1`, see
   `docs/net-protocol.md`): our line out is 12 bytes with its WebSocket
-  header, each other player's 9. The relay change is on staging only
-  (mz-catalog, committed locally); the reference relay has it too, and a
-  mixed room (the Atari binary, a Spectrum JSON) plays through it.
+  header, each other player's 9. The production relay has had it since
+  19 October 2026 (every machine with the software network device uses
+  it now); the reference relay has it too, and a mixed room (the Atari
+  binary, the MZ-800's card JSON) plays through it.
 - One status command a frame, not two: after a read that took all that was
   waiting, the next `tcp_recv` answers "nothing" without asking.
 - The command frame's t0 and t1 at their minimums by VCOUNT (about 0.8 ms

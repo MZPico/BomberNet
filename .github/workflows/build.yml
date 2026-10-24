@@ -72,7 +72,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: Atari XL/XE, script: build_atari.py, dir: atari }
+          - { name: Atari XL/XE, script: build_atari.py --net, dir: atari }   # the FujiNet network build is the release
           - { name: Commodore 64, script: build_c64.py, dir: c64 }
     steps:
       - uses: actions/checkout@v4

@@ -281,7 +281,7 @@ jobs:
           tools/ci/displays.sh
       - name: replay
         run: |
-          LLVM_MOS=$HOME/llvm-mos python3 tools/build_atari.py --test tests/recordings/dm4.bnr
+          LLVM_MOS=$HOME/llvm-mos python3 tools/build_atari.py --test tests/recordings/dm4.bnr   # the plain build: with CI's llvm-mos (v23.3.0) the network build has no room for a recording; the release's network build is linked by the build job
           tools/ci/retry.sh python3 tools/atari_test.py
           echo "- Atari replay: passed" >> "$GITHUB_STEP_SUMMARY"
       - if: failure()
