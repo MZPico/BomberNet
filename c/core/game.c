@@ -172,13 +172,21 @@ void tick_timer(ftimer_t *t) {
 /* tmr_explode and tmr_enemy_die are ticked by their users only (as in the
  * original 19A7h); ticking them here too made a single dying enemy never
  * reach the zero count that advances its animation. */
+/* The frame's start: the timers, the previous frame's picture to the screen,
+ * then the wait for the frame's tick. The flush comes before the wait, right
+ * after the logic that drew the picture: a key's effect is on the screen
+ * within the logic's and the flush's time. (Before 0.3.0 the wait came
+ * first and the picture after it, so a machine with time to spare idled
+ * between the logic and the picture: 20 to 28 ms on the MZ-800, 50 on a
+ * PC; docs/net-timing.md.) The replay tools count the flushes as the
+ * frames: the flush stays the first thing of a frame. */
 void tick_timers(void) {
   tick_timer(&tmr_player_anim);
   tick_timer(&tmr_enemy_move);
   tick_timer(&tmr_time);
-  plat_frame_sync();
   flush_screen();
   players_death_colour();
   hud_colours();
+  plat_frame_sync();
 }
 

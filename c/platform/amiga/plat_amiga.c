@@ -269,6 +269,9 @@ void plat_frame_sync(void) {                    /* 60 ms: 3 PAL frames, or 4,3,4
 #endif
   while (amiga_ticks - last_tick < need) WaitTOF();
   last_tick = amiga_ticks;
+#ifdef AMIGA_TEST
+  if (!title_mode) t_start = eclock();         /* the frame's work: from here to the next sync, the next flush included */
+#endif
   {                                       /* ESC on the title screen leaves the game: a new press (not one held from */
     static uint8_t esc_was;               /* cancelling a room code), on a frame nothing asked for typed keys */
     uint8_t esc;
@@ -381,7 +384,7 @@ void flush_screen(void) {
       test.bad = rec_pos;
     memcpy(replay_keys, rec + rec_pos, 4); rec_pos += 6;
   }
-  if (!title_mode) t_start = t_flush = eclock();
+  if (!title_mode) t_flush = eclock();
 #endif
   if (mode != title_mode) set_mode(title_mode);
   if (title_mode) {

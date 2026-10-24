@@ -204,6 +204,9 @@ void plat_frame_sync(void) {                    /* 60 ms: 3 PAL frames, or 4,3,4
 #endif
   while ((uint8_t)(c64_ticks - last_tick) < need) ;
   last_tick = c64_ticks;
+#ifdef C64_TEST
+  if (!title_mode) t_start = cycles();         /* the frame's work: from here to the next sync, the next flush included */
+#endif
 #ifdef C64_NETTIME
   f_end = cycles();
   if (!title_mode) c64_frames.idle += f_end - f_in;
@@ -266,7 +269,7 @@ void flush_screen(void) {
     return;
   }
 #ifdef C64_TEST
-  t_start = t_flush_start = cycles();
+  t_flush_start = cycles();
 #endif
   c64_flush_game();
 #ifdef C64_TEST
