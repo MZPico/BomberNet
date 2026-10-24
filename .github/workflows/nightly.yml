@@ -266,6 +266,7 @@ jobs:
     env:
       MZ800EMU: /home/runner/mz800emu/bin/mz800emu
       MZ800EMU_CFG: build/emucfg_net
+      MZ800EMU_LOG: build/mz800emu.log
     steps:
       - uses: actions/checkout@v4
       - name: toolchain versions
@@ -274,7 +275,7 @@ jobs:
         id: emu
         with:
           path: ~/mz800emu
-          key: mz800emu-${{ env.MZ800EMU_COMMIT }}-${{ env.SDL3_TAG }}-${{ env.SDL3_IMAGE_TAG }}-${{ env.MINIZIP_NG_COMMIT }}
+          key: mz800emu-2-${{ env.MZ800EMU_COMMIT }}-${{ env.SDL3_TAG }}-${{ env.SDL3_IMAGE_TAG }}-${{ env.MINIZIP_NG_COMMIT }}
       - name: mz800emu and its libraries (SDL3, SDL3_image, minizip-ng from source)
         run: |
           sudo apt-get update -q       # on every run: the cached mz800emu links against these
@@ -301,7 +302,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$P" -DMZ_BUILD_MZ1500=OFF -DMZ_BUILD_MZ700_PAL=OFF \
             -DMZ_BUILD_MZ700_NTSC=OFF -DBUILD_TESTING=OFF > /tmp/build.log 2>&1
           cmake --build /tmp/emu/b > /tmp/build.log 2>&1
-          mkdir -p "$P/bin" && cp "$(find /tmp/emu/b -name mz800emu -type f -perm -u+x | head -1)" "$P/bin/"
+          rm -rf "$P/bin" && cp -r "$(dirname "$(find /tmp/emu/b -name mz800emu -type f -perm -u+x | head -1)")" "$P/bin"   # with its ui_resources
           ls -l "$P/bin"
       - name: the MZ-800 build, the relay
         run: |
@@ -320,5 +321,5 @@ jobs:
           tools/ci/retry.sh build/venv/bin/python tools/lockstep_test.py 300
           echo "- MZ-MZ match: passed" >> "$GITHUB_STEP_SUMMARY"
       - if: failure()
-        run: tail -50 build/relay.log || true
+        run: tail -50 build/relay.log build/mz800emu.log || true
 
