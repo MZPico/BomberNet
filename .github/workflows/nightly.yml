@@ -198,3 +198,59 @@ jobs:
       - if: failure()
         run: tail -50 build/relay.log || true; tail -30 build/amiga/fsuae.log || true
 
+  c64:
+    name: C64 in VICE
+    runs-on: ubuntu-24.04
+    if: github.event_name != 'pull_request' || github.event.action != 'labeled' || github.event.label.name == 'full-test'
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain versions
+        run: |
+          grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
+          echo "VICE_PATCH_HASH=$(sha256sum tools/c64/vice-3.9-bombernet.patch | cut -c1-16)" >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        id: sdk
+        with:
+          path: ~/llvm-mos
+          key: llvm-mos-${{ env.LLVM_MOS_VERSION }}
+      - name: llvm-mos SDK
+        if: steps.sdk.outputs.cache-hit != 'true'
+        run: |
+          curl -sSL -o /tmp/llvm-mos.tar.xz \
+            "https://github.com/llvm-mos/llvm-mos-sdk/releases/download/$LLVM_MOS_VERSION/llvm-mos-linux.tar.xz"
+          tar -xJf /tmp/llvm-mos.tar.xz -C ~
+      - uses: actions/cache@v4
+        id: vice
+        with:
+          path: ~/vice-dist
+          key: vice-${{ env.VICE_VERSION }}-${{ env.VICE_PATCH_HASH }}
+      - name: VICE, headless, with the BomberNet patch (monitor keys, WiC64 firmware timing, the Ultimate's network)
+        if: steps.vice.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q build-essential pkg-config xa65 dos2unix libcurl4-openssl-dev flex bison
+          curl -sSL -o /tmp/vice.tar.gz "https://sourceforge.net/projects/vice-emu/files/releases/vice-$VICE_VERSION.tar.gz/download"
+          tar -xzf /tmp/vice.tar.gz -C /tmp
+          cd /tmp/vice-$VICE_VERSION && patch -p1 < "$GITHUB_WORKSPACE/tools/c64/vice-3.9-bombernet.patch"
+          ./configure --prefix="$HOME/vice-dist" --enable-headlessui --disable-html-docs --disable-pdf-docs \
+            --without-alsa --without-pulse --without-oss --without-evdev --with-libcurl > /dev/null
+          make -j4 > /dev/null && make install > /dev/null
+          ls ~/vice-dist/bin
+      - name: the relay
+        run: tools/ci/relay.sh
+      - name: replay
+        run: |
+          export VICE=$HOME/vice-dist/bin/x64sc LLVM_MOS=$HOME/llvm-mos
+          python3 tools/build_c64.py --test tests/recordings/dm4.bnr
+          tools/ci/retry.sh build/venv/bin/python tools/c64_test.py
+          echo "- C64 replay: passed" >> "$GITHUB_STEP_SUMMARY"
+      - name: match, WiC64 (the firmware's timing) and the Ultimate's network
+        run: |
+          export VICE=$HOME/vice-dist/bin/x64sc LLVM_MOS=$HOME/llvm-mos
+          CFLAGS_C64=-DC64_NETTIME python3 tools/build_c64.py --out build/c64nt
+          WIC64_FW_TIMING=1 tools/ci/retry.sh build/venv/bin/python tools/c64_match.py 30
+          C64_NET=uci tools/ci/retry.sh build/venv/bin/python tools/c64_match.py 30
+          echo "- C64-C64 matches (WiC64, Ultimate): passed" >> "$GITHUB_STEP_SUMMARY"
+      - if: failure()
+        run: tail -50 build/relay.log || true
+
