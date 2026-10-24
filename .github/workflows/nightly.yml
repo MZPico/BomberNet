@@ -310,7 +310,9 @@ jobs:
           echo "LD_LIBRARY_PATH=$HOME/mz800emu/lib:$HOME/mz800emu/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
           docker pull -q "$Z88DK_IMAGE"
           export PATH="$PWD/tools/ci/z88dk:$PATH"
-          mkdir -p build/c && (cd build/c && cmake ../../c > /dev/null && make)
+          for p in mz:c zx:zx cpc:cpc; do
+            mkdir -p build/${p#*:} && (cd build/${p#*:} && cmake -DPLATFORM=${p%%:*} ../../c > /dev/null && make)
+          done
           mkdir -p build/emucfg_net && cp tools/ci/emucfg_net/mz800emu.ini build/emucfg_net/
           tools/ci/displays.sh
           tools/ci/relay.sh
@@ -322,6 +324,13 @@ jobs:
         run: |
           tools/ci/retry.sh build/venv/bin/python tools/lockstep_test.py 300
           echo "- MZ-MZ match: passed" >> "$GITHUB_STEP_SUMMARY"
+      - name: cross-play, the MZ with the Spectrum and the CPC (Python emulators)
+        run: |
+          build/venv/bin/pip install -q "zx==$ZX_EMU_VERSION" "z80==$Z80_EMU_VERSION" numpy pillow
+          for pair in "mz zx" "zx mz" "mz cpc" "cpc zx"; do
+            echo "== $pair"; tools/ci/retry.sh build/venv/bin/python tools/crossplay.py 300 $pair | tail -3
+            echo "- cross-play $pair: passed" >> "$GITHUB_STEP_SUMMARY"
+          done
       - if: failure()
         run: tail -n 50 build/relay.log build/mz800emu.log || true
 
