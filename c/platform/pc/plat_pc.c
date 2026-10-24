@@ -778,14 +778,18 @@ void flush_screen(void) {
     if (title_mode || frame_no % 16 == 1)  /* the map: on the hashed frames' lines (what the tools compare) */
       for (i = 0; i < SCREEN_CELLS; i++) log_hex(map_layer[i]);
     else log_s("none");
-    log_s(" ms "); log_dec(now()); log_s(" tx "); log_dec(pc_modem_tx); log_s(" rx "); log_dec(pc_modem_rx); log_s("\n");
+    log_s(" ms "); log_dec(now()); log_s(" tx "); log_dec(pc_modem_tx); log_s(" rx "); log_dec(pc_modem_rx);
+    { extern uint8_t net_adapt_seen[]; log_s(" seen "); log_hex(net_adapt_seen[0]); log_hex(net_adapt_seen[1]); }
+    log_s("\n");
     if (!(++every & 31)) log_out();
   } else if (netlog && now() - stall_at > 2000) {   /* the game stood still 2 s: the network's state, written at once */
     char d[240];
     void pkt_debug(char *out);
     stall_at = now();
     pkt_debug(d);
-    log_s("stall frame "); log_dec(frame_no); log_s(" delay "); log_dec(net_delay); log_s(" ms "); log_dec(now()); log_s(" "); log_s(d); log_s("\n");
+    log_s("stall frame "); log_dec(frame_no); log_s(" delay "); log_dec(net_delay); log_s(" ms "); log_dec(now());
+    { extern uint8_t net_adapt_seen[]; log_s(" seen "); log_hex(net_adapt_seen[0]); log_hex(net_adapt_seen[1]); }
+    log_s(" "); log_s(d); log_s("\n");
     log_out();
   }
 #endif

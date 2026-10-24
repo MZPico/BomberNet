@@ -18,9 +18,10 @@ uint8_t net_total = 2;
  * at most three, so the last byte (ADAPT_BYTE) is never dealt to a player
  * and carries the delay's business instead:
  *  - a joiner: its last window's figures, ADAPT_VALID | waits << 4 |
- *    (margin + 1). The margin is the fewest frames the others' keys were
- *    early by (avail - frame when it first asks; -1 when it had to wait, up
- *    to 6), the waits how many of the window's frames it waited in (up to 7);
+ *    (margin + 1). The margin is the second fewest frames the others' keys
+ *    were early by (avail - frame when it first asks; -1 when it had to
+ *    wait, up to 6): one late frame in a window is left out, two count. The
+ *    waits are how many of the window's frames it waited in (up to 7);
  *  - the host (slot 0): the room's delay, 1..NET_DELAY_MAX.
  * Every machine sends its own keys net_delay frames ahead and takes the
  * host's figure as soon as it sees it: one frame's keys sent twice to go up,
@@ -37,13 +38,18 @@ uint8_t net_total = 2;
  *  - up one frame when every machine waited in ADAPT_WAITS or more frames
  *    (a machine faster than the others waits a little every frame whatever
  *    the delay, so only everybody waiting means the delay is short), but
- *    never more than one frame above the lobby's figure: losses stall the
- *    game whatever the delay, and climbing on them only adds lag (a lossy
- *    test link took it to 8 frames, 480 ms);
+ *    never above the lobby's figure, which counts the polling at both ends
+ *    and is pessimistic already: so a match is never slower than the lobby
+ *    made it. Losses, and a machine too slow for the pace (a browser that
+ *    has just started), make everybody wait whatever the delay, and
+ *    climbing on them only adds lag (a lossy test link took it to 8 frames,
+ *    480 ms; the play page's slow start from 5 to 6);
  *  - down one frame when the smallest and the largest margin together are
  *    ADAPT_SLACK frames or more, in two windows running (with two machines
  *    their margins add up to 2 x delay - round trip, and one frame less
- *    takes 2 from that), and not within ADAPT_HOLD windows of going up. */
+ *    takes 2 from that; a machine that waited counts -1: counted as 0, a
+ *    PC - PC test went down to 1 and both waited at once), and not within
+ *    ADAPT_HOLD windows of going up. */
 #define ADAPT_BYTE   (NET_BYTES - 1)
 #define ADAPT_VALID  0x80
 #define ADAPT_WINDOW 32               /* frames, about 2 s */
@@ -51,23 +57,29 @@ uint8_t net_total = 2;
 #define ADAPT_SLACK  2
 #define ADAPT_HOLD   4
 static uint8_t ahead;                 /* our keys went out up to net_frame + ahead (8-bit: small code on the Z80) */
-static uint8_t w_min, w_waits;        /* this window: the smallest margin + 1, the frames waited in */
+static uint8_t w_min, w_min2, w_waits;   /* this window: the smallest margin + 1, the second smallest, the frames waited in */
 static uint8_t report;                /* our ADAPT_BYTE */
 static uint8_t low_windows, hold;     /* host: windows running with room to go down; windows left before it may */
-static uint8_t ceiling;               /* host: the lobby's delay + 1, the highest it goes */
+static uint8_t ceiling;               /* host: the lobby's delay, the highest it goes */
+#ifdef NET_ADAPT_TRACE
+uint8_t net_adapt_seen[NET_SLOTS];    /* tests: the host's last figures per slot (its own in slot 0) */
+#endif
 
 /* the window's end: a joiner's figures out, the host's decision (statics and
  * no shifts by a variable: small code on the Z80) */
 #ifndef PLAT_NET_FOLLOW_ONLY
 static void adapt_window(const uint8_t *k) {
   static uint8_t v, lo, hi, busy, n, s;
-  v = (uint8_t)(ADAPT_VALID | w_min | (w_waits > 7 ? 0x70 : w_waits << 4));   /* our own figures */
-  w_min = 7; w_waits = 0;
+  v = (uint8_t)(ADAPT_VALID | w_min2 | (w_waits > 7 ? 0x70 : w_waits << 4));   /* our own figures: one late frame left out */
+  w_min = w_min2 = 7; w_waits = 0;
   if (net_slot) { report = v; return; }
 #ifndef PLAT_NET_NO_ADAPT
   lo = 7; hi = 0; busy = 1; n = 0;
   for (s = 0; s < NET_SLOTS; s++, k += NET_BYTES) {   /* every slot with figures; slot 0 is ours */
     if (s) v = k[ADAPT_BYTE];
+#ifdef NET_ADAPT_TRACE
+    net_adapt_seen[s] = v;
+#endif
     if (!(v & ADAPT_VALID)) continue;               /* an empty slot, an older build, no window yet */
     n++;
     v &= 0x7f;                                      /* waits << 4 | margin + 1 */
@@ -104,9 +116,9 @@ void net_match_start(void) {
   net_active = 1;
   for (f = 0; f < net_delay; f++) net_send(f, none);   /* nobody moves in the first steps */
   ahead = (uint8_t)(net_delay - 1);
-  w_min = 7; w_waits = 0; low_windows = 0; hold = 1;   /* the first window is the start's */
+  w_min = w_min2 = 7; w_waits = 0; low_windows = 0; hold = 1;   /* the first window is the start's */
 #ifndef PLAT_NET_NO_ADAPT
-  ceiling = net_delay < NET_DELAY_MAX ? (uint8_t)(net_delay + 1) : NET_DELAY_MAX;
+  ceiling = net_delay;
 #endif
   report = net_slot == 0 ? net_delay : 0;
 }
@@ -132,13 +144,14 @@ void net_lockstep_poll(void) {
 #ifndef PLAT_NET_FOLLOW_ONLY
       if (!tries) {                               /* in time: frames early + 1 (the low bytes do: under 16 apart) */
         i = (uint8_t)((uint8_t)avail - (uint8_t)net_frame + 1);
-        if (i < w_min) w_min = i;
+        if (i < w_min) { w_min2 = w_min; w_min = i; }
+        else if (i < w_min2) w_min2 = i;
       }
 #endif
       break;
     }
 #ifndef PLAT_NET_FOLLOW_ONLY
-    if (!tries) { w_min = 0; w_waits++; }          /* it waits */
+    if (!tries) { w_min2 = w_min; w_min = 0; w_waits++; }   /* it waits */
 #endif
     if (++tries > 4) {
       net_waiting = 1;

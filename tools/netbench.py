@@ -7,6 +7,7 @@
       zx     ZX Spectrum 48K, current build (build/zx), FuseX with a Spectranet
   tools/netbench.py HOST JOIN [runs] --prod   both local, through the production relay,
       each through its own logging proxy (tools/netproxy.py)
+  STAGING=1 ...                          the same against staging.mzpico.com (its relay and play page)
   tools/netbench.py HOST web [runs]       HOST plays the MZ-800 on the mzpico.com
       play page (Chromium on Xvfb :97, tools/web_join.mjs) through the
       production relay; a logging proxy next to HOST (tools/netproxy.py) times
@@ -253,7 +254,13 @@ def chromium():
     sys.exit('Chromium did not come up')
 
 
-def connect_ms(host='api.mzpico.com', n=7):
+STAGING = os.environ.get('STAGING') == '1'       # STAGING=1: staging.mzpico.com's relay and play page instead
+PROD_HOST = 'staging.mzpico.com' if STAGING else 'api.mzpico.com'
+WEB_BASE = 'https://staging.mzpico.com/play/bombernet/' if STAGING else 'https://mzpico.com/play/bombernet/'
+
+
+def connect_ms(host=None, n=7):
+    host = host or PROD_HOST
     """TCP connect times: the bare round trip to the relay's edge."""
     v = []
     for _ in range(n):
@@ -270,7 +277,7 @@ def prod_machine(kind, role):
     port, log = free_port(), os.path.join(ROOT, 'build', f'proxy_{role}.jsonl')
     open(log, 'w').close()
     proxy = subprocess.Popen([sys.executable, os.path.join(HERE, 'netproxy.py'), 'ws' if kind == 'zx' else 'lines',
-                              str(port), log])
+                              str(port), log, PROD_HOST])
     time.sleep(1)
     if kind == 'zx':
         m = ZX(kind, port=port)
@@ -341,7 +348,7 @@ def run_prod(hk, jk):
             lobby_to = time.monotonic()
             join.tap()
         else:
-            web = subprocess.Popen([NODE, os.path.join(HERE, 'web_join.mjs'), code.decode(), str(LOBBY_S), str(GAME_S + 8)],
+            web = subprocess.Popen([NODE, os.path.join(HERE, 'web_join.mjs'), code.decode(), str(LOBBY_S), str(GAME_S + 8), WEB_BASE],
                                    stdout=subprocess.PIPE, text=True)
             lines = []
 

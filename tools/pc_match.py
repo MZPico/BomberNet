@@ -142,7 +142,10 @@ if __name__ == '__main__':
         print('join slot', join.state().get('slot'), flush=True)
         time.sleep(4)
         for _ in range(12):                                   # ready: the joiner, then the host, until both are in the game
-            join.tap(); time.sleep(0.6); host.tap(); time.sleep(0.6)
+            if join.state().get('title') != '0': join.tap()     # a press in the game drops a bomb (the player dies at about frame 90)
+            time.sleep(0.6)
+            if host.state().get('title') != '0': host.tap()
+            time.sleep(0.6)
             for _ in range(8):
                 if host.state().get('title') == '0' and join.state().get('title') == '0': break
                 time.sleep(0.5)

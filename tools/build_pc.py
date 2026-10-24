@@ -32,7 +32,7 @@ if '--test' in sys.argv:
 if '--play' in sys.argv: flags.append('-dPC_PLAYTEST')   # tools/pc_play.py: a 4-player deathmatch preset, the players logged
 if '--net' in sys.argv:                                  # tools/pc_match.py, tools/crossplay.py: host (or join) a room on SPACE, the room's state logged
     i = sys.argv.index('--net')
-    flags += [f'-dPC_NETTEST={1 if sys.argv[i + 1] == "host" else 2}', f'-dPC_NETTEST_PLAYERS={os.environ.get("PLAYERS", 2)}',
+    flags += ['-dNET_ADAPT_TRACE', f'-dPC_NETTEST={1 if sys.argv[i + 1] == "host" else 2}', f'-dPC_NETTEST_PLAYERS={os.environ.get("PLAYERS", 2)}',
               f'-dPC_NETTEST_LOCAL={os.environ.get("LOCAL", 1)}']
 c = os.path.join(ROOT, 'c')
 src = [f'{c}/core/{n}.c' for n in ('bomber', 'netplay', 'data', 'map', 'game', 'input', 'video', 'enemy', 'bomb', 'player')]

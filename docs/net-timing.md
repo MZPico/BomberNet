@@ -188,9 +188,11 @@ every machine sees:
 - Each slot's input has NET_BYTES = 4 bytes, one per local player, and there
   are at most three: the fourth is never dealt to a player. A joiner puts
   its last window's figures there (32 frames, about 2 s): how many frames it
-  waited in, and its smallest margin, `avail - frame` when it first asks
-  for a frame (-1 when it had to wait). The host puts the room's delay
-  there.
+  waited in, and its second smallest margin, `avail - frame` when it first
+  asks for a frame (-1 when it had to wait): one late frame in a window is
+  left out (with the smallest, one jitter of DOSBox's emulated network a
+  window kept a PC - PC match at 2 for good), two count. The host puts the
+  room's delay there.
 - Every machine sends its own keys `net_delay` frames ahead and takes the
   host's figure when it sees it: one frame's keys sent twice to go up, one
   send left out to go down. Every key carries its frame number, so the
@@ -199,11 +201,17 @@ every machine sees:
   margin together are 2 frames or more, two windows running. With two
   machines the margins add up to 2 x delay - round trip, and the faster
   machine's is about 0 (it waits a little every frame whatever the delay),
-  so the sum is the room's slack; one frame less takes 2 from it.
+  so the sum is the room's slack; one frame less takes 2 from it. A
+  machine that waited counts -1 in the sum: counted as 0 (the faster one
+  only held back), a PC - PC match went down to 1, both sides waited at
+  once, and it took two raises to recover.
 - It raises the delay by one when every machine waited in 6 or more of the
-  window's 32 frames, but never more than one frame above the lobby's
-  figure. Losses stall the game whatever the delay: on a test link losing
-  one segment in seven, an uncapped rule climbed to 8 frames (480 ms).
+  window's 32 frames, but never above the lobby's figure: a match is never
+  slower than the lobby made it. Losses, and a machine too slow for the
+  pace, make everybody wait whatever the delay: on a test link losing one
+  segment in seven an uncapped rule climbed to 8 frames (480 ms), and on
+  the staging play page, a browser just started (9.7 frames a second for
+  a while), a cap of the lobby's 5 + 1 still went to 6.
 - Older builds send 0 there (no figures) and ignore the byte. The host
   decides only from two or more slots with figures, so in a room of two
   with an older build the delay stays as the lobby set it. **The play page
@@ -228,7 +236,8 @@ every machine sees:
 | Test | Delay over the match | Hashes |
 |---|---|---|
 | PC - PC, Ethernet, lobby gave 3 | 3, then 2, then 1, on both | equal |
-| PC - PC, one segment in 7 lost out, 1 in 9 in, lobby gave 5 | 5, then 6 (the cap); 12.2 frames a second | equal |
+| PC - PC, Ethernet, 3 more runs (final rule) | 2 then 1; 2 kept (margins 1 and 0); 1 kept | equal |
+| PC - PC, one segment in 7 lost out, 1 in 9 in, lobby gave 5 | 5, then 6 (the cap then, lobby + 1); 12.2 frames a second | equal |
 | MZ - Spectrum, cross-play (Z80 code) | 1 | equal, fields identical |
 | MZ - Spectrum, real time, each as host | 1 | |
 | two C64s on WiC64s (the firmware's timing) | 1; 16.1 frames a second | equal |
@@ -236,6 +245,7 @@ every machine sees:
 | MZ host - Spectrum, production relay, 3 runs | 2 at the end of each; host waited in 1.8 % of frames | |
 | new 48K Spectrum host - 0.2.0 joiner, and 0.2.0 host - new joiner | 1 / 2 (0.2.0's own minimum), 2 | equal |
 | new MZ host - the play page (0.2.0), production, 2 runs | 2, unchanged (no figures from the page) | |
+| new MZ host - the staging play page (the new build), 4 runs | 2 from the lobby, kept: the page's keys came 0 frames early, no room for 1 | |
 
 Through the production relay from here a round trip is about 130 ms, so
 120 ms is the floor for lockstep; 60 ms needs a round trip under about

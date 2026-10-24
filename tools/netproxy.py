@@ -27,7 +27,7 @@ def note(direction, text):
     except ValueError: m = {}
     log.write(json.dumps({'t': round(time.monotonic(), 6), 'wall': round(time.time(), 3), 'dir': direction,
                           'op': m.get('op'), 'frame': m.get('frame'), 'slot': m.get('slot'),
-                          'from': m.get('from'), 'data': m.get('data') if m.get('op') == 'msg' else None,
+                          'from': m.get('from'), 'data': m.get('data') if m.get('op') in ('msg', 'input') else None,
                           'code': m.get('code')}) + '\n')
 
 
