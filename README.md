@@ -1,221 +1,72 @@
 # BomberNet
 
-Bomberman for 8-bit computers, with network play. BomberNet is Hudson Soft's
-1983 Bomber Man for the Sharp MZ-700, taken apart, ported to C and rebuilt for
-up to four players: cooperative or deathmatch, on one keyboard, on joysticks,
-and over the internet. A Sharp MZ-800, a ZX Spectrum and the browser player on
-mzpico.com meet in the same room and play the same field frame for frame.
+**Bomberman for the classic home computers, with network play.**
 
-Version 0.2.0 (tag `v0.2.0`, shown at the bottom of the title screen).
+BomberNet is Hudson Soft's 1983 *Bomber Man* for the Sharp MZ-700, rebuilt
+for up to four players: together against the monsters or against each other,
+on one keyboard, with joysticks, or over the internet. It runs on the Sharp
+MZ-800, the ZX Spectrum, the Amstrad CPC, the Atari XL, the Commodore 64, the
+Amiga, the Atari ST, the IBM PC and in your browser, and all of them can meet
+in one match.
 
-![Sharp MZ-800: title](docs/img/mz-title.png) ![Sharp MZ-800: coop](docs/img/mz-coop.png)
-![ZX Spectrum: title](docs/img/zx-title.png) ![ZX Spectrum: deathmatch](docs/img/zx-deathmatch.png)
+![Title screen](docs/img/mz-title.png)
 
-## Play
+**[Play it in your browser](https://mzpico.com/play/bombernet/)**, or
+download it for your machine from the
+**[releases page](https://github.com/MZPico/BomberNet/releases)**.
 
-| Machine | File | Network play with |
-|---|---|---|
-| Browser | [mzpico.com/play/bombernet](https://mzpico.com/play/bombernet/) (an emulated MZ-800) | built in |
-| Sharp MZ-700/800 | `bombernet-<version>-mz800.mzf` ([catalog page](https://mzpico.com/titles/bombernet/)) | an MZPico with the NET extension; or a Unicard with NET firmware on a LAN (see Network) |
-| ZX Spectrum 48K or larger | `bombernet-<version>-zx-spectrum-48k.tap` (`LOAD ""`) | a Spectranet or Spectranext |
+## The game
 
-The files for every machine are on the [releases page](https://github.com/MZPico/BomberNet/releases) and the catalog page.
+Walk the maze, drop bombs, and blow up the walls and everything else in the
+blast, your own player included.
 
-**Title menu.** UP/DOWN selects a row, LEFT/RIGHT changes it, SPACE starts.
-Rows: MODE (COOP or DEATHMATCH), NETWORK (OFF, HOST, JOIN; greyed out without
-a network device), PLAYERS (1 to 4 in total), LOCAL (in a network game: how
-many of them sit at this machine), JOYSTICK (the stick interface), then one
-row per local player choosing its input. Deathmatch has no monsters, players start
-in the corners, the first to win 3 rounds wins the match, a kill scores 100.
+- **Co-op**: one to four players work through the stages together, clearing
+  out the monsters.
+- **Deathmatch**: no monsters, the players start in the corners. The last one
+  standing wins the round, and the first to win three rounds wins the match.
 
-| | Sharp MZ | ZX Spectrum |
-|---|---|---|
-| Keys | cursor keys and SPACE; W A S D and E | Q A O P and SPACE (M when two share the keyboard); Sinclair stick keys 6 7 8 9 0 and 1 2 3 4 5 |
-| Joysticks | MZ-800 sticks (ports F0h/F1h), MZ-1X03 | Kempston, Fuller, Cursor (keys 5 to 8 and 0) |
-| Cancel | BREAK | BREAK (CAPS SHIFT + SPACE) |
+Up to four people play on one machine, sharing the keyboard and the
+joysticks, or on several machines over the network, in any mix.
 
-**Network play.** One player chooses HOST: the game creates a room and shows
-its four-letter code, which the others need to get by any other means
-(message, phone). They choose JOIN and type the code. The host's PLAYERS row
-is the total; each machine's LOCAL row says how many of them play there, so
-any mix of local and remote players works. In the lobby everybody presses
-SPACE when ready, the host last. The input delay (DELAY in the lobby, 120 ms
-on most links) is measured before the match. A desync or a lost player ends
-the match with a message.
+![Co-op, four players](docs/img/mz-coop4.png)
+![Deathmatch, four players](docs/img/mz-deathmatch.png)
 
-## Building
+## Machines
 
-Z80 builds use z88dk (`sccz80`, `z88dk.zcc`, e.g. the snap package) and CMake;
-`-DPLATFORM` selects the machine (default `mz`).
-
-```
-mkdir -p build/c  && cd build/c  && cmake ../../c && make                  # -> build/c/bomber.mzf
-mkdir -p build/zx && cd build/zx && cmake -DPLATFORM=zx ../../c && make    # -> build/zx/bomber.tap
-mkdir -p build/zx128 && cd build/zx128 && cmake -DPLATFORM=zx128 ../../c && make   # -> 128K + ESP-01: bomber.tap (in progress)
-mkdir -p build/cpc && cd build/cpc && cmake -DPLATFORM=cpc ../../c && make  # -> build/cpc/bomber.cpc, bomber.dsk (in progress)
-tools/build_host.sh && c/build/sim 30000 2                                 # the game on a PC (key bot)
-tools/build_amiga.py --adf                                                 # -> build/amiga/bomber, bombernet.adf (bebbo's gcc in Docker)
-tools/build_st.py --st                                                     # -> build/st/BOMBER.PRG, bombernet.st (m68k-atari-mint-gcc)
-tools/build_pc.py --img                                                    # -> build/pc/BOMBER.EXE, bombernet.img (OpenWatcom v2)
-tools/build_web.py                                                         # -> build/web/bombernet.html, .js, .wasm (Emscripten)
-```
-
-The MZ build uses the environment of the MZPico-800-Manager (`+mz` target,
-`REGISTER_SP=0xd000`, output renamed to `.mzf`); the Spectrum build loads at
-24000 and keeps its hot code above the contended RAM.
-
-## Code structure
-
-```
-c/core/       the game, identical everywhere: no hardware addresses, no assembly
-c/common/     shared building blocks: network devices, Z80 assembly loops
-c/platform/   one directory per machine: mz, zx, host (the PC simulator)
-```
-
-| path | content |
+| Machine | For network play you need |
 |---|---|
-| `c/core/game.h` | constants, records (`player_t`, `enemy_t`, `bomb_t`, `ftimer_t`), globals, prototypes, `GAME_VERSION`, `BUILD_ID` (bump on any change of the simulation or the protocol) |
-| `c/core/platform.h` | **what a port implements**: key sets, joysticks, text-entry key, frame sync, tone, screen flush, player colour, menu texts naming the machine's keys; optional assembly versions of core loops |
-| `c/core/netdev.h` | **the network as ten calls**: status, create, join, leave, ready, send, poll, hash, message send and receive |
-| `c/core/bomber.c` | title and menu, lobby, stage life cycle, status line, frame order as in the original main loop |
-| `c/core/netplay.c` | the lockstep match over the network device |
-| `c/core/input.c`, `video.c` | input sampled once per frame; layers, 2x2 tiles, digits and text |
-| `c/core/map.c`, `enemy.c`, `bomb.c`, `player.c` | stage layout, enemies, bombs and blast, players |
-| `c/core/data.c/.h` | generated by `tools/extract_data.py` from `bomber.mzf`: logo (`tools/make_logo.py`), blast pattern, strings |
-| `c/common/netdev_card.c`, `uc.h` | the network device as a Unicard-compatible card (MZPico NET extension, Unicard NET firmware): detection by the INFO feature bit, the ten calls as card commands |
-| `c/common/netdev_soft.c`, `ws.c`, `tcp.h` | the network device in software, on the machine itself: room state, input window, messages, JSON lines over a small WebSocket client over any `tcp.h` |
-| `c/common/netdev_none.c` | the network device of a build without network |
-| `c/cpu/z80/` | faster Z80 versions of shared C (playfield copy, hash loop, text and digits, the network's input lines), used where `plat_config.h` asks; the C stays the reference (`docs/portability.md`) |
-| `c/platform/mz/` | Sharp MZ-700/800: keyboard matrix, joysticks, tones through the monitor, 8253 frame limiter, screen flush through the display-code tables; `uc_mz.c` is the card transport on ports 50h/51h |
-| `c/platform/zx/` | ZX Spectrum 48K: keys and joysticks, frame sync on the ROM's frame counter, beeper, the 6 x 8 pixel screen routine in assembly; `tcp_spectranet.c` is `tcp.h` over the Spectranet socket calls |
-| `c/platform/zx/bank6.c`, `tcp_bank6.c`, `tcp_esp01*.c` | the 128K build (`PLATFORM=zx128`, `docs/port-zx128-esp01.md`): the network driver in RAM bank 6 (the ESP-01's, by Milan Stava, or the Spectranet's), the game's `tcp.h` pages it in |
-| `c/platform/cpc/` | Amstrad CPC (port in progress, `docs/port-amstrad-cpc.md`): Mode 1 in four inks, cells rendered in advance from the MZ characters (`tools/make_cpc_tables.py`), keyboard and joysticks through the PPI, AY tones |
-| `c/platform/host/` | the PC: `sim.c` (the whole game with a key bot, recording, replay and a stub network card), `tcp_posix.c` and `softnet_test.c` (the software network device on a PC) |
-| `c/platform/*/tables.c/.h` | generated: logical cell codes to the machine's characters and colours (`tools/make_zx_tables.py` for the Spectrum) |
-| `c/platform/*/plat_config.h` | the platform's constants: text rows, joystick kinds, which assembly versions exist |
+| Browser (phone, tablet or computer) | nothing more |
+| Sharp MZ-800, MZ-700 | an [MZPico](https://mzpico.com/) with the NET extension |
+| ZX Spectrum 48K or larger | a Spectranet or Spectranext; on a 128K, an ESP-01 Wi-Fi module |
+| Amstrad CPC | an M4 board |
+| Atari XL/XE | a FujiNet |
+| Commodore 64 | a WiC64, or an Ultimate 64 / Ultimate-II+ |
+| Amiga (Kickstart 2.04 or later) | a network connection with a TCP/IP stack |
+| Atari ST, STE (1 MB, colour) | a Wi-Fi modem on the serial port |
+| IBM PC (DOS, CGA, EGA or VGA) | Ethernet with a packet driver, or a Wi-Fi modem |
 
-**Adding a machine** means a new `c/platform/<name>/` with `platform.h`
-implemented, a `plat_config.h`, character tables, and a network device: the
-card protocol if the machine has such a card, otherwise `netdev_soft.c` with a
-`tcp.h` for its network interface, or `netdev_none.c`. The core draws 40 x 25
-logical cells (rows 0..23 the field, row 24 the status line); a machine with
-24 text rows shows the status line on the bottom wall in its flush routine.
-Every machine must simulate the same frames: a frame is 60 ms, and recordings
-made on the PC replay on each build with identical state hashes.
-`docs/port-zx-spectrum.md` records how the Spectrum port was planned and
-measured.
+Every machine plays on its own without any of these.
 
-## Network
+## How to play
 
-| Device | Machine | Transport to the relay |
-|---|---|---|
-| MZPico, NET extension | Sharp MZ-800 | WebSocket from the card's firmware (WiFi), production relay |
-| Browser player | mzpico.com | the page's WebSocket, production relay |
-| Spectranet / Spectranext | ZX Spectrum 48K, 128K | WebSocket from the Spectrum itself (`netdev_soft.c`) |
-| ESP-01 (eLeMeNt ZX) | ZX Spectrum 128K | the same, over the ESP-01's AT commands |
-| M4 board | Amstrad CPC | the same, over the M4's sockets |
-| FujiNet | Atari XL/XE | the same, over FujiNet's N: device on SIO |
-| WiC64, or an Ultimate's own network | Commodore 64 | the same, over the WiC64's TCP commands or the Ultimate Command Interface (Ultimate 64, Ultimate-II+; enabled in its menu) |
-| any TCP/IP stack (Roadshow, AmiTCP, Miami, ...) | Amiga | the same, over `bsdsocket.library`; WinUAE and FS-UAE bring their own |
-| WiFi modem on the serial port (ESP8266, Hayes commands) | Atari ST | the same, over `ATDT host:port` at 19200 bps (in progress) |
-| Ethernet with a DOS packet driver, or a WiFi modem on COM1/COM2 | IBM PC (DOS) | the same, over our own small TCP/IP (DHCP, DNS) or `ATDT host:port` |
-| Unicard, NET firmware | Sharp MZ-800 | JSON lines over TCP: a self-hosted `relay/relay.py` (LAN), not the production relay |
+On the title screen, UP and DOWN choose a line, LEFT and RIGHT change it, and
+SPACE starts: the mode, the network (host or join), how many players, and for
+each player the keys or a joystick. The usual keys are the cursor keys and
+SPACE, or W A S D and E for a second player (Q A O P and SPACE on the
+Spectrum). BREAK, ESC or RUN/STOP leaves a match.
 
-The production relay is `ws://api.mzpico.com/net` (Cloudflare, one Durable
-Object per room). `relay/relay.py` is the reference relay for local tests and
-self-hosting: WebSocket on 8765, JSON lines over TCP on 8766
-(`RELAY_TCP_HOST=0.0.0.0` opens the TCP port to the LAN).
+## Network play
 
-```
-cd relay && uvicorn relay:app --host 0.0.0.0 --port 8765
-```
+1. One player chooses **HOST**. The game shows a four-letter **room code**.
+2. The others choose **JOIN** and type the code in.
+3. In the lobby everybody presses SPACE when ready, and the match begins.
 
-### A relay of your own
+Any machines can play together, each with one or more players at it.
 
-Every machine can play through a `relay/relay.py` on a LAN (the Unicard
-only there). Start it on a PC with both ports open to the LAN:
+## About
 
-```
-cd relay && RELAY_TCP_HOST=0.0.0.0 uvicorn relay:app --host 0.0.0.0 --port 8765
-```
+Made by [MZPico](https://mzpico.com/). The 128K Spectrum with an ESP-01 is
+Milan Stava's port. *Bomber Man* (C) 1983 Hudson Soft.
 
-Then point each machine at that PC (192.168.1.10 here):
-
-| Machine | Where the relay is set |
-|---|---|
-| IBM PC (DOS) | `BOMBER /RELAY=192.168.1.10` (the port 8765 unless given as `host:port`) |
-| ZX Spectrum, CPC, Atari, C64, Amiga, Atari ST | `tools/set_relay.py bomber.tap 192.168.1.10` rewrites the release file (`.tap`, `.dsk`, `.cpc`, `.xex`, `.prg`, `.d64`, the Amiga's executable or `.adf`, the ST's `.PRG` or `.st`; the port is 8765 unless given as `host:port`); without an address it shows the file's relay; `api.mzpico.com:80` sets production again |
-| MZ-800 with an MZPico | `mzpico.ini`: `[cloud]` `net_relay = 192.168.1.10`, `net_port = 8765` |
-| MZ-800 with a Unicard | `/unicard/network.cfg`: `NETRELAYADDR`, `NETRELAYPORT` (8766, the TCP port) |
-
-The browser player stays on mzpico.com's relay. On a LAN the input delay
-is the shortest one (2 frames).
-
-A match is lockstep: every frame each machine sends its keys for frame F + d
-and waits for everybody's keys of frame F. The host chooses d from the lobby's
-round trips (`ceil(rtt / 2)` frames of 60 ms, 2 to 8); hashes of the game state
-are compared every 16 frames. Protocol: `docs/net-protocol.md`. Timing
-measurements and the reasoning behind the delay rule: `docs/net-timing.md`.
-
-## Testing and tools
-
-| tool | what it checks |
-|---|---|
-| `c/build/sim` (`SIM_RECORD`, `SIM_REPLAY`) | records a bot session on the PC and replays it with a state hash per frame |
-| `tools/replay.py`, `tools/replay_zx.py` | the same recording on the MZ build (mz800emu) and the Spectrum build: identical hashes |
-| `tools/lockstep_test.py`, `tools/nettest.py` | two MZ-800s (mz800emu, MZPico card emulated) through the local relay |
-| `tools/lockstep_zx.py` | two Spectrums (`tools/zxemu.py`, Spectranet emulated at its programming interface) through the local relay or production |
-| `tools/replay_cpc.py`, `tools/lockstep_cpc.py` | the same recordings on the Amstrad CPC build; two CPCs with M4 boards (`tools/cpcemu.py`) through the local relay or production |
-| `tools/crossplay.py` | two different machines in one match: MZ-800, Spectrum, CPC, the 128K with its ESP-01 (`esp`), C64, Amiga, Atari ST, PC (`PC_NET=pkt`: over Ethernet), the browser build (`web`) |
-| `tools/st_test.py`, `tools/st_play.py`, `tools/st_match.py`, `tools/st_modem.py`, `tools/st_netplay.py` | the Atari ST build in Hatari: a recording replayed, the inputs and the sound, two STs in a match; a WiFi modem emulated on Hatari's serial port; the networked game in a window to play by hand |
-| `tools/pc_test.py`, `tools/pc_play.py`, `tools/pc_match.py` | the PC build in DOSBox-X: a recording replayed and timed, the inputs and the sound (speaker or FM), two PCs in a match (the modem, or `PC_NET=pkt` Ethernet) |
-| `tools/web_test.py`, `tools/web_match.py`, `tools/webpage.py` | the browser build: every recording replayed in Node.js, two browser tabs in a match (Chromium over its DevTools port), the tab driver |
-| `tools/fusex_match.py` | two FuseX with the real Spectranet firmware (`tools/fusex.py` drives FuseX through its GDB server) |
-| `tools/softnet_test.sh` | the software network device on a PC: two processes in one room |
-| `tools/set_relay.py` | not a test: points a release file (Spectrum, CPC, Atari, C64, Amiga) at another relay |
-| `tools/amiga_test.py`, `tools/amiga_play.py`, `tools/amiga_match.py`, `tools/amiga_icon_test.py` | the Amiga build in FS-UAE: a recording replayed (from `DH0:` or the ADF), the inputs played, two Amigas in a match, the icons and a start from Workbench |
-| `tools/test_portable.sh` | the PC simulator natively and on big-endian PowerPC (qemu), replaying `tests/recordings`: the core's byte-order check |
-| `tools/sim6502.py` | the core on a 6502 (llvm-mos and its simulator, `c/platform/sim6502`): a recording replayed with its hashes checked, frames timed in cycles |
-| `tools/netbench.py` | network timing of a real-time match, local relay or production, including the play page (`tools/web_join.mjs`, `tools/netproxy.py`) |
-| `tools/browser_match.mjs` | two browser tabs play a match on the site |
-| `tools/emu.py` | drives a headless mz800emu over its MCP pipe: load, keys, frame benchmarks, screenshots |
-| `tools/cpcemu.py`, `tools/cpcemu_selftest.py` | a scripted Amstrad CPC with an M4 board (sockets emulated at its port interface) for the CPC port, and its self-test |
-
-```
-SIM_MODE=1 SIM_PLAYERS=2 SIM_SEED=0x1234 SIM_RECORD=build/replay/dm.bnr c/build/sim 3000 7
-SIM_REPLAY=build/replay/dm.bnr c/build/sim 3000 99     # PC replay, different bot seed
-tools/replay.py build/replay/dm.bnr                    # the same recording on the MZ build
-tools/replay_zx.py build/replay/dm.bnr                 # and on the Spectrum build
-```
-
-The emulator paths come from `$MZ800EMU` (default
-`~/src/mz800emu/build/build-mz800emu/mz800emu`) and `$FUSEX`. The network tests
-need the local relay (above); FuseX needs a virtual display (`Xvfb :97`).
-Building FuseX and its quirks: `docs/port-zx-spectrum.md`.
-
-## The original
-
-`bomber.asm` is the complete, commented disassembly of the 1983 tape
-(`bomber.mzf`, not in the repository: Hudson Soft's game). `./build.sh`
-reassembles it with `pasmo`, and with the tape in the repository root it
-checks that the result is byte-identical. Memory map, rendering model, data structures, quirks, what the C port
-changed on purpose and how fast it runs: `docs/original.md`.
-
-## Documents
-
-| file | content |
-|---|---|
-| `docs/original.md` | the 1983 original: memory map, rendering, data structures, quirks; the C port's deliberate changes and performance |
-| `docs/net-protocol.md` | the network device (card commands, ten calls) and the relay protocol |
-| `docs/net-timing.md` | network timing measurements and the 0.2.0 fixes |
-| `docs/port-zx-spectrum.md` | the ZX Spectrum port: feasibility, plan, measurements, FuseX |
-| `docs/port-amstrad-cpc.md` | the Amstrad CPC port with the M4 board: feasibility and plan |
-| `docs/port-atari-xl.md` | the Atari XL/XE port, the first 6502 one: plan and progress |
-| `docs/port-c64.md` | the Commodore 64 port (WiC64 or an Ultimate's network): plan, measurements, VICE as the test bench |
-| `docs/port-amiga.md` | the Amiga port (any 68000 Amiga, `bsdsocket.library`): plan, measurements, FS-UAE with a free AROS ROM as the test bench |
-| `docs/port-atari-st.md` | the Atari ST port (a WiFi modem on the serial port): plan, measurements, Hatari with EmuTOS as the test bench |
-| `docs/port-pc.md` | the IBM PC port (DOS; CGA, EGA, VGA; Ethernet or a WiFi modem; AdLib/Sound Blaster): plan, measurements, DOSBox-X as the test bench |
-| `docs/port-web.md` | the game compiled to WebAssembly for the browser (no emulator): plan, results, the page on mzpico.com |
-| `docs/portability.md` | the rules that keep one C game for Z80, 6502 and 68000 machines |
-| `docs/port-zx128-esp01.md` | the 128K Spectrum with an ESP-01 (Milan Stava's port, brought in step by step): plan and progress |
-| `PLAN.md` | the multiplayer plan the C port followed |
+For developers: [how it is built, how the network works, how it is
+tested](docs/development.md).
