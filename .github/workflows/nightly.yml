@@ -267,6 +267,7 @@ jobs:
       MZ800EMU: /home/runner/mz800emu/bin/mz800emu
       MZ800EMU_CFG: build/emucfg_net
       MZ800EMU_LOG: build/mz800emu.log
+      DISPLAY: ':97'                    # headless, but SDL still opens its video (an invisible X display)
     steps:
       - uses: actions/checkout@v4
       - name: toolchain versions
@@ -279,7 +280,7 @@ jobs:
       - name: mz800emu and its libraries (SDL3, SDL3_image, minizip-ng from source)
         run: |
           sudo apt-get update -q       # on every run: the cached mz800emu links against these
-          sudo apt-get install -y -q build-essential cmake ninja-build pkg-config libglib2.0-dev libjson-glib-dev libcurl4-openssl-dev \
+          sudo apt-get install -y -q xvfb x11-utils libgl1-mesa-dri build-essential cmake ninja-build pkg-config libglib2.0-dev libjson-glib-dev libcurl4-openssl-dev \
             zlib1g-dev libpng-dev libjpeg-dev libasound2-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
             libxfixes-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libgl1-mesa-dev libegl1-mesa-dev libdbus-1-dev libudev-dev
           [ "${{ steps.emu.outputs.cache-hit }}" = true ] && exit 0
@@ -311,6 +312,7 @@ jobs:
           export PATH="$PWD/tools/ci/z88dk:$PATH"
           mkdir -p build/c && (cd build/c && cmake ../../c > /dev/null && make)
           mkdir -p build/emucfg_net && cp tools/ci/emucfg_net/mz800emu.ini build/emucfg_net/
+          tools/ci/displays.sh
           tools/ci/relay.sh
       - name: replays
         run: |
