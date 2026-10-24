@@ -531,7 +531,8 @@ static void lobby_send_hello(void) {
 
 /* drain the message queue */
 static void lobby_messages(lobby_t *L) {
-  uint8_t from, m[32], len, i;
+  static uint8_t m[32];                   /* static: off the stack (see net_lobby) */
+  uint8_t from, len, i;
   while ((len = net_msg_recv(&from, m)) != 0) {
     if (L->host) {
       if (m[0] == LM_PONG && len >= 2 && m[1] == L->seq && from != 0)
@@ -565,11 +566,14 @@ static uint8_t bit_count(uint8_t v) {
 
 /* create or join, then wait until everybody is ready; returns 1 to start */
 static uint8_t net_lobby(void) {
-  uint8_t settings[16], len = 2, r, edge, ready = 0, announced_delay = 0, i;
+  /* the buffers static: off the stack, whose peak is the lobby's on the
+   * Spectrum (and smaller code there); the lobby is never re-entered */
+  static uint8_t settings[16];
+  static char l2[32], l3[32];
+  static net_status_t st;
+  static lobby_t L;
+  uint8_t len = 2, r, edge, ready = 0, announced_delay = 0, i;
   uint16_t seed, start;
-  char l2[32], l3[32];
-  net_status_t st;
-  lobby_t L;
   memset(&L, 0, sizeof(L));
   L.host = menu_net == NET_HOST;
   net_delay = NET_DELAY_START;

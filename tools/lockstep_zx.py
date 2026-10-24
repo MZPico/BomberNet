@@ -17,7 +17,7 @@ both are compared frame by frame.
   BREAK_AT=40 ...                        A leaves with BREAK after 40 frames: A ends with
                                          MATCH LEFT, B with the other player gone
 """
-import os, sys, time
+import re, os, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from zxemu import ZX, sym_from_map, run_together
 
@@ -61,7 +61,9 @@ a, b = inst(A_BUILD), inst(B_BUILD)
 FB, TMB, SHB, FNB, NSB, NAB_B, NDLY_B = (SB(n) for n in ('_flush_screen', '_title_mode', '_state_hash', '_frame_no',
     '_net_slot', '_net_abort', '_net_delay'))
 BSS = {a: S('__BSS_END_tail'), b: SB('__BSS_END_tail')}
-for z in (a, b): z.poke(BSS[z], bytes([0xa5]) * (0xff00 - BSS[z]), page=0)   # stack watermark (page 0 on a 128K)
+# stack watermark (page 0 on a 128K): up to 32 bytes under the stack pointer now (the program's stack is at the top)
+TOP = {z: (z.sp - 32 if BSS[z] < z.sp - 32 <= 0xffff else 0xff00) for z in (a, b)}
+for z in (a, b): z.poke(BSS[z], bytes([0xa5]) * (TOP[z] - BSS[z]), page=0)
 frames(4, a, b)
 gp(a, MM, [1]); gp(a, MP, [PLAYERS]); gp(a, MN, [1]); gp(a, ML, [LOCAL_A])
 gp(b, SB('_menu_net'), [2]); gp(b, SB('_menu_local'), [LOCAL_B])
@@ -157,9 +159,18 @@ print(f'done: {N} steps, {len(common)} hashed frames compared, {len(mism)} misma
 a.screenshot('build/zx_net_A.png'); b.screenshot('build/zx_net_B.png')
 for name, z in (('A', a), ('B', b)):
     if z.esp: print(f'{name}: ESP-01 receive FIFO, bytes lost: {z.esp.lost}')
-    m = z.read(BSS[z], 0xff00 - BSS[z], page=0)
-    used_from = next((BSS[z] + i for i, v in enumerate(m) if v != 0xa5), 0xff00)
-    print(f'{name}: stack reached {used_from:04x}, {used_from - BSS[z]} bytes above the program left unused')
+    m = z.read(BSS[z], TOP[z] - BSS[z], page=0)
+    used_from = next((BSS[z] + i for i, v in enumerate(m) if v != 0xa5), TOP[z])
+    print(f'{name}: stack reached {used_from:04x} (marked up to {TOP[z]:04x}), {used_from - BSS[z]} bytes above the program left unused')
+    if os.environ.get('STACK_DUMP'):                  # the deepest calls: the code addresses left in the stack's lowest part
+        mp = os.path.join(A_BUILD if z is a else B_BUILD, 'bomber.map')
+        code = sorted((int(m.group(2), 16), m.group(1)) for m in
+                      (re.match(r'(_\w+)\s+= \$([0-9A-F]+) ; addr, public, [^,]*, \S+, code', l) for l in open(mp)) if m)
+        top = z.read(used_from, 0x10000 - used_from, page=0)
+        for off in range(0, min(len(top) - 1, 160), 2):
+            w = top[off] | top[off + 1] << 8
+            fn = max((c for c in code if c[0] <= w), default=None)
+            if fn and w - fn[0] < 3000 and w > 0x5dc0: print(f'   {used_from + off:04x}: {w:04x} {fn[1]}+{w - fn[0]}')
 if BREAK_AT:
     print(f'BREAK at frame {BREAK_AT}: A abort {aborts[0]} (7 = left), B abort {aborts[1]}, A title_mode {g8(a, TM)}')
     a.release('CAPS SHIFT', 'SPACE'); frames(30, a, b)

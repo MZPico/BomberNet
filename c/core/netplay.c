@@ -33,7 +33,7 @@ uint8_t net_total = 2;
  * (PLAT_NET_NO_ADAPT in plat_config.h: a machine short of memory reports
  * and follows as a joiner, but as the host keeps the lobby's delay;
  * PLAT_NET_FOLLOW_ONLY: it only follows, and sends no figures, so a room
- * with it keeps the lobby's delay):
+ * with it keeps the lobby's delay; no machine needs it now):
  *  - up one frame when every machine waited in ADAPT_WAITS or more frames
  *    (a machine faster than the others waits a little every frame whatever
  *    the delay, so only everybody waiting means the delay is short), but

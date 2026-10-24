@@ -208,15 +208,20 @@ every machine sees:
   decides only from two or more slots with figures, so in a room of two
   with an older build the delay stays as the lobby set it. **The play page
   needs a new build for this to help against it.**
-- The 48K Spectrum (`PLAT_NET_NO_ADAPT`) reports and follows as a joiner,
-  but as the host keeps the lobby's delay: the host's decision did not fit.
-  The 128K (`PLAT_NET_FOLLOW_ONLY` too) only follows and sends no figures,
-  so a room with it keeps the lobby's delay. The stack watermark of
-  `tools/lockstep_zx.py` (4 players, dm4's keys, 600 steps): 157 bytes left
-  unused above the program on the 48K, 192 on the 128K (32 with its figures
-  in). The poll's locals were made static to get there (smaller code, 20
-  bytes less stack). sccz80 compiled `net_frame + ++ahead` as
-  `net_frame++ + ahead`; it is written in two statements.
+- The Spectrum, 48K and 128K (`PLAT_NET_NO_ADAPT`), reports and follows
+  as a joiner, but as the host keeps the lobby's delay: the host's decision
+  did not fit. The stack was the limit: the watermark of
+  `tools/lockstep_zx.py` (4 players, dm4's keys, 600 steps; `STACK_DUMP=1`
+  lists the code addresses left at the deepest point) left 32 bytes unused
+  on the 128K with the figures in. The deepest point was the lobby
+  (connecting, `ws_open`, under `net_lobby` with its two 32-byte lines, its
+  settings, status and state on the stack, and `lobby_messages`' 32-byte
+  buffer). Those are static now, and the poll's locals too (smaller code on
+  sccz80 as well): the stack no longer goes below where it is at the title,
+  and at least 177 bytes stay unused on the 128K, 339 on the 48K (157
+  before). The CPC's variables end at B894h (its stack is at BE00h-BFFFh).
+  sccz80 compiled `net_frame + ++ahead` as `net_frame++ + ahead`; it is
+  written in two statements.
 
 **Results:**
 
