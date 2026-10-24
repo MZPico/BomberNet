@@ -849,7 +849,7 @@ void flush_screen(void) {
 }
 
 void plat_player_colour(uint8_t x, uint8_t y, uint8_t player) {
-  player = (player & PLAYER_FLASH) ? 1 : (uint8_t)(8 + (player & 3));   /* 1: the bombs' blue */
+  player = (player & PLAYER_FLASH) ? (cga ? 2 : 1) : (uint8_t)(8 + (player & 3));   /* 1: the bombs' blue; on a CGA red (its blue is the players' green) */
   ega_ready();
   cell(x, y, amiga_game_glyph[shadow_vram[(uint16_t)y * SCREEN_W + x]], player);
 }
