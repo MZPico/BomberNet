@@ -37,7 +37,8 @@ const char *const plat_kbd_a_alt_name = "CURSOR AND CR   ";
 static const uint8_t player_attrs[MAX_PLAYERS] = {0x40, 0x60, 0x70, 0x10};
 
 void plat_player_colour(uint8_t x, uint8_t y, uint8_t player) {
-  mz_set_attr(x, y, player_attrs[player]);
+  if (player & PLAYER_FLASH) mz_set_attr(x, y, (player & 3) == 3 ? 0x70 : 0x10);   /* the bombs' blue; white for the blue player */
+  else mz_set_attr(x, y, player_attrs[player]);
 }
 
 void plat_hud_colour(uint8_t x, uint8_t n, uint8_t player, uint8_t blank) {

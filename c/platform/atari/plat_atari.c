@@ -430,6 +430,7 @@ void flush_screen(void) {
 #ifdef ATARI_TEST
   t_fl = now();
 #endif
+  { uint8_t k; for (k = 0; k < 4; k++) REG(0x2c0 + k) = player_colours[k]; }   /* a flash's colour back */
   sprites_field();
   atari_flush_game();
 #ifdef NETTEST_TIME
@@ -462,7 +463,10 @@ void flush_screen(void) {
 #endif
 }
 
-void plat_player_colour(uint8_t x, uint8_t y, uint8_t player) { (void)x; (void)y; (void)player; }   /* sprites have it */
+void plat_player_colour(uint8_t x, uint8_t y, uint8_t player) {   /* sprites have it; the drop pose's frame: the sprite in the bombs' */
+  (void)x; (void)y;                                                  /* blue (white for the blue player) until the next flush */
+  if (player & PLAYER_FLASH) REG(0x2c0 + (player & 3)) = (player & 3) == 3 ? 0x0e : 0x78;
+}
 
 /* after the flush: a player's lives icon and count (two cells) by the player's sprite, in its colour */
 void plat_hud_colour(uint8_t x, uint8_t n, uint8_t player, uint8_t blank) {

@@ -75,7 +75,11 @@ void player_killed(player_t *p) {
   players[k].score += 10;
 }
 
-/* state 0/1 standing, 6..13 dying */
+static uint8_t player_flash;              /* bit per player: its drop pose is in the picture (not hashed: a picture's matter) */
+
+/* state 0/1 standing, 6..13 dying. A bomb just dropped: the drop pose
+ * (frame A) for one frame, and the player in the bomb's colour for it
+ * (players_colours): the original's blink, which its table gave player 1. */
 static void draw_player(player_t *p) {
   uint8_t code;
   uint8_t *c;
@@ -84,6 +88,7 @@ static void draw_player(player_t *p) {
   } else if (p->state == P_STAND0) {
     p->state = P_STAND1;
     code = p->tile_a;
+    player_flash |= (uint8_t)(1 << (p - players));
   } else {
     code = p->tile_b;
   }
@@ -94,17 +99,22 @@ static void draw_player(player_t *p) {
   put_player_char(p, c + SCREEN_W + 1, code + 17);
 }
 
-/* The death frames (40h-5Fh) are green in the table; there is no room for
- * coloured copies, so the attribute plane is patched after every flush. */
-void players_death_colour(void) {
-  uint8_t i;
+/* After every flush: the death frames (40h-5Fh) are green in the table and
+ * there is no room for coloured copies, so the player's colour is patched
+ * on; and a player whose drop pose has just been flushed gets the bomb's
+ * colour (PLAYER_FLASH with its number) for that one frame. */
+void players_colours(void) {
+  uint8_t i, c;
   for (i = 0; i < MAX_PLAYERS; i++) {
     player_t *p = &players[i];
-    if (!p->active || p->state < P_DYING || p->life_lost) continue;
-    plat_player_colour(p->x, p->y, i);
-    plat_player_colour(p->x + 1, p->y, i);
-    plat_player_colour(p->x, p->y + 1, i);
-    plat_player_colour(p->x + 1, p->y + 1, i);
+    if (!p->active || p->life_lost) continue;
+    if (player_flash & (1 << i)) { player_flash &= (uint8_t)~(1 << i); c = (uint8_t)(i | PLAYER_FLASH); }
+    else if (p->state >= P_DYING) c = i;
+    else continue;
+    plat_player_colour(p->x, p->y, c);
+    plat_player_colour(p->x + 1, p->y, c);
+    plat_player_colour(p->x, p->y + 1, c);
+    plat_player_colour(p->x + 1, p->y + 1, c);
   }
 }
 

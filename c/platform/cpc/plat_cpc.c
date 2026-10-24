@@ -431,7 +431,7 @@ cc_rowtab:
 void plat_player_colour(uint8_t x, uint8_t y, uint8_t player) {
   if (y >= SCREEN_H) return;
   cd_x = x; cd_y = y; cd_code = shadow_vram[row_off[y] + x];
-  cpc_scheme_ovr = cpc_player_schemes[player];
+  cpc_scheme_ovr = (player & PLAYER_FLASH) ? 1 : cpc_player_schemes[player & 3];   /* 1: the bombs' dim cyan (tools/make_cpc_tables.py) */
   cpc_cell();
   cpc_scheme_ovr = 0xff;
 }

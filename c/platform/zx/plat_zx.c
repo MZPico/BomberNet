@@ -478,8 +478,10 @@ void plat_player_colour(uint8_t x, uint8_t y, uint8_t player) {
   uint8_t *p;
   if (y >= PLAT_ROWS) return;
   p = (uint8_t *)0x5800 + (uint16_t)y * 32 + SCR_LEFT + a0;
-  p[0] = player_attrs[player];
-  if (a1 != a0) p[1] = player_attrs[player];
+  if (player & PLAYER_FLASH) player = (player & 3) == 3 ? 0x47 : 0x41;   /* bright blue, the bombs'; white for the blue player */
+  else player = player_attrs[player];
+  p[0] = player;
+  if (a1 != a0) p[1] = player;
 }
 
 /* after the flush: status-line cells in the player's colour, on the bar
