@@ -223,7 +223,7 @@ jobs:
         id: vice
         with:
           path: ~/vice-dist
-          key: vice-${{ env.VICE_VERSION }}-${{ env.VICE_PATCH_HASH }}
+          key: vice-2-${{ env.VICE_VERSION }}-${{ env.VICE_PATCH_HASH }}
       - name: VICE, headless, with the BomberNet patch (monitor keys, WiC64 firmware timing, the Ultimate's network)
         run: |
           sudo apt-get update -q       # on every run: the cached VICE links against these
@@ -232,7 +232,7 @@ jobs:
           curl -sSL -o /tmp/vice.tar.gz "https://sourceforge.net/projects/vice-emu/files/releases/vice-$VICE_VERSION.tar.gz/download"
           tar -xzf /tmp/vice.tar.gz -C /tmp
           cd /tmp/vice-$VICE_VERSION && patch -p1 < "$GITHUB_WORKSPACE/tools/c64/vice-3.9-bombernet.patch"
-          ./configure --prefix="$HOME/vice-dist" --enable-headlessui --disable-html-docs --disable-pdf-docs \
+          ./configure --prefix="$HOME/vice-dist" --enable-headlessui --disable-arch --disable-html-docs --disable-pdf-docs \
             --without-alsa --without-pulse --without-oss --without-evdev --with-libcurl > /dev/null
           make -j4 > /dev/null && make install > /dev/null
           ls ~/vice-dist/bin
@@ -321,5 +321,5 @@ jobs:
           tools/ci/retry.sh build/venv/bin/python tools/lockstep_test.py 300
           echo "- MZ-MZ match: passed" >> "$GITHUB_STEP_SUMMARY"
       - if: failure()
-        run: tail -50 build/relay.log build/mz800emu.log || true
+        run: tail -n 50 build/relay.log build/mz800emu.log || true
 
