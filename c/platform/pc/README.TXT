@@ -28,6 +28,8 @@ Options
   /COM1 /COM2          the WiFi modem's port (else both are tried)
   /BAUD=n              the modem's speed (else 19200, then 115200)
   /NOSOUND             no sound
+  /NOROLLBACK          no run-ahead in a network match: the keys act after
+                       the input delay, as on the other machines
   /SPEAKER             the PC speaker (else an AdLib or Sound
                        Blaster's FM, when one is found)
   /NET=PKT /NET=MODEM  Ethernet or the modem only

@@ -140,6 +140,7 @@
     canvas,
     bombernetRelay: params.get('relay') || '',
     bombernetTrace: params.has('trace'),            // the tests: hashes and maps every 16th frame
+    bombernetRunahead: params.has('runahead') ? Number(params.get('runahead')) : 8,   // the lead allowed at most; 0: plain lockstep
     bombernetPresent(p) {
       image.data.set(HEAPU8.subarray(p, p + 320 * 200 * 4));
       ctx.putImageData(image, 0, 0);

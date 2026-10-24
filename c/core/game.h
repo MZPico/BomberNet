@@ -244,7 +244,9 @@ void present_frame(void);                     /* the picture to the screen, then
 
 /* ---- frames (bomber.c) ---- */
 void sim_frame_begin(void);                   /* a simulated frame's start: the timers, the status line, the map into the draw buffer */
+#ifdef PLAT_RUNAHEAD
 void frame_logic(uint8_t guessed);            /* the rest of a frame after its keys; guessed: not counted, not hashed */
+#endif
 uint8_t frame_ends(void);                     /* the stage or the round is over in the state as it is */
 
 /* ---- run-ahead (docs/rollback-plan.md): a fast machine shows a frame ahead of the agreed one ---- */
@@ -257,6 +259,7 @@ void snap_restore(void);
 const uint8_t *snap_map(void);                /* the agreed frame's map (the live one when nothing is guessed) */
 uint8_t net_runahead_step(void);              /* a frame of a network match on this machine: 1 when it did it all */
 extern uint8_t net_runahead_cap;              /* the lead allowed at most (a switch; 0: plain lockstep) */
+uint8_t net_runahead_lead(void);              /* frames the screen is ahead of the agreed one (the tests) */
 #else
 #define TONE plat_tone
 #endif

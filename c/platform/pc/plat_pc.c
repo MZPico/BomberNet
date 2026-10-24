@@ -153,6 +153,7 @@ static void options(void) {
     else if (opt(a, "COM2")) pc_modem_port = 2;
     else if (opt(a, "BAUD") && v) pc_modem_baud = (uint32_t)atol(v + 1);
     else if (opt(a, "NOSOUND")) no_sound = 1;
+    else if (opt(a, "NOROLLBACK")) net_runahead_cap = 0;   /* plain lockstep in a match */
     else if (opt(a, "SPEAKER")) no_fm = 1;
 #ifndef PC_TEST
     else if (opt(a, "RELAY") && v) {        /* host or host:port, the host kept where it is (argv lives on) */
@@ -177,6 +178,7 @@ static void options(void) {
              "  /COM1 /COM2          the WiFi modem's port (else both are tried)\n"
              "  /BAUD=n              the modem's speed (else 19200, then 115200)\n"
              "  /NOSOUND             no sound\n"
+             "  /NOROLLBACK          no run-ahead in a network match (the keys act after the delay)\n"
              "  /SPEAKER             the PC speaker (else an AdLib or Sound Blaster's FM)\n"
              "  /NET=PKT /NET=MODEM  Ethernet or the modem only (else Ethernet\n"
              "                       where a packet driver is loaded)\n"
@@ -374,6 +376,7 @@ static uint16_t frame_calls, frame_polls;
 static uint32_t frame_nd;
 uint32_t pc_time_now(void) { return pc_time(); }
 #endif
+uint8_t plat_frame_idle;
 void plat_frame_sync(void) {                    /* 60 ms */
 #ifdef PC_NETTEST
   frame_busy = pc_time() - sync_out; frame_net = pc_net_counts; pc_net_counts = 0; frame_calls = pc_net_calls; pc_net_calls = 0;
@@ -386,6 +389,10 @@ void plat_frame_sync(void) {                    /* 60 ms */
   }
   t_start = 0;
 #endif
+  {                                       /* the ms left before the tick (ticks are ms): the run-ahead's lead */
+    int32_t left = (int32_t)(next_frame - now());
+    plat_frame_idle = left <= 0 ? 0 : left > 255 ? 255 : (uint8_t)left;
+  }
   while ((int32_t)(now() - next_frame) < 0) ;
 #ifdef PC_TEST
   if (!title_mode) t_start = pc_time();        /* the frame's work: from here to the next sync, the next flush included */

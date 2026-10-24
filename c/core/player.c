@@ -88,6 +88,9 @@ static void draw_player(player_t *p) {
   } else if (p->state == P_STAND0) {
     p->state = P_STAND1;
     code = p->tile_a;
+#ifdef PLAT_RUNAHEAD
+    if (!sim_quiet)
+#endif
     player_flash |= draw_bit;
   } else {
     code = p->tile_b;
@@ -146,7 +149,7 @@ static void move_player(player_t *p) {
   p->x = x;
   p->y = y;
   /* hook for walking animation (the original lost the direction here) */
-  plat_tone(((uint16_t)((p->anim >> 1) + 2) << 8) | 0x0a, 14);
+  TONE(((uint16_t)((p->anim >> 1) + 2) << 8) | 0x0a, 14);
 }
 
 /* Every 2nd frame: toggle the animation frame; alive -> move; dying -> step
@@ -164,7 +167,7 @@ void players_anim_step(void) {
     if (++p->death_tick < 4) continue;
     p->death_tick = 0;
     p->state++;
-    plat_tone((uint16_t)p->state << 8, 32);
+    TONE((uint16_t)p->state << 8, 32);
   }
 }
 
@@ -184,7 +187,7 @@ void check_pickups(void) {
     if (!bonus_present) continue;
     if (bonus_y != p->y || bonus_x != p->x) continue;
     bonus_present = 0;
-    plat_tone(0x0100, 0x30);
+    TONE(0x0100, 0x30);
     p->score += ((rnd() & 0x3f) << 1) | 0x10;
   }
 }

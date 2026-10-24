@@ -56,6 +56,9 @@ uint8_t net_total = 2;
 #define ADAPT_WAITS  6                /* of the window's 32 frames */
 #define ADAPT_SLACK  2
 #define ADAPT_HOLD   4
+#ifdef PLAT_RUNAHEAD
+static void ra_start(void);
+#endif
 static uint8_t ahead;                 /* our keys went out up to net_frame + ahead (8-bit: small code on the Z80) */
 static uint8_t w_min, w_min2, w_waits;   /* this window: the smallest margin + 1, the second smallest, the frames waited in */
 static uint8_t report;                /* our ADAPT_BYTE */
@@ -121,6 +124,9 @@ void net_match_start(void) {
   ceiling = net_delay;
 #endif
   report = net_slot == 0 ? net_delay : 0;
+#ifdef PLAT_RUNAHEAD
+  ra_start();
+#endif
 }
 
 /* Send the local players' keys for step N+net_delay (one byte per local
@@ -182,6 +188,135 @@ void net_lockstep_poll(void) {
   net_frame++;
   ahead--;
 }
+
+#ifdef PLAT_RUNAHEAD
+/* ---- run-ahead (docs/rollback-plan.md): this machine shows a frame ahead
+ * of the agreed one. net_frame is the next agreed frame to simulate; the
+ * screen shows `shown`. Every step: our keys out for net_frame + net_delay
+ * as the lockstep sends them; back to the snapshot of the agreed state
+ * when the live one is a guess; the agreed frames that have arrived, up
+ * to the one to show (quiet but the last); then the rest guessed: our own
+ * keys as sent, the others' last known direction, no fire. A guess is
+ * never acted on: a guessed frame that ends the round is dropped and the
+ * agreed state kept. The lead is allowed by the frame's measured idle
+ * (plat_frame_idle): one more guessed frame when RUNAHEAD_IDLE_MIN ms were
+ * left, one fewer after a late frame, then RUNAHEAD_HOLD frames before
+ * trying again; never more than the delay (the keys are known that far),
+ * nor than net_runahead_cap (a switch). An XT at 4.77 MHz never leaves 0. */
+uint8_t net_runahead_cap = NET_DELAY_MAX;
+#define RUNAHEAD_IDLE_MIN 12
+#define RUNAHEAD_HOLD 32
+#define OWN_WIN 16                            /* our input lines kept by frame & 15 (the device gives a frame back only complete) */
+static uint16_t sent_to, shown;
+static uint8_t own_keys[OWN_WIN][NET_BYTES], last_vec[NET_SLOTS * NET_BYTES];
+static uint8_t lead_max, ra_hold;
+static uint8_t draw_keep[SCREEN_CELLS];       /* the picture before a guessed frame, kept when that frame is dropped */
+
+static void ra_deal(const uint8_t *keys) {    /* the vector out by the seat table, as the lockstep does */
+  uint8_t i, t;
+  player_t *p;
+  for (i = 0, p = players; i < MAX_PLAYERS; i++, p++) {
+    t = net_table[i];
+    p->keys = (!net_abort && i < net_total && t != 0xff && p->active) ? keys[t] : 0;
+  }
+}
+
+static void ra_start(void) {
+  sent_to = (uint16_t)(net_delay - 1);
+  shown = 0xffff;
+  lead_max = ra_hold = 0;
+  memset(own_keys, 0, sizeof(own_keys));
+  memset(last_vec, 0, sizeof(last_vec));
+  sim_quiet = sim_guessed = 0;
+}
+
+uint8_t net_runahead_lead(void) { return (uint8_t)(shown + 1 - net_frame); }
+
+uint8_t net_runahead_step(void) {
+  static uint8_t keys[NET_SLOTS * NET_BYTES], local[NET_BYTES];
+  static net_status_t st;
+  uint16_t avail, target, f;
+  uint8_t i, s, tries, noted, cap;
+  if (net_abort) {                                /* the match is over: the agreed state on the screen */
+    if (sim_guessed) { snap_restore(); sim_guessed = 0; }
+    for (i = 0; i < MAX_PLAYERS; i++) players[i].keys = 0;
+    return 1;
+  }
+  if (plat_frame_idle == 0) { if (lead_max) lead_max--; ra_hold = RUNAHEAD_HOLD; }
+  else if (ra_hold) ra_hold--;
+  else if (plat_frame_idle >= RUNAHEAD_IDLE_MIN && lead_max < NET_DELAY_MAX) lead_max++;
+  for (i = 0; i < ADAPT_BYTE; i++) local[i] = i < menu_local ? input_read(menu_inputs[i]) : 0;
+  local[ADAPT_BYTE] = report;
+  while (sent_to < (uint16_t)(net_frame + net_delay)) {   /* one frame's keys twice to go up, none to go down */
+    sent_to++;
+    memcpy(own_keys[sent_to & (OWN_WIN - 1)], local, NET_BYTES);
+    if (net_send(sent_to, local) != 0) { net_fail(); break; }
+  }
+  target = (uint16_t)(shown + 1);
+  if (sim_guessed) { snap_restore(); sim_guessed = 0; }
+  tries = 0; noted = 0;
+  cap = lead_max < net_runahead_cap ? lead_max : net_runahead_cap;
+  if (cap > net_delay) cap = net_delay;
+  while (!net_abort && net_frame <= target) {           /* the agreed frames */
+    if (net_poll(net_frame, &avail, keys) != 0) { net_fail(); break; }
+    if (avail != 0xffff && avail >= net_frame) {
+      if (!noted) {                               /* in time: frames early + 1, for the delay's adjustment */
+        noted = 1;
+        i = (uint8_t)((uint8_t)avail - (uint8_t)net_frame + 1);
+        if (i < w_min) { w_min2 = w_min; w_min = i; }
+        else if (i < w_min2) w_min2 = i;
+      }
+      ra_deal(keys);
+      sim_quiet = (net_frame != target);
+      sim_frame_begin();
+      frame_logic(0);
+      memcpy(last_vec, keys, sizeof(last_vec));
+      i = keys[ADAPT_BYTE];                       /* the host's delay */
+      if (net_slot && i && i <= NET_DELAY_MAX) net_delay = i;
+      if (((uint8_t)net_frame & (ADAPT_WINDOW - 1)) == ADAPT_WINDOW - 1) adapt_window(keys);
+      net_frame++;
+      continue;
+    }
+    if (!noted) { noted = 1; w_min2 = w_min; w_min = 0; w_waits++; }   /* late: counted as a wait, guessed or not */
+    if ((uint16_t)(target - net_frame + 1) <= cap) break;            /* the rest guessed */
+    if (++tries > 4) {                            /* waits, as the lockstep */
+      net_waiting = 1;
+      if ((tries & 15) == 0) {
+        if (net_status(&st) == 0 &&
+            (st.state == NETST_DESYNC || st.state == NETST_DROPPED || st.state == NETST_NOLINK))
+          net_abort = st.state ? st.state : 9;
+        else if (plat_key_char() == 0x1b) net_abort = NET_ABORT_BREAK;
+      }
+    }
+  }
+  sim_quiet = 0;
+  if (net_abort) { for (i = 0; i < MAX_PLAYERS; i++) players[i].keys = 0; return 1; }
+  net_waiting = 0;
+  if (net_frame <= target) {                      /* the guessed frames */
+    snap_save(); sim_guessed = 1;
+    for (f = net_frame; f <= target; f++) {
+      for (s = 0; s < NET_SLOTS; s++)
+        for (i = 0; i < NET_BYTES; i++)
+          keys[s * NET_BYTES + i] = s == net_slot ? own_keys[f & (OWN_WIN - 1)][i]
+                                                  : (uint8_t)(last_vec[s * NET_BYTES + i] & (uint8_t)~KEY_SPACE);
+      memcpy(draw_keep, draw_buf, SCREEN_CELLS);
+      ra_deal(keys);
+      sim_quiet = (f != target);
+      sim_frame_begin();
+      frame_logic(1);
+      if (frame_ends()) {                         /* not from a guess: the agreed state back, the previous picture kept */
+        snap_restore(); sim_guessed = 0;
+        memcpy(draw_buf, draw_keep, SCREEN_CELLS);
+        target = (uint16_t)(net_frame - 1);
+        break;
+      }
+    }
+    sim_quiet = 0;
+  }
+  shown = target;
+  return 1;
+}
+#endif
 
 void net_match_end(void) {
   if (!net_active) return;

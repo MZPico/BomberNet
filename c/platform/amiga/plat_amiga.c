@@ -109,13 +109,13 @@ static uint32_t eclock_hz;
 #ifdef AMIGA_NETTEST
 static uint32_t eclock_now(void) { struct EClockVal ev; ReadEClock(&ev); return ev.ev_lo; }
 #endif
-#ifdef AMIGA_TEST
 static uint32_t eclock(void) {
   struct EClockVal ev;
   ReadEClock(&ev);
   return ev.ev_lo;
 }
-#endif
+uint8_t plat_frame_idle;
+static uint32_t sync_out_e;                 /* the E clock when the last sync returned */
 
 #ifdef AMIGA_TEST
 #include "rec_data.h"                     /* a recording to replay (tools/build_amiga.py --test) */
@@ -267,8 +267,13 @@ void plat_frame_sync(void) {                    /* 60 ms: 3 PAL frames, or 4,3,4
   }
   t_start = 0;
 #endif
+  {                                       /* the ms left before the frame's end: the run-ahead's lead */
+    uint32_t el = (eclock() - sync_out_e) / (eclock_hz / 1000);
+    plat_frame_idle = el >= FRAME_MS ? 0 : (uint8_t)(FRAME_MS - el);
+  }
   while (amiga_ticks - last_tick < need) WaitTOF();
   last_tick = amiga_ticks;
+  sync_out_e = eclock();
 #ifdef AMIGA_TEST
   if (!title_mode) t_start = eclock();         /* the frame's work: from here to the next sync, the next flush included */
 #endif

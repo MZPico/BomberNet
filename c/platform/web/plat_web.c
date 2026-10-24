@@ -68,6 +68,7 @@ static void set_mode(uint8_t title) {
   if (!title) fire_held = fire_down() != 0;
 }
 
+EM_JS(int, js_runahead_cap, (void), { return Module.bombernetRunahead === undefined ? 8 : Module.bombernetRunahead | 0; });
 EM_JS(void, js_present, (const uint32_t *p), {
   if (typeof Module.bombernetPresent === 'function') Module.bombernetPresent(p);
 });
@@ -117,7 +118,7 @@ void flush_screen(void) {
     }
   }
 #ifndef WEB_TEST
-  if (!title_mode && net_active && frame_no % 16 == 1) js_hash(frame_no, state_hash, map_layer);   /* (frame - 1's hash, computed at its end) */
+  if (!title_mode && net_active && frame_no % 16 == 1) js_hash(frame_no, state_hash, snap_map());   /* the agreed frame's map, not a guess */   /* (frame - 1's hash, computed at its end) */
 #endif
 #ifdef WEB_TEST
   if (!title_mode && rec_pos + 6 > REC_LEN) {   /* the recording replayed: the result, done */
@@ -130,14 +131,14 @@ void flush_screen(void) {
 /* ---- for the tests (tools/web_match.py, tools/crossplay.py): the state as
  * the other machines' test logs give it, and the hashed frames' hashes ---- */
 EMSCRIPTEN_KEEPALIVE const char *web_state(void) {
-  static char s[160];
+  static char s[192];
   uint8_t i, nb = 0;
   for (i = 0; i < BOMB_SLOTS; i++) if (bombs[i].state) nb++;
   snprintf(s, sizeof(s), "frame %u title %u code %.4s active %u abort %u slot %u delay %u table %02x%02x%02x%02x hash %04x"
-           " p1x %u p1y %u p1s %u bombs %u alt %u keys %02x",
+           " p1x %u p1y %u p1s %u bombs %u alt %u keys %02x lead %u",
            frame_no, title_mode, net_code[0] ? net_code : "    ", net_active, net_abort, net_slot, net_delay,
            net_table[0], net_table[1], net_table[2], net_table[3], state_hash,
-           players[0].x, players[0].y, players[0].state, nb, kbd_alt_fire, plat_keys_a());
+           players[0].x, players[0].y, players[0].state, nb, kbd_alt_fire, plat_keys_a(), net_active ? net_runahead_lead() : 0);
   return s;
 }
 
@@ -221,6 +222,7 @@ uint8_t plat_break(void) { return keydown[K_ESC]; }
 
 /* ---- time ---- */
 static double next_frame;
+uint8_t plat_frame_idle;
 
 void plat_frame_sync(void) {              /* FRAME_MS of the browser's clock; the page is drawn meanwhile */
   double now;
@@ -232,6 +234,7 @@ void plat_frame_sync(void) {              /* FRAME_MS of the browser's clock; th
   now = emscripten_get_now();
   if (next_frame == 0 || now - next_frame > FRAME_MS) next_frame = now;   /* the start, or far behind (a hidden tab): no rush */
   next_frame += FRAME_MS;
+  plat_frame_idle = next_frame - now < 1 ? 0 : next_frame - now > 255 ? 255 : (uint8_t)(next_frame - now);   /* the run-ahead's lead */
   if (next_frame - now >= 1) emscripten_sleep((unsigned)(next_frame - now));
 }
 
@@ -261,6 +264,7 @@ void plat_tone(uint16_t ratio, uint8_t len) {
 /* ---- start ---- */
 void plat_init(void) {
   uint8_t i;
+  net_runahead_cap = (uint8_t)js_runahead_cap();   /* ?runahead=0: plain lockstep (the tests compare both) */
   for (i = 0; i < 16; i++) {              /* the palette, 4 bits a gun -> RGBA in memory order (R, G, B, A) */
     uint16_t c = amiga_palette[i];
     uint32_t r = ((c >> 8) & 15) * 17, g = ((c >> 4) & 15) * 17, b = (c & 15) * 17;

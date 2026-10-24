@@ -78,14 +78,14 @@ __asm__("\n"
         "1:      bclr    #5,0xfffffa0f\n"    /* the in-service bit: TOS runs the MFP with software end of interrupt */
         "        rte\n");
 #define TIMER_HZ 38400u
-#ifdef ST_TEST
 static uint32_t st_time(void) {           /* in 1/38400 s */
   uint32_t t;
   uint8_t c;
   do { t = st_ta_ticks; c = MFP_TADR; } while (t != st_ta_ticks);
   return (t << 6) + (uint8_t)(64u - c);      /* the count runs 64 .. 1 */
 }
-#endif
+uint8_t plat_frame_idle;
+static uint32_t sync_out_t;               /* the timer when the last sync returned */
 
 #ifdef ST_PLAYTEST
 static FILE *playlog;                     /* tools/st_play.py reads it: the players' places every frame */
@@ -263,8 +263,13 @@ void plat_frame_sync(void) {                    /* 60 ms: 3 TV frames at 50 Hz, 
   }
   t_start = 0;
 #endif
+  {                                       /* the ms left before the frame's end: the run-ahead's lead */
+    uint32_t el = (st_time() - sync_out_t) / (TIMER_HZ / 1000);
+    plat_frame_idle = el >= FRAME_MS ? 0 : (uint8_t)(FRAME_MS - el);
+  }
   while (FRCLOCK - last_tick < need) Vsync();
   last_tick = FRCLOCK;
+  sync_out_t = st_time();
 #ifdef ST_TEST
   if (!title_mode) t_start = st_time();        /* the frame's work: from here to the next sync, the next flush included */
 #endif
