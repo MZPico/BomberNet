@@ -109,5 +109,6 @@ try:
     print(f'host frame {hs["frame"]} abort {hs["abort"]}, join frame {js["frame"]} abort {js["abort"]}; '
           f'{len(common)} hashed frames compared, {len(mism)} mismatches'
           + (f' (first at {mism[0]})' if mism else '') + f'; {float(hs["frame"]) / (time.time() - t0):.1f} frames a second', flush=True)
+    sys.exit(1 if mism or hs['abort'] != '0' or js['abort'] != '0' or not common else 0)
 finally:
     host.close(); join.close()

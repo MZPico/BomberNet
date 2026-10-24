@@ -125,3 +125,76 @@ jobs:
           echo "- browser-browser match: passed" >> "$GITHUB_STEP_SUMMARY"
       - if: failure()
         run: tail -50 build/relay.log || true; tail -30 build/chromium.log || true
+
+  st:
+    name: Atari ST in Hatari
+    runs-on: ubuntu-24.04
+    if: github.event_name != 'pull_request' || github.event.action != 'labeled' || github.event.label.name == 'full-test'
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain versions
+        run: grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
+      - name: cross-mint, Hatari, the displays, the relay
+        run: |
+          sudo add-apt-repository -y ppa:vriviere/ppa
+          sudo apt-get update -q
+          sudo apt-get install -y -q cross-mint-essential hatari xvfb x11-utils xdotool ffmpeg
+          tools/ci/displays.sh
+          tools/ci/relay.sh
+      - uses: actions/cache@v4
+        id: emutos
+        with:
+          path: build/st/rom
+          key: emutos-${{ env.EMUTOS_COMMIT }}
+      - name: EmuTOS (no TOS ships with Hatari; built from source, pinned)
+        if: steps.emutos.outputs.cache-hit != 'true'
+        run: |
+          git clone -q https://github.com/emutos/emutos.git /tmp/emutos && git -C /tmp/emutos checkout -q "$EMUTOS_COMMIT"
+          mkdir -p build/st/rom
+          for t in "192 uk" "192 us" "256 uk"; do
+            set -- $t
+            make -C /tmp/emutos clean > /dev/null && make -C /tmp/emutos -j4 $1 UNIQUE=$2 > /dev/null
+            cp /tmp/emutos/etos$1$2.img build/st/rom/
+          done
+          ls -l build/st/rom
+      - name: replay
+        run: |
+          python3 tools/build_st.py --test tests/recordings/dm4.bnr
+          tools/ci/retry.sh python3 tools/st_test.py
+          echo "- ST replay: passed" >> "$GITHUB_STEP_SUMMARY"
+      - name: match over the WiFi modems
+        run: |
+          ST_DISPLAY=:98 tools/ci/retry.sh build/venv/bin/python tools/st_match.py 45
+          echo "- ST-ST match: passed" >> "$GITHUB_STEP_SUMMARY"
+      - if: failure()
+        run: tail -50 build/relay.log || true; tail -30 build/st/hatari.log || true
+
+  amiga:
+    name: Amiga in FS-UAE
+    runs-on: ubuntu-24.04
+    if: github.event_name != 'pull_request' || github.event.action != 'labeled' || github.event.label.name == 'full-test'
+    env:
+      AMIGA_MODEL: A1200                        # FS-UAE's own AROS ROM (no download); on an A500 it crashed in a match
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain versions
+        run: grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
+      - name: bebbo's gcc, FS-UAE, the displays, the relay
+        run: |
+          docker pull -q "$AMIGA_IMAGE" && docker tag "$AMIGA_IMAGE" amigadev/crosstools:m68k-amigaos
+          sudo apt-get update -q
+          sudo apt-get install -y -q fs-uae xvfb x11-utils xdotool ffmpeg
+          tools/ci/displays.sh
+          tools/ci/relay.sh
+      - name: replay
+        run: |
+          python3 tools/build_amiga.py --test tests/recordings/dm4.bnr
+          DISPLAY=:97 tools/ci/retry.sh python3 tools/amiga_test.py --model A1200
+          echo "- Amiga replay: passed" >> "$GITHUB_STEP_SUMMARY"
+      - name: match
+        run: |
+          tools/ci/retry.sh build/venv/bin/python tools/amiga_match.py 45
+          echo "- Amiga-Amiga match: passed" >> "$GITHUB_STEP_SUMMARY"
+      - if: failure()
+        run: tail -50 build/relay.log || true; tail -30 build/amiga/fsuae.log || true
+
