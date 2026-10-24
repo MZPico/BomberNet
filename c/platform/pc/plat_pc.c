@@ -785,7 +785,7 @@ void flush_screen(void) {
     void pkt_debug(char *out);
     stall_at = now();
     pkt_debug(d);
-    log_s("stall frame "); log_dec(frame_no); log_s(" ms "); log_dec(now()); log_s(" "); log_s(d); log_s("\n");
+    log_s("stall frame "); log_dec(frame_no); log_s(" delay "); log_dec(net_delay); log_s(" ms "); log_dec(now()); log_s(" "); log_s(d); log_s("\n");
     log_out();
   }
 #endif

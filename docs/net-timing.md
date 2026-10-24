@@ -138,6 +138,100 @@ delay the game only feels slower. It pays only as an in-between step, delay
 1 with the early send (about 92 ms of lag) for links too slow for delay 1
 (60 ms) that now get 2 (120 ms). Not worth a second timing mode for now.
 
+## The delay adjusted in the match (2026-10-24)
+
+Playing the play page (the MZ-800 in WebAssembly) against a local emulator,
+a match often got 180 ms of input delay and felt sluggish.
+
+**Each machine's own share**, measured as the joiner's lobby turnaround at
+the local relay (`RELAY_TIMING`; the host's PING in -> the joiner's PONG in:
+the device both ways and the lobby loop's polling, no internet):
+
+| Machine and device (emulated) | Median | 90th percentile |
+|---|---|---|
+| Amiga, bsdsocket (FS-UAE) | 33 ms | 71 ms |
+| PC, Ethernet (DOSBox-X NE2000) | 47 ms | 105 ms |
+| MZ-800, MZPico (mz800emu) | 52 ms | 95 ms |
+| Atari ST, WiFi modem (Hatari) | 53 ms | 76 ms |
+| Spectrum, Spectranet (FuseX) | 63 ms | 112 ms |
+| PC, WiFi modem (DOSBox-X's own) | 134 ms | 242 ms |
+| C64, WiC64 or Ultimate (VICE) | 174-203 ms | 209-239 ms |
+
+The last two rows are the emulators' imitations of the devices, not the
+devices (and the C64 host still chose 1 from its own count).
+
+**The production relay**, two connections from the test machine in one
+room (`build/prod_probe.py`, 300 messages): one pass median 34 ms; a round
+trip through it twice median 68 ms, 90th percentile 73, 99th 182, 1 % of
+them over 180 ms.
+
+**The play page** (`tools/netbench.py mz web`): two of three matches were
+normal (a lobby round trip of about 95 ms, delay 1 or 2); in the first,
+the browser was slow for a while (just started, software rendering here)
+and its answers came 300 to 700 ms late. The page's emulator is paced by
+the browser's audio callback: each callback runs as many 20 ms emulated
+frames as its buffer needs (1024 samples, about 21 ms at 48 kHz by default,
+2048 on Edge; `?buf=`), on the main thread, so drawing, garbage collection
+or a busy tab stall the emulated MZ and its messages.
+
+**The lobby's figure is pessimistic.** A sturdier rule (the second longest
+of eight round trips, a joiner's first 3 s not counted) changed nothing
+measurable: in five matches against the play page the delays were 3, 2, 2,
+2, 2 (2, 1, 2 before). The match at 3 never had a round trip over 141 ms on
+the wire: the host's count includes its own polling at both ends, up to
+two frames. In that match the joiner's keys came 178 ms early (median) at
+the host; 2 would have done. The lobby rule was left as it was.
+
+**So the host adjusts the delay in the match** (`core/netplay.c`), from what
+every machine sees:
+
+- Each slot's input has NET_BYTES = 4 bytes, one per local player, and there
+  are at most three: the fourth is never dealt to a player. A joiner puts
+  its last window's figures there (32 frames, about 2 s): how many frames it
+  waited in, and its smallest margin, `avail - frame` when it first asks
+  for a frame (-1 when it had to wait). The host puts the room's delay
+  there.
+- Every machine sends its own keys `net_delay` frames ahead and takes the
+  host's figure when it sees it: one frame's keys sent twice to go up, one
+  send left out to go down. Every key carries its frame number, so the
+  lockstep stays exact whenever each machine switches.
+- The host lowers the delay by one when the smallest and the largest
+  margin together are 2 frames or more, two windows running. With two
+  machines the margins add up to 2 x delay - round trip, and the faster
+  machine's is about 0 (it waits a little every frame whatever the delay),
+  so the sum is the room's slack; one frame less takes 2 from it.
+- It raises the delay by one when every machine waited in 6 or more of the
+  window's 32 frames, but never more than one frame above the lobby's
+  figure. Losses stall the game whatever the delay: on a test link losing
+  one segment in seven, an uncapped rule climbed to 8 frames (480 ms).
+- Older builds send 0 there (no figures) and ignore the byte. The host
+  decides only from two or more slots with figures, so in a room of two
+  with an older build the delay stays as the lobby set it. **The play page
+  needs a new build for this to help against it.**
+- The Spectrum (48K and 128K, `PLAT_NET_NO_ADAPT`) reports and follows as
+  a joiner, but as the host keeps the lobby's delay: the host's decision
+  did not fit. Even so the free space under the stack went from 745 to 493
+  bytes on the 48K and from 625 to 373 on the 128K, against a stack peak of
+  about 330 (the poll's locals made static to get there: smaller code and
+  20 bytes less stack). sccz80 compiled `net_frame + ++ahead` as
+  `net_frame++ + ahead`; it is written in two statements.
+
+**Results:**
+
+| Test | Delay over the match | Hashes |
+|---|---|---|
+| PC - PC, Ethernet, lobby gave 3 | 3, then 2, then 1, on both | equal |
+| PC - PC, one segment in 7 lost out, 1 in 9 in, lobby gave 5 | 5, then 6 (the cap); 12.2 frames a second | equal |
+| MZ - Spectrum, cross-play (Z80 code) | 1 | equal, fields identical |
+| MZ - Spectrum, real time, each as host | 1 | |
+| two C64s on WiC64s (the firmware's timing) | 1; 16.1 frames a second | equal |
+| Amiga host - PC (the faster one waits every frame) | 2, no climb | equal, fields identical |
+| MZ host - Spectrum, production relay, 3 runs | 2 at the end of each; host waited in 1.8 % of frames | |
+
+Through the production relay from here a round trip is about 130 ms, so
+120 ms is the floor for lockstep; 60 ms needs a round trip under about
+90 ms. Lower than that only rollback (local prediction) could feel.
+
 ## Not changed
 
 - Mixed versions still play (the delay is announced by the host), but 0.1.1

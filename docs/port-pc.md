@@ -350,11 +350,16 @@ room on the production relay at once (also under Wine). With Linux's
 | 1 in 7 lost going out, 1 in 9 coming in | 9.3 |
 | XT speed (cycles 300), CGA | 6.1 (the test's log: 1.5 s a write) |
 
-Two early runs stood still after about 90 frames: with six slots, the
-frames that came during the test log's disk writes overflowed them, and
-slirp's TCP backed off for seconds before sending again. Sixteen slots
-and the kept island fixed it. The network test now logs once a game
-frame (a line a loop had slowed an XT to a crawl).
+Some runs seemed to stand still after about 90 frames. That was the
+test, not the network: its last SPACE to ready up can land in the game,
+the player drops a bomb and dies at about frame 90, and the game's frame
+counter (what `NET.LOG` and the frames a second count) stops at the end
+screen while the lockstep goes on (the relay's log has every input up to
+the end of the run). The stall lines with the TCP state showed it: the
+connection healthy, data flowing both ways. The sixteen slots and the kept
+island stay (cheap, and better on a busy real network), but they did not
+fix a hang. The network test logs once a game frame (a line a loop had
+slowed an XT to a crawl).
 
 ## AdLib and Sound Blaster
 

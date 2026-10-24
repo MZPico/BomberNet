@@ -463,7 +463,9 @@ static uint8_t lobby_enter_code(void) {
  *    clamped. In a match each side's input has d frames to reach the other,
  *    so the two directions have 2d frames together; a lobby sample already
  *    counts up to a frame of polling at either end, which is the margin
- *    (measurements: docs/net-timing.md). A delay of 1 needs a round trip of
+ *    (measurements: docs/net-timing.md). The lobby only sets where a match
+ *    starts: in the match the host adjusts the delay from the margins every
+ *    machine reports (netplay.c). A delay of 1 needs a round trip of
  *    at most 2 frames: a LAN, the local relay, a very near production relay.
  *    0.2.0 joiners raise 1 to their minimum of 2 for their own keys; every
  *    key carries its frame number, so such a room plays alike everywhere.
