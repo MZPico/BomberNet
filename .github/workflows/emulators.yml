@@ -291,6 +291,55 @@ jobs:
           path: build/atari/test.png
           retention-days: 7
 
+  cross:
+    name: cross-play, ${{ matrix.pair }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        pair: [web pc, pc web]          # the browser (Chrome) and the PC (DOSBox-X), each one hosting
+    env:
+      CHROMIUM: google-chrome
+      CHROMIUM_FLAGS: --no-sandbox
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain versions
+        run: grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        id: ow
+        with:
+          path: ~/openwatcom
+          key: openwatcom-${{ env.OPENWATCOM_RELEASE }}
+      - name: OpenWatcom
+        if: steps.ow.outputs.cache-hit != 'true'
+        run: |
+          curl -sSL -o /tmp/ow.tar.xz \
+            "https://github.com/open-watcom/open-watcom-v2/releases/download/$OPENWATCOM_RELEASE/ow-snapshot.tar.xz"
+          mkdir -p ~/openwatcom && tar -xJf /tmp/ow.tar.xz -C ~/openwatcom
+      - uses: actions/cache@v4
+        id: emsdk
+        with:
+          path: ~/emsdk
+          key: emsdk-${{ env.EMSDK_VERSION }}
+      - name: Emscripten
+        if: steps.emsdk.outputs.cache-hit != 'true'
+        run: |
+          git clone -q https://github.com/emscripten-core/emsdk.git ~/emsdk
+          ~/emsdk/emsdk install "$EMSDK_VERSION" && ~/emsdk/emsdk activate "$EMSDK_VERSION"
+      - name: DOSBox-X, the displays, the relay
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q dosbox-x xvfb x11-utils xdotool ffmpeg
+          tools/ci/displays.sh
+          tools/ci/relay.sh
+          build/venv/bin/pip install -q numpy websockets pillow "zx==$ZX_EMU_VERSION" "z80==$Z80_EMU_VERSION"   # (crossplay.py imports every machine)
+      - name: the match
+        run: |
+          WATCOM=~/openwatcom EMSDK=~/emsdk tools/ci/retry.sh build/venv/bin/python tools/crossplay.py 300 ${{ matrix.pair }} | tail -3
+          echo "- cross-play ${{ matrix.pair }}: passed" >> "$GITHUB_STEP_SUMMARY"
+      - if: failure()
+        run: tail -50 build/relay.log || true; tail -30 build/chromium.log || true
+
   mz:
     name: MZ-800 in mz800emu, ${{ matrix.test }}
     runs-on: ubuntu-24.04
