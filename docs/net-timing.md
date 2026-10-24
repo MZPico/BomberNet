@@ -208,12 +208,14 @@ every machine sees:
   decides only from two or more slots with figures, so in a room of two
   with an older build the delay stays as the lobby set it. **The play page
   needs a new build for this to help against it.**
-- The Spectrum (48K and 128K, `PLAT_NET_NO_ADAPT`) reports and follows as
-  a joiner, but as the host keeps the lobby's delay: the host's decision
-  did not fit. Even so the free space under the stack went from 745 to 493
-  bytes on the 48K and from 625 to 373 on the 128K, against a stack peak of
-  about 330 (the poll's locals made static to get there: smaller code and
-  20 bytes less stack). sccz80 compiled `net_frame + ++ahead` as
+- The 48K Spectrum (`PLAT_NET_NO_ADAPT`) reports and follows as a joiner,
+  but as the host keeps the lobby's delay: the host's decision did not fit.
+  The 128K (`PLAT_NET_FOLLOW_ONLY` too) only follows and sends no figures,
+  so a room with it keeps the lobby's delay. The stack watermark of
+  `tools/lockstep_zx.py` (4 players, dm4's keys, 600 steps): 157 bytes left
+  unused above the program on the 48K, 192 on the 128K (32 with its figures
+  in). The poll's locals were made static to get there (smaller code, 20
+  bytes less stack). sccz80 compiled `net_frame + ++ahead` as
   `net_frame++ + ahead`; it is written in two statements.
 
 **Results:**
@@ -227,6 +229,8 @@ every machine sees:
 | two C64s on WiC64s (the firmware's timing) | 1; 16.1 frames a second | equal |
 | Amiga host - PC (the faster one waits every frame) | 2, no climb | equal, fields identical |
 | MZ host - Spectrum, production relay, 3 runs | 2 at the end of each; host waited in 1.8 % of frames | |
+| new 48K Spectrum host - 0.2.0 joiner, and 0.2.0 host - new joiner | 1 / 2 (0.2.0's own minimum), 2 | equal |
+| new MZ host - the play page (0.2.0), production, 2 runs | 2, unchanged (no figures from the page) | |
 
 Through the production relay from here a round trip is about 130 ms, so
 120 ms is the floor for lockstep; 60 ms needs a round trip under about

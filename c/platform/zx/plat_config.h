@@ -2,6 +2,9 @@
 #ifndef PLAT_CONFIG_H
 #define PLAT_CONFIG_H
 #define PLAT_NET_NO_ADAPT 1     /* as the host it keeps the lobby's delay (core/netplay.c): no room for the rest */
+#ifdef ZX128
+#define PLAT_NET_FOLLOW_ONLY 1  /* the 128K only follows the host's delay: the stack had 32 bytes to spare with the figures */
+#endif
 #define PLAT_ROWS 24            /* the status line is shown on top of the bottom wall */
 #define PLAT_JOY_TYPES 4        /* what INPUT_JOY1 is; the Sinclair sticks are key sets */
 #define JOY_KEMPSTON 1          /* port 1Fh */

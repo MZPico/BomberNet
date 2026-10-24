@@ -31,7 +31,9 @@ uint8_t net_total = 2;
  * joiner in a room of two the delay stays as the lobby set it.
  * The host decides at the end of every window of ADAPT_WINDOW frames
  * (PLAT_NET_NO_ADAPT in plat_config.h: a machine short of memory reports
- * and follows as a joiner, but as the host keeps the lobby's delay):
+ * and follows as a joiner, but as the host keeps the lobby's delay;
+ * PLAT_NET_FOLLOW_ONLY: it only follows, and sends no figures, so a room
+ * with it keeps the lobby's delay):
  *  - up one frame when every machine waited in ADAPT_WAITS or more frames
  *    (a machine faster than the others waits a little every frame whatever
  *    the delay, so only everybody waiting means the delay is short), but
@@ -56,6 +58,7 @@ static uint8_t ceiling;               /* host: the lobby's delay + 1, the highes
 
 /* the window's end: a joiner's figures out, the host's decision (statics and
  * no shifts by a variable: small code on the Z80) */
+#ifndef PLAT_NET_FOLLOW_ONLY
 static void adapt_window(const uint8_t *k) {
   static uint8_t v, lo, hi, busy, n, s;
   v = (uint8_t)(ADAPT_VALID | w_min | (w_waits > 7 ? 0x70 : w_waits << 4));   /* our own figures */
@@ -83,6 +86,7 @@ static void adapt_window(const uint8_t *k) {
   report = net_delay;
 #endif
 }
+#endif
 
 /* a failed NET command: ask the device why (desync / dropped) */
 static void net_fail(void) {
@@ -125,13 +129,17 @@ void net_lockstep_poll(void) {
   while (!net_abort) {
     if (net_poll(net_frame, &avail, keys) != 0) { net_fail(); break; }
     if (avail != 0xffff && avail >= net_frame) {
+#ifndef PLAT_NET_FOLLOW_ONLY
       if (!tries) {                               /* in time: frames early + 1 (the low bytes do: under 16 apart) */
         i = (uint8_t)((uint8_t)avail - (uint8_t)net_frame + 1);
         if (i < w_min) w_min = i;
       }
+#endif
       break;
     }
+#ifndef PLAT_NET_FOLLOW_ONLY
     if (!tries) { w_min = 0; w_waits++; }          /* it waits */
+#endif
     if (++tries > 4) {
       net_waiting = 1;
       if ((tries & 15) == 0) {
@@ -154,7 +162,9 @@ void net_lockstep_poll(void) {
     net_waiting = 0;
     i = keys[ADAPT_BYTE];                         /* the host's delay (slot 0's last byte; 0 from an older host) */
     if (net_slot && i && i <= NET_DELAY_MAX) net_delay = i;
+#ifndef PLAT_NET_FOLLOW_ONLY
     if (((uint8_t)net_frame & (ADAPT_WINDOW - 1)) == ADAPT_WINDOW - 1) adapt_window(keys);
+#endif
   }
   net_frame++;
   ahead--;
