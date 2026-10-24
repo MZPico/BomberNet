@@ -1,0 +1,191 @@
+# Every target built with the pinned toolchains (tools/ci/toolchains.env), its
+# memory budget checked (tools/check_sizes.py), its files kept as artifacts;
+# and the lint of the shared code (tools/lint_core.py).
+name: build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/lint_core.py
+
+  host:
+    name: host simulator
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: tools/build_host.sh
+
+  z80:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: MZ-800, platform: mz, dir: c, files: "bomber.mzf" }
+          - { name: ZX Spectrum 48K, platform: zx, dir: zx, files: "bomber.tap" }
+          - { name: ZX Spectrum 128K, platform: zx128, dir: zx128, files: "bomber.tap" }
+          - { name: Amstrad CPC, platform: cpc, dir: cpc, files: "bomber.cpc bomber.dsk" }
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain versions
+        run: grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
+      - name: z88dk (Docker image)
+        run: docker pull -q "$Z88DK_IMAGE"
+      - name: build
+        run: |
+          export PATH="$PWD/tools/ci/z88dk:$PATH"
+          mkdir -p build/${{ matrix.dir }} && cd build/${{ matrix.dir }}
+          cmake -DPLATFORM=${{ matrix.platform }} ../../c
+          make
+      - name: memory budget
+        run: python3 tools/check_sizes.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}
+          path: |
+            build/${{ matrix.dir }}/bomber*
+          retention-days: 14
+
+  mos:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: Atari XL/XE, script: build_atari.py, dir: atari }
+          - { name: Commodore 64, script: build_c64.py, dir: c64 }
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain versions
+        run: grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        id: sdk
+        with:
+          path: ~/llvm-mos
+          key: llvm-mos-${{ env.LLVM_MOS_VERSION }}
+      - name: llvm-mos SDK
+        if: steps.sdk.outputs.cache-hit != 'true'
+        run: |
+          curl -sSL -o /tmp/llvm-mos.tar.xz \
+            "https://github.com/llvm-mos/llvm-mos-sdk/releases/download/$LLVM_MOS_VERSION/llvm-mos-linux.tar.xz"
+          tar -xJf /tmp/llvm-mos.tar.xz -C ~
+      - name: build
+        run: LLVM_MOS=~/llvm-mos python3 tools/${{ matrix.script }}
+      - name: memory budget
+        run: LLVM_MOS=~/llvm-mos python3 tools/check_sizes.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.dir }}
+          path: build/${{ matrix.dir }}/bomber.*
+          retention-days: 14
+
+  amiga:
+    name: Amiga
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain versions
+        run: grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
+      - name: bebbo's gcc (Docker image)
+        run: docker pull -q "$AMIGA_IMAGE" && docker tag "$AMIGA_IMAGE" amigadev/crosstools:m68k-amigaos
+      - name: build
+        run: python3 tools/build_amiga.py --adf
+      - uses: actions/upload-artifact@v4
+        with:
+          name: amiga
+          path: |
+            build/amiga/bomber
+            build/amiga/bombernet.adf
+          retention-days: 14
+
+  st:
+    name: Atari ST
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: cross-mint (ppa:vriviere/ppa)
+        run: |
+          sudo add-apt-repository -y ppa:vriviere/ppa
+          sudo apt-get update -q
+          sudo apt-get install -y -q cross-mint-essential
+      - name: build
+        run: python3 tools/build_st.py --st
+      - uses: actions/upload-artifact@v4
+        with:
+          name: st
+          path: |
+            build/st/BOMBER.PRG
+            build/st/bombernet.st
+          retention-days: 14
+
+  pc:
+    name: IBM PC (DOS)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain versions
+        run: grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        id: ow
+        with:
+          path: ~/openwatcom
+          key: openwatcom-${{ env.OPENWATCOM_RELEASE }}
+      - name: OpenWatcom
+        if: steps.ow.outputs.cache-hit != 'true'
+        run: |
+          curl -sSL -o /tmp/ow.tar.xz \
+            "https://github.com/open-watcom/open-watcom-v2/releases/download/$OPENWATCOM_RELEASE/ow-snapshot.tar.xz"
+          mkdir -p ~/openwatcom && tar -xJf /tmp/ow.tar.xz -C ~/openwatcom
+      - name: build
+        run: WATCOM=~/openwatcom python3 tools/build_pc.py --img
+      - name: memory budget
+        run: python3 tools/check_sizes.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pc
+          path: |
+            build/pc/BOMBER.EXE
+            build/pc/bombernet.img
+          retention-days: 14
+
+  web:
+    name: browser (WebAssembly)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain versions
+        run: grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        id: emsdk
+        with:
+          path: ~/emsdk
+          key: emsdk-${{ env.EMSDK_VERSION }}
+      - name: Emscripten
+        if: steps.emsdk.outputs.cache-hit != 'true'
+        run: |
+          git clone -q https://github.com/emscripten-core/emsdk.git ~/emsdk
+          ~/emsdk/emsdk install "$EMSDK_VERSION" && ~/emsdk/emsdk activate "$EMSDK_VERSION"
+      - name: build
+        run: EMSDK=~/emsdk python3 tools/build_web.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web
+          path: |
+            build/web/bombernet.html
+            build/web/bombernet.js
+            build/web/bombernet.wasm
+          retention-days: 14
