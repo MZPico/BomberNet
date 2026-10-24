@@ -57,6 +57,7 @@ tools/build_host.sh && c/build/sim 30000 2                                 # the
 tools/build_amiga.py --adf                                                 # -> build/amiga/bomber, bombernet.adf (bebbo's gcc in Docker)
 tools/build_st.py --st                                                     # -> build/st/BOMBER.PRG, bombernet.st (m68k-atari-mint-gcc)
 tools/build_pc.py --img                                                    # -> build/pc/BOMBER.EXE, bombernet.img (OpenWatcom v2)
+tools/build_web.py                                                         # -> build/web/bombernet.html, .js, .wasm (Emscripten)
 ```
 
 The MZ build uses the environment of the MZPico-800-Manager (`+mz` target,
@@ -165,9 +166,10 @@ measurements and the reasoning behind the delay rule: `docs/net-timing.md`.
 | `tools/lockstep_test.py`, `tools/nettest.py` | two MZ-800s (mz800emu, MZPico card emulated) through the local relay |
 | `tools/lockstep_zx.py` | two Spectrums (`tools/zxemu.py`, Spectranet emulated at its programming interface) through the local relay or production |
 | `tools/replay_cpc.py`, `tools/lockstep_cpc.py` | the same recordings on the Amstrad CPC build; two CPCs with M4 boards (`tools/cpcemu.py`) through the local relay or production |
-| `tools/crossplay.py` | two different machines in one match: MZ-800, Spectrum, CPC, the 128K with its ESP-01 (`esp`), C64, Amiga, Atari ST, PC (`PC_NET=pkt`: over Ethernet) |
+| `tools/crossplay.py` | two different machines in one match: MZ-800, Spectrum, CPC, the 128K with its ESP-01 (`esp`), C64, Amiga, Atari ST, PC (`PC_NET=pkt`: over Ethernet), the browser build (`web`) |
 | `tools/st_test.py`, `tools/st_play.py`, `tools/st_match.py`, `tools/st_modem.py`, `tools/st_netplay.py` | the Atari ST build in Hatari: a recording replayed, the inputs and the sound, two STs in a match; a WiFi modem emulated on Hatari's serial port; the networked game in a window to play by hand |
 | `tools/pc_test.py`, `tools/pc_play.py`, `tools/pc_match.py` | the PC build in DOSBox-X: a recording replayed and timed, the inputs and the sound (speaker or FM), two PCs in a match (the modem, or `PC_NET=pkt` Ethernet) |
+| `tools/web_test.py`, `tools/web_match.py`, `tools/webpage.py` | the browser build: every recording replayed in Node.js, two browser tabs in a match (Chromium over its DevTools port), the tab driver |
 | `tools/fusex_match.py` | two FuseX with the real Spectranet firmware (`tools/fusex.py` drives FuseX through its GDB server) |
 | `tools/softnet_test.sh` | the software network device on a PC: two processes in one room |
 | `tools/set_relay.py` | not a test: points a release file (Spectrum, CPC, Atari, C64, Amiga) at another relay |
@@ -212,6 +214,7 @@ changed on purpose and how fast it runs: `docs/original.md`.
 | `docs/port-amiga.md` | the Amiga port (any 68000 Amiga, `bsdsocket.library`): plan, measurements, FS-UAE with a free AROS ROM as the test bench |
 | `docs/port-atari-st.md` | the Atari ST port (a WiFi modem on the serial port): plan, measurements, Hatari with EmuTOS as the test bench |
 | `docs/port-pc.md` | the IBM PC port (DOS; CGA, EGA, VGA; Ethernet or a WiFi modem; AdLib/Sound Blaster): plan, measurements, DOSBox-X as the test bench |
+| `docs/port-web.md` | the game compiled to WebAssembly for the browser (no emulator): plan, results, the page on mzpico.com |
 | `docs/portability.md` | the rules that keep one C game for Z80, 6502 and 68000 machines |
 | `docs/port-zx128-esp01.md` | the 128K Spectrum with an ESP-01 (Milan Stava's port, brought in step by step): plan and progress |
 | `PLAN.md` | the multiplayer plan the C port followed |

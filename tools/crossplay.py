@@ -10,7 +10,7 @@ by side, one TV frame each in turn, and compares their state hashes. The
 C64 runs in VICE with a WiC64 (tools/vice.py), in real time on its own: its
 TV frame is 20 ms of waiting, and it stands still while it is read.
 
-  tools/crossplay.py [steps] [host] [joiner]   machines: mz, zx, cpc, esp, c64, amiga, st, pc; default mz zx
+  tools/crossplay.py [steps] [host] [joiner]   machines: mz, zx, cpc, esp, c64, amiga, st, pc, web; default mz zx
                                                (esp: build/zx128, an eLeMeNt with its ESP-01)
                                                (the second argument alone: mz or zx hosts the other)
   PLAYERS=3 LOCAL_HOST=2 LOCAL_JOIN=1   seats: players in total, local players per machine
@@ -394,6 +394,66 @@ class IBMPC:
     def close(self): self.m.close()
 
 
+class WebPage:
+    """The browser build (tools/build_web.py) in a Chromium tab (tools/webpage.py), in real time: its menu set
+    and its state read through the page's hooks (web_poke, web_state), its hashes and maps every 16th frame
+    from the page (?trace=1), its keys as the browser's."""
+    kind = 'WEB'
+    keys = {'fire': 'Space', 'walk': 'Right'}
+    POKE = {'_menu_mode': 0, '_menu_players': 1, '_menu_net': 2, '_menu_local': 3}
+
+    def __init__(self):
+        import webpage
+        self.webpage = webpage
+        r = subprocess.run([sys.executable, os.path.join(HERE, 'build_web.py')], capture_output=True, text=True)
+        if r.returncode: sys.exit('web build failed: ' + r.stdout[-1500:] + r.stderr[-1500:])
+        port = webpage.serve(os.path.join(HERE, '..', 'build', 'web'))
+        self.t = webpage.Tab(f'http://127.0.0.1:{port}/bombernet.html?trace=1&relay=ws://127.0.0.1:8765')
+        for _ in range(100):
+            try:
+                if self.t.eval('!!(window.Module && Module._web_state)'): break
+            except RuntimeError: pass
+            time.sleep(0.2)
+        self.cached, self.flushes, self.maps, self.taken = None, [], {}, 0
+
+    def _state(self):
+        if self.cached is None:
+            p = (self.t.eval('UTF8ToString(Module._web_state())') or '').split()
+            self.cached = dict(zip(p[0::2], p[1::2]))
+        return self.cached
+
+    def rd(self, n, k=1):
+        st = self._state()
+        if n == '_net_code': return st.get('code', '    ').encode()
+        if n == '_net_table': return bytes.fromhex(st.get('table', 'ffffffff'))
+        if n == '_map_layer':
+            m = self.t.eval('(() => { const m = Module.bombernetMaps || {}, k = Object.keys(m).map(Number); '
+                            'return k.length ? m[Math.max(...k)] : null; })()')
+            return bytes(m) if m else None
+        return self.r16(n).to_bytes(2, 'little')[:k]
+    def r8(self, n): return self.r16(n) & 0xff
+    def r16(self, n):
+        st = self._state()
+        if n == '_state_hash': return int(st.get('hash', '0'), 16)
+        return int(st.get(n.lstrip('_').replace('net_', '').replace('title_mode', 'title').replace('frame_no', 'frame'), '0'))
+    def wr(self, n, bs):
+        if n == '_net_code':
+            for i, b in enumerate(bytes(bs)[:4]): self.t.eval(f'Module._web_poke({4 + i}, {b})')
+        elif n in self.POKE: self.t.eval(f'Module._web_poke({self.POKE[n]}, {bs[0]})')
+    def tv_frame(self):
+        time.sleep(0.02); self.cached = None
+        new = self.t.eval(f'(Module.bombernetHashes || []).slice({self.taken})') or []
+        self.taken += len(new)
+        self.flushes += [(f, h) for f, h in new]                 # (frame f, f - 1's hash): as the PC's log lines
+        if new:
+            mp = self.t.eval('Module.bombernetMaps || {}') or {}
+            for f, v in mp.items(): self.maps[int(f)] = bytes(v)
+            self.t.eval('Module.bombernetMaps = {}')
+    def press(self, k): self.t.key(self.keys.get(k, k), True)
+    def release(self, k): self.t.key(self.keys.get(k, k), False)
+    def close(self): self.t.close()
+
+
 def run(n, *ms):
     for _ in range(n):
         for m in ms: m.tv_frame()
@@ -407,7 +467,7 @@ def until(cond, limit, *ms):
 
 
 t0 = time.time()
-MACHINES = {'mz': MZ, 'zx': Spectrum, 'cpc': Amstrad, 'esp': Element, 'c64': Commodore, 'amiga': Amiga, 'st': AtariST, 'pc': IBMPC}
+MACHINES = {'mz': MZ, 'zx': Spectrum, 'cpc': Amstrad, 'esp': Element, 'c64': Commodore, 'amiga': Amiga, 'st': AtariST, 'pc': IBMPC, 'web': WebPage}
 host, join = MACHINES[HOST](), MACHINES[JOIN]()
 both = (host, join)
 run(90, *both)                                                    # both titles up and settled
@@ -516,6 +576,7 @@ for m in both:
         subprocess.run(['ffmpeg', '-loglevel', 'error', '-y', '-f', 'x11grab', '-video_size', '1024x768', '-i', st_match.DISPLAY,
                         '-frames:v', '1', 'build/cross_st.png'], env=dict(os.environ, DISPLAY=st_match.DISPLAY))
     elif m.kind == 'CPC': m.c.screenshot('build/cross_cpc.png')
+    elif m.kind == 'WEB': m.t.screenshot('build/cross_web.png')
     else: m.e.screenshot('build/cross_mz.png')
 for m in both: m.close()
 sys.exit(1 if mism or any(aborts) or not common else 0)
