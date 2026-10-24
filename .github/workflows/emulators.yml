@@ -256,6 +256,41 @@ jobs:
           ldd ~/vice-dist/bin/x64sc | grep 'not found' || true
           timeout 20 ~/vice-dist/bin/x64sc +logcolorize -default -sounddev dummy -limitcycles 2000000 2>&1 | tail -40 || true
 
+  atari:
+    name: Atari XL/XE in atari800
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain versions
+        run: grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        id: sdk
+        with:
+          path: ~/llvm-mos
+          key: llvm-mos-${{ env.LLVM_MOS_VERSION }}
+      - name: llvm-mos SDK
+        if: steps.sdk.outputs.cache-hit != 'true'
+        run: |
+          curl -sSL -o /tmp/llvm-mos.tar.xz \
+            "https://github.com/llvm-mos/llvm-mos-sdk/releases/download/$LLVM_MOS_VERSION/llvm-mos-linux.tar.xz"
+          tar -xJf /tmp/llvm-mos.tar.xz -C ~
+      - name: atari800 (its built-in AltirraOS), the displays
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q atari800 xvfb x11-utils ffmpeg python3-pil
+          tools/ci/displays.sh
+      - name: replay
+        run: |
+          LLVM_MOS=$HOME/llvm-mos python3 tools/build_atari.py --test tests/recordings/dm4.bnr
+          tools/ci/retry.sh python3 tools/atari_test.py
+          echo "- Atari replay: passed" >> "$GITHUB_STEP_SUMMARY"
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: atari-failure
+          path: build/atari/test.png
+          retention-days: 7
+
   mz:
     name: MZ-800 in mz800emu, ${{ matrix.test }}
     runs-on: ubuntu-24.04
