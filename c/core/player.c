@@ -75,20 +75,20 @@ void player_killed(player_t *p) {
   players[k].score += 10;
 }
 
-static uint8_t player_flash;              /* bit per player: its drop pose is in the picture (not hashed: a picture's matter) */
+static uint8_t player_flash, draw_bit;    /* bit per player: its drop pose is in the picture (not hashed: a picture's matter); the bit of the player being drawn */
 
 /* state 0/1 standing, 6..13 dying. A bomb just dropped: the drop pose
  * (frame A) for one frame, and the player in the bomb's colour for it
  * (players_colours): the original's blink, which its table gave player 1. */
 static void draw_player(player_t *p) {
-  uint8_t code;
-  uint8_t *c;
+  static uint8_t code;                    /* static: smaller code with sccz80 */
+  static uint8_t *c;
   if (p->state >= P_DYING) {
     code = 0x4e - (p->state - P_DYING) * 2;
   } else if (p->state == P_STAND0) {
     p->state = P_STAND1;
     code = p->tile_a;
-    player_flash |= (uint8_t)(1 << (p - players));
+    player_flash |= draw_bit;
   } else {
     code = p->tile_b;
   }
@@ -104,31 +104,35 @@ static void draw_player(player_t *p) {
  * on; and a player whose drop pose has just been flushed gets the bomb's
  * colour (PLAYER_FLASH with its number) for that one frame. */
 void players_colours(void) {
-  uint8_t i, c;
-  for (i = 0; i < MAX_PLAYERS; i++) {
-    player_t *p = &players[i];
+  static uint8_t i, c, bit, x, y;         /* static: smaller code with sccz80 */
+  static player_t *p;
+  for (i = 0, bit = 1; i < MAX_PLAYERS; i++, bit <<= 1) {
+    p = &players[i];
     if (!p->active || p->life_lost) continue;
-    if (player_flash & (1 << i)) { player_flash &= (uint8_t)~(1 << i); c = (uint8_t)(i | PLAYER_FLASH); }
-    else if (p->state >= P_DYING) c = i;
-    else continue;
-    plat_player_colour(p->x, p->y, c);
-    plat_player_colour(p->x + 1, p->y, c);
-    plat_player_colour(p->x, p->y + 1, c);
-    plat_player_colour(p->x + 1, p->y + 1, c);
+    c = i;
+    if (player_flash & bit) c |= PLAYER_FLASH;
+    else if (p->state < P_DYING) continue;
+    x = p->x; y = p->y;
+    plat_player_colour(x, y, c);
+    plat_player_colour(x + 1, y, c);
+    plat_player_colour(x, y + 1, c);
+    plat_player_colour(x + 1, y + 1, c);
   }
+  player_flash = 0;                       /* all of them in the picture now */
 }
 
 void draw_players(void) {
   uint8_t i;
-  for (i = 0; i < MAX_PLAYERS; i++)
+  for (i = 0, draw_bit = 1; i < MAX_PLAYERS; i++, draw_bit <<= 1)
     if (players[i].active && !players[i].life_lost) draw_player(&players[i]);
 }
 
 /* Cursor keys move by one char when none of the four chars ahead is a wall,
  * pillar or fresh brick (in the draw buffer). Players pass through each other. */
 static void move_player(player_t *p) {
-  uint8_t k = p->keys, d, x, y;
-  const uint8_t *c;
+  static uint8_t k, d, x, y;              /* static: smaller code with sccz80 */
+  static const uint8_t *c;
+  k = p->keys;
   if (k & KEY_DOWN) d = 0;
   else if (k & KEY_LEFT) d = 1;
   else if (k & KEY_RIGHT) d = 2;
@@ -148,10 +152,11 @@ static void move_player(player_t *p) {
 /* Every 2nd frame: toggle the animation frame; alive -> move; dying -> step
  * the death animation (every 4th call) and raise life_lost at its end. */
 void players_anim_step(void) {
-  uint8_t i;
+  static uint8_t i;
+  static player_t *p;
   if (tmr_player_anim.counter != 0) return;
   for (i = 0; i < MAX_PLAYERS; i++) {
-    player_t *p = &players[i];
+    p = &players[i];
     if (!p->active) continue;
     p->anim ^= 2;
     if (p->state < P_DYING) { move_player(p); continue; }
@@ -166,9 +171,10 @@ void players_anim_step(void) {
 /* On the EXIT tile: the stage is regenerated (no points). On the BONUS
  * tile: random 16..142 points (x10 on screen) and the bonus disappears. */
 void check_pickups(void) {
-  uint8_t i;
+  static uint8_t i;
+  static player_t *p;
   for (i = 0; i < MAX_PLAYERS; i++) {
-    player_t *p = &players[i];
+    p = &players[i];
     if (!p->active || p->state >= P_DYING) continue;
     if (exit_y == p->y && exit_x == p->x) {
       exit_present = 0;
