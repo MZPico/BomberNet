@@ -251,6 +251,82 @@ Through the production relay from here a round trip is about 130 ms, so
 120 ms is the floor for lockstep; 60 ms needs a round trip under about
 90 ms. Lower than that only rollback (local prediction) could feel.
 
+## Input lag: from the key to the screen (0.3.0)
+
+Standalone the game feels right; in a match the same key takes longer. The
+chain was measured on the MZ-800 in mz800emu (cycle stamps at `tick_timers`,
+`flush_screen`, `plat_frame_sync`, `draw_hud` and `input_poll` during the
+dm4 and coop4 replays, the hash every 16 frames as in a match) and on the
+Spectrum in `tools/zxemu.py`. For a key pressed at a random moment:
+
+1. **Sampling.** The keys are read once a frame (`input_poll`): 0 to 60 ms,
+   30 on average.
+2. **The move rhythm.** Players move every second frame
+   (`tmr_player_anim`, `players_anim_step`): a key read on the other frame
+   waits one more. 0 to 60 ms, 30 on average. Bombs go every frame.
+3. **The logic.** 6 to 12 ms on the MZ-800, 12 to 15 on the Spectrum (dm4).
+4. **The picture.** The flush writes the changed cells: 17 ms on the MZ, 16
+   to 17 on the Spectrum; the TV shows them at its next pass, 0 to 20 ms.
+5. **The frame's order.** Before 0.3.0 a frame was [sync wait] [flush]
+   [HUD] [keys] [logic]: the picture of a frame's logic was flushed only
+   after the *next* frame's wait, so the frame's whole idle time sat
+   between the logic and the picture: 20 to 28 ms on the MZ-800, 13 to 20
+   on the Spectrum, and 45 to 58 on the PC, the Amiga, the ST and in the
+   browser, which finish a frame's work in 2 to 13 ms.
+
+The fix is two lines in `core/game.c` (`tick_timers`): the flush, then the
+wait. The flush stays the first thing of a frame, which every replay and
+lockstep tool counts as the frame; moving the flush to the frame's end
+instead shifted the count by one at every round transition (`idle_frames`
+and `show_message` flush too), hundreds of mismatches.
+
+| Keys sampled -> picture complete (median) | before | after |
+|---|---|---|
+| MZ-800, dm4 | 52.6 ms | 28.6 ms |
+| MZ-800, coop4 | 52.6 ms | 29.8 ms |
+| Spectrum, dm4 | 52.2 ms | 32.9 ms |
+
+Press to the player's new cells in the video RAM (MZ-800, a two-player
+deathmatch on the keyboard, 32 presses at random moments, 20 ms steps):
+91 ms on average (40 to 160) before, 76 (20 to 140) after; the picture
+came 35 ms after the logic's move before, 7 after. The press to the move
+itself (points 1 and 2) is 56 to 69 ms on average in both, the same.
+
+The other machines gain their idle, up to their display's refresh: from the
+frame work in `docs/port-*.md`, a PC 286 about 54 ms, the browser 58, the ST
+50, an A1200 53, an A500 33, the CPC 21, the Atari XL 26, the C64 17.
+Replays stay identical (0 mismatches on every recording: the simulator, the
+MZ, the Spectrum, the CPC, the browser build; the PC and Atari test builds
+in their emulators; MZ-MZ, ZX-ZX, CPC-CPC, browser-browser and MZ-ZX
+matches).
+
+**The network is unchanged by this.** In a match the keys are sent where
+they are read and needed where the logic runs, and both moved together, so
+the delay and the margins are as before. A match's lag is the chain above
+plus d x 60 ms. What is left:
+
+- **d itself.** The lockstep floor: d = 1 needs the pair's round trip, the
+  wire and both devices, within 120 ms. Through the production relay from
+  here it is about 130 (the relay alone 68, the rest the devices and the
+  browser's audio-paced emulator): hence 2. The in-match adjustment measures
+  the margins in whole frames; with the settled phase (the waiting machine
+  near 0, the other 2d x 60 - round trip) that is exact at the step: it goes
+  down to d - 1 exactly when the round trip fits.
+- **The move rhythm**, 30 ms on average: a per-player phase (a standing
+  player steps at the first frame its key arrives, then every second frame)
+  would remove it. A change of the simulation: BUILD_ID, the recordings
+  regenerated, no play against older builds.
+- **Asymmetric delays.** Each key carries its frame, so each machine's own
+  d is its own business; a pair needs the two to cover the round trip
+  together. Host 1, joiner 2 fits 130 ms, and one player gets 60 ms, the
+  other 120: unfair unless the seats rotate.
+- **Rollback**, local prediction: the only way below the round trip.
+
+Outside the common code: a device's own latency (a card's firmware loop, a
+modem), the relay's location, and a server that holds small segments
+against a client's delayed ACK (the PC's is 70 ms): worth a packet trace if
+a machine sees every other input line late.
+
 ## Not changed
 
 - Mixed versions still play (the delay is announced by the host), but 0.1.1
