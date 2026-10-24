@@ -26,7 +26,11 @@ The first port to a processor other than the Z80, chosen before the C64
 4. **The network**: `tcp.h` over FujiNet `N:TCP`, emulated in a test harness;
    its cost per frame (the serial bus), lockstep and cross-play tests,
    production relay, FujiNet-PC. In progress, see below.
-5. **Hardware test, release.** Then the C64 on the same 6502 work.
+5. **Hardware test, release.** Then the C64 on the same 6502 work. The
+   network build ships with 0.3.0 untested on a real FujiNet (the emulated
+   chain is ten times slower than real time): the measured SIO cost makes a
+   match 5 to 18 % slow, which a real FujiNet is to confirm before the
+   background SIO is written.
 
 ## Step 0: the core on a 6502
 
