@@ -109,13 +109,17 @@ static int rx_byte(void) {                /* a byte waiting, or -1 */
 
 static int rx_peek(void) { return rx_tail == rx_head ? -1 : rx_ring[rx_tail]; }
 
-static void tx(const char *s, uint16_t n) {
-  while (n--) {
-    uint16_t h = (uint16_t)((tx_head + 1) & (TX_SIZE - 1));
-    while (h == tx_tail) ;                /* the ring full: the interrupt is emptying it */
-    tx_ring[tx_head] = (uint8_t)*s++;
+static void tx(const char *s, uint16_t n) {  /* into the ring in block copies, the transmitter woken once a block */
+  while (n) {
+    uint16_t room = (uint16_t)((tx_tail - tx_head - 1) & (TX_SIZE - 1)), k;
+    if (!room) continue;                  /* the ring full: the interrupt is emptying it */
+    k = (uint16_t)(TX_SIZE - tx_head);    /* up to the ring's end */
+    if (k > room) k = room;
+    if (k > n) k = n;
+    memcpy((uint8_t *)tx_ring + tx_head, s, k);
+    s += k; n = (uint16_t)(n - k);
     _disable();
-    tx_head = h;
+    tx_head = (uint16_t)((tx_head + k) & (TX_SIZE - 1));
     if (!tx_busy) { tx_busy = 1; outp(base + 1, 0x03); }   /* the transmitter's interrupt on: it fires at once, being empty */
     _enable();
   }

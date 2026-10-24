@@ -289,6 +289,9 @@ uint8_t plat_keys_a(void) {
   if (keydown[K_LEFT]) k |= KEY_LEFT;
   if (keydown[K_RIGHT]) k |= KEY_RIGHT;
   if (kbd_alt_fire ? keydown[K_RETURN] : keydown[K_SPACE]) k |= KEY_SPACE;
+#ifdef PC_NETTEST
+  if (!title_mode) k &= (uint8_t)~KEY_SPACE;   /* the test's SPACE presses to ready up must not drop a bomb in the game */
+#endif
   return k;
 }
 

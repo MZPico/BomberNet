@@ -399,10 +399,31 @@ pace is then the clock across 16 frames:
 | 300 cycles | 60.0 ms a frame (full speed) | 60.9 ms |
 | 240 cycles (the user's) | 65 ms | 75 ms |
 
-So at 300 cycles an XT keeps the pace on either; at 240 the modem is 8 %
-slow and Ethernet 25 %. What is left on Ethernet: handling two received
-frames (copy, two checksums, TCP in C) about 9 ms, building our segment
-and the calls about 7, the WebSocket and protocol layer about 4.
+Those 240-cycle figures came from short runs (a player died at frame 130,
+the test's own SPACE: the network test build now ignores fire in a game).
+
+**In assembly then (the PC's files only; the shared code is as it was):**
+the one's complement checksum (ADD, ADC 0 a word), network byte order
+inline (`#pragma aux`: a load and XCHG), the TCP rings filled and emptied in
+two block copies, the modem's bytes into its ring in blocks (one interrupt
+lock a block, not a byte), and the packet driver called directly (flags
+pushed, a far call through its vector) instead of through `int86x`. At 300
+cycles, per frame: the modem's TCP layer 7.6 -> 3.2 ms, the core's network
+calls 11.1 -> 7.0; Ethernet's 17.5 -> 14.6 and 22.3 -> 18.7, the received
+frames 8.8 -> 6.0. Two minutes each at 240 cycles (the user's), with a
+light log, all 2017 frames:
+
+| 240 cycles, per game frame | before | after |
+|---|---|---|
+| modem, median | 60.0 ms | 60.0 ms |
+| Ethernet, median | 68.2 ms | 63.2 ms |
+| Ethernet, overall | 72.6 ms | 66.9 ms |
+
+(Overall includes the test log's disk writes and the stage starts' map
+generation, up to about 200 ms a 16-frame stretch.) So at 240 cycles the
+modem keeps full pace and Ethernet about 95 %; the release build, without
+the test's timing calls, a little better. Normal and lossy matches: hashes
+equal.
 
 ## AdLib and Sound Blaster
 
