@@ -12,6 +12,7 @@ both are compared frame by frame.
   KEYS=build/ref/dm4.bnr ...             the players' keys from a recording (A's local players
                                          are its players 1 and 2, B's 3 and 4): a busy match
   QUIET=1 ...                            tones off
+  STACK_MIN=100 ...                      fail when the stack watermark leaves fewer bytes unused above the program
   PROF=_net_send,_ws_poll,...            A's time per game frame in each of these functions, entry to
                                          return (calls they make included)
   BREAK_AT=40 ...                        A leaves with BREAK after 40 frames: A ends with
@@ -57,6 +58,7 @@ def tap(z, key, n=3, *others):
 
 
 t0 = time.time()
+stack_short = False                                # STACK_MIN=n: fail when the stack left fewer bytes unused
 a, b = inst(A_BUILD), inst(B_BUILD)
 FB, TMB, SHB, FNB, NSB, NAB_B, NDLY_B = (SB(n) for n in ('_flush_screen', '_title_mode', '_state_hash', '_frame_no',
     '_net_slot', '_net_abort', '_net_delay'))
@@ -162,6 +164,8 @@ for name, z in (('A', a), ('B', b)):
     m = z.read(BSS[z], TOP[z] - BSS[z], page=0)
     used_from = next((BSS[z] + i for i, v in enumerate(m) if v != 0xa5), TOP[z])
     print(f'{name}: stack reached {used_from:04x} (marked up to {TOP[z]:04x}), {used_from - BSS[z]} bytes above the program left unused')
+    if os.environ.get('STACK_MIN') and used_from - BSS[z] < int(os.environ['STACK_MIN']):
+        print(f'{name}: FAIL: fewer than STACK_MIN={os.environ["STACK_MIN"]} bytes left unused'); stack_short = True
     if os.environ.get('STACK_DUMP'):                  # the deepest calls: the code addresses left in the stack's lowest part
         mp = os.path.join(A_BUILD if z is a else B_BUILD, 'bomber.map')
         code = sorted((int(m.group(2), 16), m.group(1)) for m in
@@ -183,4 +187,4 @@ if BREAK_AT:
     again = gr(a, NC, 4) != before
     print('A hosts again: room', gr(a, NC, 4).decode() if again else 'none')
     sys.exit(0 if aborts[0] == 7 and aborts[1] and not mism and again else 1)
-sys.exit(1 if mism or any(aborts) or not common else 0)
+sys.exit(1 if mism or any(aborts) or not common or stack_short else 0)
