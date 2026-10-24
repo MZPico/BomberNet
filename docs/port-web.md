@@ -56,7 +56,8 @@ the JOYSTICK row offer GAMEPAD.
 
 **Sound.** A square wave of 1108400 / ratio Hz (the MZ's 8253) through Web
 Audio, for len * 0.93 ms; the audio context starts with the first key press
-(browsers allow sound only after a user gesture).
+(browsers allow sound only after a user gesture). The SOUND button next
+to FULL mutes it; the choice is kept in the browser (localStorage).
 
 **The network.** `c/platform/web/ws_web.c` is `ws.h` over the page's
 WebSocket; `common/netdev_soft.c` runs on it unchanged, with binary input

@@ -169,7 +169,7 @@ void flush_screen(void) {
 
 void plat_player_colour(uint8_t x, uint8_t y, uint8_t player) {
   static const uint8_t attrs[MAX_PLAYERS] = {0x40, 0x60, 0x70, 0x10};
-  vattr[y * SCREEN_W + x] = attrs[player];
+  vattr[y * SCREEN_W + x] = (player & PLAYER_FLASH) ? ((player & 3) == 3 ? 0x70 : 0x10) : attrs[player & 3];
 }
 
 void plat_hud_colour(uint8_t x, uint8_t n, uint8_t player, uint8_t blank) {

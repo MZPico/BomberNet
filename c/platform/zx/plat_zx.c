@@ -51,6 +51,7 @@ uint8_t plat_input_allowed(uint8_t input) {
 
 /* attribute of each player's colour: green, yellow, white, blue (BRIGHT) */
 static const uint8_t player_attrs[MAX_PLAYERS] = {0x44, 0x46, 0x47, 0x41};
+static const uint8_t flash_attrs[8] = {0x44, 0x46, 0x47, 0x41, 0x41, 0x41, 0x41, 0x47};   /* and with PLAYER_FLASH */
 
 /* The game never prints through the C library; the start-up code would link
  * its console driver anyway (1 KB), so it is redirected to nothing. */
@@ -478,8 +479,9 @@ void plat_player_colour(uint8_t x, uint8_t y, uint8_t player) {
   uint8_t *p;
   if (y >= PLAT_ROWS) return;
   p = (uint8_t *)0x5800 + (uint16_t)y * 32 + SCR_LEFT + a0;
-  p[0] = player_attrs[player];
-  if (a1 != a0) p[1] = player_attrs[player];
+  player = flash_attrs[player];                      /* 4..7: the flash, bright blue (the bombs'), white for the blue player */
+  p[0] = player;
+  if (a1 != a0) p[1] = player;
 }
 
 /* after the flush: status-line cells in the player's colour, on the bar

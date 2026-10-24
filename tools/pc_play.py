@@ -3,7 +3,7 @@
 a preset 4-player deathmatch (a PC_PLAYTEST build: tools/build_pc.py
 --play), then key set A (cursor keys; this preset fires with RETURN) and
 key set B (W A S D, E); each must move its player; ESC leaves the match,
-and ESC on the title ends the program. The keys go to DOSBox-X's window
+and Alt+X on the title ends the program. The keys go to DOSBox-X's window
 by xdotool (the window alone on its X display); the program logs the
 players' places to C:\\PLAY.LOG. Then the sound: DOSBox-X records its
 output (DX-CAPTURE /A, the dummy SDL audio driver: no sound device) while
@@ -124,7 +124,7 @@ try:
     t = time.time()
     while time.time() - t < 10 and state()[1] != 1: time.sleep(0.5)
     check('ESC leaves the match', state()[1] == 1)
-    hold(['Escape'], 0.3); time.sleep(3)                   # ESC on the title: back to DOS
+    hold(['alt', 'x'], 0.3); time.sleep(3)                 # Alt+X on the title: back to DOS
     screenshot('dos.png')
 finally:
     p.kill()
@@ -153,12 +153,12 @@ def beeps(path):
     return out
 
 
-p = start(os.path.join(ROOT, 'build', 'pc', 'capture'))       # the sound: the menu's beeps recorded, ESC ends it
+p = start(os.path.join(ROOT, 'build', 'pc', 'capture'))       # the sound: the menu's beeps recorded, Alt+X ends it
 keys = [('Down', 0x020a), ('Down', 0x020a), ('Up', 0x020a), ('Right', 0x030a), ('Left', 0x030a)]
 try:
     time.sleep(2)
     for k, _ in keys: hold([k], 0.25); time.sleep(0.3)
-    hold(['Escape'], 0.3); time.sleep(3)
+    hold(['alt', 'x'], 0.3); time.sleep(3)
 finally:
     p.kill()
 wavs = glob.glob(os.path.join(ROOT, 'build', 'pc', 'capture', '*.wav'))

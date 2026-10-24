@@ -185,7 +185,7 @@ void tick_timers(void) {
   tick_timer(&tmr_enemy_move);
   tick_timer(&tmr_time);
   flush_screen();
-  players_death_colour();
+  players_colours();
   hud_colours();
   plat_frame_sync();
 }

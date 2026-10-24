@@ -283,7 +283,7 @@ void flush_screen(void) {
 }
 
 void plat_player_colour(uint8_t x, uint8_t y, uint8_t player) {
-  COLOUR[y * SCREEN_W + x] = player_colours[player];
+  COLOUR[y * SCREEN_W + x] = (player & PLAYER_FLASH) ? 6 : player_colours[player];   /* 6: the bombs' blue */
 }
 
 void plat_hud_colour(uint8_t x, uint8_t n, uint8_t player, uint8_t blank) {

@@ -17,7 +17,8 @@ Keys
                player has key set B)
   Key set B    W A S D, E fires
   Joysticks    two on the game port
-  ESC          leaves a match; on the title, back to DOS
+  ESC          leaves a match
+  Alt+X        on the title: back to DOS
 
 Options
 -------

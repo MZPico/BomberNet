@@ -107,6 +107,8 @@ static void __interrupt __far key_isr(void) {
 #define K_RIGHT 0x4d
 #define K_DOWN 0x50
 #define K_DELETE 0x53
+#define K_ALT 0x38
+#define K_X 0x2d
 
 #ifdef PC_PLAYTEST
 static FILE *playlog;                     /* tools/pc_play.py reads it: the players' places every frame */
@@ -393,13 +395,9 @@ void plat_frame_sync(void) {                    /* 60 ms */
 #endif
   next_frame += FRAME_MS;
   if ((int32_t)(now() - next_frame) > FRAME_MS) next_frame = now();   /* far behind (a pause): no rush to catch up */
-  {                                       /* ESC on the title screen ends the program: a new press (not one held from */
-    static uint8_t esc_was;               /* cancelling a room code), on a frame nothing asked for typed keys */
-    uint8_t esc = keydown[K_ESC];
-    if (title_mode && esc && !esc_was && !typing) exit(0);
-    esc_was = esc;
-    typing = 0;
-  }
+  if (title_mode && keydown[K_ALT] && keydown[K_X]) exit(0);   /* Alt+X on the title: back to DOS (ESC only leaves a match
+                                                                   or a room code: pressed once too often it ended the program) */
+  typing = 0;
 }
 
 void plat_delay(void) {                         /* a TV frame's worth: 20 ms */
@@ -851,8 +849,9 @@ void flush_screen(void) {
 }
 
 void plat_player_colour(uint8_t x, uint8_t y, uint8_t player) {
+  player = (player & PLAYER_FLASH) ? (cga ? 2 : 1) : (uint8_t)(8 + (player & 3));   /* 1: the bombs' blue; on a CGA red (its blue is the players' green) */
   ega_ready();
-  cell(x, y, amiga_game_glyph[shadow_vram[(uint16_t)y * SCREEN_W + x]], (uint8_t)(8 + player));
+  cell(x, y, amiga_game_glyph[shadow_vram[(uint16_t)y * SCREEN_W + x]], player);
 }
 
 void plat_hud_colour(uint8_t x, uint8_t n, uint8_t player, uint8_t blank) {

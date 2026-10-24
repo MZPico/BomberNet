@@ -264,7 +264,7 @@ void draw_bombs(void);
 void players_setup(uint8_t count);            /* activate players 0..count-1 with default inputs */
 void players_stage_reset(void);               /* standing, alive, at their start positions */
 void player_killed(player_t *p);              /* deathmatch credit when a player starts dying */
-void players_death_colour(void);              /* after flush: dying sprites keep the player colour */
+void players_colours(void);              /* after flush: dying sprites keep the player colour */
 void hud_colours(void);                       /* after flush: each player's lives in the player colour */
 void draw_players(void);
 void players_anim_step(void);

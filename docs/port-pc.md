@@ -16,7 +16,7 @@ with its own modem), Ethernet through a packet driver later.
    EGA/VGA renderer; a recording replayed in DOSBox-X with the hashes
    checked and the frames timed. Done, see below.
 1. **The platform layer**: the keyboard (its own INT 9 handler, the state
-   of every key), the game port's two joysticks, the speaker, ESC to DOS;
+   of every key), the game port's two joysticks, the speaker, Alt+X to DOS;
    the title and lobby; play in DOSBox-X. A CGA renderer. Done, see
    below.
 2. **The network**: `tcp.h` over a WiFi modem on a COM port (the 8250/16550
@@ -108,7 +108,7 @@ own cursor keys) is skipped, and its fake shift (E0 2A) ignored.
 | joysticks A and B | the game port (201h): two sticks, two buttons each |
 | text entry (the room code) | the letters; BACKSPACE or DELETE deletes, ESC cancels |
 
-ESC leaves a match; on the title it ends the program (the keyboard, the
+ESC leaves a match; Alt+X on the title ends the program (the keyboard, the
 timer, the speaker and the screen mode given back). The joysticks: a write
 to 201h starts the four timers, each axis's bit stays 1 for a time that
 grows with the stick's position; counted in loops of the reading code

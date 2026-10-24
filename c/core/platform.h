@@ -47,7 +47,9 @@ void plat_delay(void);
 
 /* ---- screen ---- */
 void flush_screen(void);                       /* draw_buf -> screen (changed cells), clears draw_buf */
-void plat_player_colour(uint8_t x, uint8_t y, uint8_t player);   /* after the flush: cell in the player's colour */
+#define PLAYER_FLASH 4                    /* with the player's number (0..3): the bomb's colour instead (the drop pose's frame;
+                                             a machine whose bomb is that player's colour shows white) */
+void plat_player_colour(uint8_t x, uint8_t y, uint8_t player);   /* after the flush: cell in the player's colour, or PLAYER_FLASH */
 void plat_hud_colour(uint8_t x, uint8_t n, uint8_t player, uint8_t blank);
                          /* after the flush: status-line cells x..x+n-1 in the player's colour, where the
                           * platform can do it cleanly; blank: bit 0 cell x-1 is blank, bit 1 cell x+n */
