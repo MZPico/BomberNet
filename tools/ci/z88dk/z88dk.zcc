@@ -1,0 +1,6 @@
+#!/bin/sh
+# z88dk's zcc from the pinned Docker image (tools/ci/toolchains.env), named as the snap names it, so that
+# CMake finds it on PATH: PATH=$PWD/tools/ci/z88dk:$PATH cmake ... (the repository mounted at its own path)
+. "$(dirname "$0")/../toolchains.env"
+R="$(git -C "$(dirname "$0")" rev-parse --show-toplevel)"
+exec docker run --rm -u "$(id -u):$(id -g)" -v "$R:$R" -w "$PWD" "$Z88DK_IMAGE" zcc "$@"
