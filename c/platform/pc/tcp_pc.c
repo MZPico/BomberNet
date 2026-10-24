@@ -19,6 +19,24 @@ uint8_t tcp_present(void) {
   return pc_net != 'P' && modem_present();
 }
 uint8_t tcp_open(const char *host, uint16_t port) { return pkt ? pkt_open(host, port) : modem_open(host, port); }
+#ifdef PC_NETTEST                         /* the network test: the time in the calls (plat_pc.c logs it a frame) */
+uint32_t pc_time_now(void);
+extern uint32_t pc_net_counts;
+extern uint16_t pc_net_calls;
+uint8_t tcp_send(const uint8_t *buf, uint16_t n) {
+  uint32_t t = pc_time_now();
+  uint8_t r = pkt ? pkt_send(buf, n) : modem_send(buf, n);
+  pc_net_counts += pc_time_now() - t;
+  return r;
+}
+int16_t tcp_recv(uint8_t *buf, uint16_t max) {
+  uint32_t t = pc_time_now();
+  int16_t r = pkt ? pkt_recv(buf, max) : modem_recv(buf, max);
+  pc_net_counts += pc_time_now() - t; pc_net_calls++;
+  return r;
+}
+#else
 uint8_t tcp_send(const uint8_t *buf, uint16_t n) { return pkt ? pkt_send(buf, n) : modem_send(buf, n); }
 int16_t tcp_recv(uint8_t *buf, uint16_t max) { return pkt ? pkt_recv(buf, max) : modem_recv(buf, max); }
+#endif
 void tcp_close(void) { if (pkt) pkt_close(); else modem_close(); }

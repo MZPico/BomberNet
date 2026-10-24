@@ -35,7 +35,7 @@ static uint8_t irq, vector, fifo;
 static void (__interrupt __far *old_vector)(void);
 void modem_close(void);
 static uint8_t online, have_modem, heard;  /* heard: any byte at all came in (since it was cleared) */
-static char nc_tail[14];                  /* the last bytes received online: "\r\nNO CARRIER\r\n" ends the call */
+static uint8_t nc_at;                     /* online: how much of "\r\nNO CARRIER\r\n" the last bytes matched (it ends the call) */
 
 static void __interrupt __far uart_isr(void) {
   uint8_t iir, n;
@@ -109,13 +109,17 @@ static int rx_byte(void) {                /* a byte waiting, or -1 */
 
 static int rx_peek(void) { return rx_tail == rx_head ? -1 : rx_ring[rx_tail]; }
 
-static void tx(const char *s, uint16_t n) {
-  while (n--) {
-    uint16_t h = (uint16_t)((tx_head + 1) & (TX_SIZE - 1));
-    while (h == tx_tail) ;                /* the ring full: the interrupt is emptying it */
-    tx_ring[tx_head] = (uint8_t)*s++;
+static void tx(const char *s, uint16_t n) {  /* into the ring in block copies, the transmitter woken once a block */
+  while (n) {
+    uint16_t room = (uint16_t)((tx_tail - tx_head - 1) & (TX_SIZE - 1)), k;
+    if (!room) continue;                  /* the ring full: the interrupt is emptying it */
+    k = (uint16_t)(TX_SIZE - tx_head);    /* up to the ring's end */
+    if (k > room) k = room;
+    if (k > n) k = n;
+    memcpy((uint8_t *)tx_ring + tx_head, s, k);
+    s += k; n = (uint16_t)(n - k);
     _disable();
-    tx_head = h;
+    tx_head = (uint16_t)((tx_head + k) & (TX_SIZE - 1));
     if (!tx_busy) { tx_busy = 1; outp(base + 1, 0x03); }   /* the transmitter's interrupt on: it fires at once, being empty */
     _enable();
   }
@@ -219,7 +223,7 @@ uint8_t modem_open(const char *host, uint16_t port) {
       uint32_t w = pc_ms();             /* the LF is no data (it would put the HTTP reply a byte out) */
       while (pc_ms() - w < 50 && rx_peek() < 0) ;
       if (rx_peek() == '\n') rx_byte();
-      online = 1; memset(nc_tail, 0, sizeof(nc_tail));
+      online = 1; nc_at = 0;
       return 0;
     }
     if (!strcmp(l, "NO CARRIER") || !strcmp(l, "ERROR") || !strcmp(l, "BUSY") || !strcmp(l, "NO ANSWER")) return 4;
@@ -234,19 +238,26 @@ uint8_t modem_send(const uint8_t *buf, uint16_t n) {
   return 0;
 }
 
+/* The bytes straight from the ring, each matched against "NO CARRIER" by
+ * one compare (a matcher's state, not a 14-byte window shifted and compared
+ * at every byte: that cost an XT most of the 10 ms the network took a frame) */
 int16_t modem_recv(uint8_t *buf, uint16_t max) {
-  static const char nc[14] = "\r\nNO CARRIER\r\n";
-  int16_t n = 0;
-  int c;
+  static const char nc[15] = "\r\nNO CARRIER\r\n";
+  uint16_t n = 0, t = rx_tail;
+  uint8_t c, at = nc_at;
   if (!online) return -1;
-  while (n < (int16_t)max && (c = rx_byte()) >= 0) {
-    buf[n++] = (uint8_t)c;
-    memmove(nc_tail, nc_tail + 1, sizeof(nc_tail) - 1);
-    nc_tail[sizeof(nc_tail) - 1] = (char)c;
-    if (!memcmp(nc_tail, nc, sizeof(nc))) { online = 0; return -1; }   /* the far end closed: the modem is back in command mode */
+  while (n < max && t != rx_head) {
+    c = rx_ring[t];
+    t = (uint16_t)((t + 1) & (RX_SIZE - 1));
+    buf[n++] = c;
+    if (c == (uint8_t)nc[at]) {
+      if (++at == 14) { rx_tail = t; online = 0; return -1; }   /* the far end closed: the modem is back in command mode */
+    } else at = (uint8_t)(c == '\r');   /* the pattern's only repeat is its first byte */
   }
-  pc_modem_rx += (uint16_t)n;
-  return n;
+  rx_tail = t; nc_at = at;
+  if (n) heard = 1;
+  pc_modem_rx += n;
+  return (int16_t)n;
 }
 
 void modem_close(void) {

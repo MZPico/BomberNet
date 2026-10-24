@@ -11,9 +11,11 @@
  *             /IP= /MASK= /GW= /DNS=) and DNS (one A record)
  *   TCP       one connection at a time, a client: data beyond a gap kept
  *             (one island of it, in the receive ring) till the gap is sent again;
+ *             in-order data acknowledged by our next segment (the keys, every
+ *             60 ms), else by a bare ACK after 70 ms; anything odd at once;
  *             go-back-N retransmission, on a timeout from the measured
  *             round trip (Karn; 100 ms at least) or on the second duplicate
- *             ACK; every segment acknowledged at once
+ *             ACK
  *
  * The driver gives us each frame by calling a receiver twice, in its
  * interrupt: once for a buffer (a free one of 16 far slots), once when it
@@ -96,32 +98,96 @@ static uint8_t driver(union REGS *r, struct SREGS *s) {   /* a driver call: 0, e
 }
 
 static uint8_t tx[FRAME];                 /* the frame being sent */
+#ifdef PC_NETTEST
+uint32_t pc_time_now(void);
+uint32_t pkt_send_counts, pkt_rx_counts;  /* the network test: counts in the driver's send call, in handling frames received */
+uint16_t pkt_sent, pkt_rcvd;
+#endif
+static uint32_t drv_vec;                  /* the driver's entry (its interrupt's vector): a frame sent by a direct call */
 static void send_frame(uint16_t n) {
-  union REGS r;
-  struct SREGS s;
+#ifdef PC_NETTEST
+  uint32_t t0 = pc_time_now();
+#endif
   if (n < 60) { memset(tx + n, 0, 60 - n); n = 60; }   /* Ethernet's shortest */
-  segread(&s);
-  r.h.ah = 4; r.x.si = (uint16_t)tx; r.x.cx = n;
-  driver(&r, &s);
+  _asm {                                  /* send_pkt (AH 4, DS:SI, CX) as INT does it, flags pushed, a far call: */
+    push bp                               /* without int86x's register structures, once a frame on an XT */
+    push es
+    push di
+    push dx
+    push bx
+    mov ah, 4
+    mov si, offset tx
+    mov cx, n
+    pushf
+    call dword ptr drv_vec
+    pop bx
+    pop dx
+    pop di
+    pop es
+    pop bp
+  }
+#ifdef PC_NETTEST
+  pkt_send_counts += pc_time_now() - t0; pkt_sent++;
+#endif
 }
 
 /* ---- checksums: summed in the machine's byte order, kept in it (the
  * one's complement sum does not care), so no swapping ---- */
-static uint32_t sum16(const uint8_t *p, uint16_t n, uint32_t s) {
-  const uint16_t *w = (const uint16_t *)p;
-  for (; n > 1; n -= 2) s += *w++;
-  if (n) s += *(const uint8_t *)w;
+/* the one's complement sum of n bytes added to s, the carry folded back at
+ * every word (ADD, ADC 0): an 8088 does in 5 instructions a word what the C
+ * did in a 32-bit library-free but slow loop. A trailing odd byte counts as
+ * the low byte of a word, as the machine's order wants. fold: the checksum. */
+static uint16_t sum16(const uint8_t *p, uint16_t n, uint16_t s) {
+  _asm {
+    mov si, p
+    mov bx, n
+    mov ax, s
+    mov cx, bx
+    shr cx, 1
+    jcxz last
+  next:
+    add ax, [si]
+    adc ax, 0
+    add si, 2
+    dec cx
+    jnz next
+  last:
+    test bl, 1
+    jz done
+    mov bl, [si]
+    xor bh, bh
+    add ax, bx
+    adc ax, 0
+  done:
+    mov s, ax
+  }
   return s;
 }
-static uint16_t fold(uint32_t s) {
-  while (s >> 16) s = (s & 0xffff) + (s >> 16);
-  return (uint16_t)~s;
-}
+#define fold(s) ((uint16_t)~(s))
 
-static uint16_t be16(const uint8_t *p) { return (uint16_t)(p[0] << 8 | p[1]); }
-static uint32_t be32(const uint8_t *p) { return (uint32_t)be16(p) << 16 | be16(p + 2); }
-static void put16(uint8_t *p, uint16_t v) { p[0] = (uint8_t)(v >> 8); p[1] = (uint8_t)v; }
-static void put32(uint8_t *p, uint32_t v) { put16(p, (uint16_t)(v >> 16)); put16(p + 2, (uint16_t)v); }
+/* network order, inline: a load and a byte swap */
+static uint16_t be16(const uint8_t *p);
+#pragma aux be16 = "mov ax,[bx]" "xchg al,ah" parm [bx] value [ax] modify exact [ax];
+static uint32_t be32(const uint8_t *p);
+#pragma aux be32 = "mov dx,[bx]" "xchg dl,dh" "mov ax,[bx+2]" "xchg al,ah" parm [bx] value [dx ax] modify exact [dx ax];
+static void put16(uint8_t *p, uint16_t v);
+#pragma aux put16 = "xchg al,ah" "mov [bx],ax" parm [bx] [ax] modify exact [ax];
+static void put32(uint8_t *p, uint32_t v);
+#pragma aux put32 = "xchg dl,dh" "mov [bx],dx" "xchg al,ah" "mov [bx+2],ax" parm [bx] [dx ax] modify exact [dx ax];
+
+/* the rings: n bytes in or out at a position, in at most two block copies */
+static void ring_in(uint8_t *ring, uint16_t size, uint16_t at, const uint8_t *src, uint16_t n) {
+  uint16_t first = (uint16_t)(size - at);
+  if (first > n) first = n;
+  memcpy(ring + at, src, first);
+  if (n > first) memcpy(ring, src + first, n - first);
+}
+static void ring_out(uint8_t *dst, const uint8_t *ring, uint16_t size, uint16_t at, uint16_t n) {
+  uint16_t first = (uint16_t)(size - at);
+  if (first > n) first = n;
+  memcpy(dst, ring + at, first);
+  if (n > first) memcpy(dst + first, ring, n - first);
+}
 
 /* ---- addresses ---- */
 static uint8_t ip[4], mask[4], gw[4], dns[4];
@@ -185,6 +251,10 @@ static uint32_t ooo_seq, ooo_end;         /* its sequence numbers [ooo_seq, ooo_
 static uint16_t rx_free(void) { return (uint16_t)(RXQ - 1 - ((rx_head - rx_tail) & (RXQ - 1))); }
 
 /* a segment: flags, the payload from txq at off (n bytes), the MSS option on a SYN */
+static uint8_t ack_due;                   /* in-order data not yet acknowledged: the next segment out carries it */
+static uint32_t ack_since;
+#define ACK_DELAY 70                      /* ms: over a frame: the keys, sent every 60 ms, carry the ACK (40 ms sent it alone, before them) */
+
 static void segment(uint8_t flags, uint32_t seq, uint16_t off, uint16_t n) {
   uint8_t *t = tx + 34, pseudo[12];
   uint16_t hl = (uint16_t)(flags & 0x02 ? 24 : 20), k;
@@ -193,9 +263,10 @@ static void segment(uint8_t flags, uint32_t seq, uint16_t off, uint16_t n) {
   put16(t, lport); put16(t + 2, rport); put32(t + 4, seq); put32(t + 8, rcv_nxt);
   t[12] = (uint8_t)(hl << 2); t[13] = flags;
   adv_wnd = rx_free(); put16(t + 14, adv_wnd);
+  if (flags & 0x10) ack_due = 0;
   t[16] = t[17] = t[18] = t[19] = 0;
   if (hl == 24) { t[20] = 2; t[21] = 4; put16(t + 22, 1460); }
-  for (k = 0; k < n; k++) t[hl + k] = txq[(off + k) & (TXQ - 1)];
+  ring_out(t + hl, txq, TXQ, (uint16_t)(off & (TXQ - 1)), n);
   memcpy(pseudo, ip, 4); memcpy(pseudo + 4, rip, 4); pseudo[8] = 0; pseudo[9] = 6; put16(pseudo + 10, (uint16_t)(hl + n));
   *(uint16_t *)(t + 16) = fold(sum16(t, (uint16_t)(hl + n), sum16(pseudo, 12, 0)));
 #ifdef PKT_DROP                           /* the retransmission's test: every PKT_DROP-th segment lost going out */
@@ -275,12 +346,14 @@ static void tcp_in(const uint8_t *h, const uint8_t *t, uint16_t len) {   /* len:
   }
   if (n || (flags & 0x01)) {                /* data, FIN: in order only */
     uint32_t d = rcv_nxt - seq;
+    uint8_t later = 0;                      /* in order, nothing odd: the ACK may wait for our next segment */
     if ((int32_t)d >= 0 && d < (uint32_t)n + 1) {
       uint16_t f = rx_free(), k;
+      later = d == 0 && !(flags & 0x01) && !ooo;
       skip = (uint16_t)d;
       n = (uint16_t)(n - (skip < n ? skip : n));
       if (n > f) n = f;
-      for (k = 0; k < n; k++) { rxq[rx_head] = data[skip + k]; rx_head = (uint16_t)((rx_head + 1) & (RXQ - 1)); }
+      ring_in(rxq, RXQ, rx_head, data + skip, n); rx_head = (uint16_t)((rx_head + n) & (RXQ - 1));
       rcv_nxt += n;
       pc_modem_rx += n;
       if (ooo && (int32_t)(rcv_nxt - ooo_seq) >= 0) {   /* the gap filled: the island joins */
@@ -295,7 +368,7 @@ static void tcp_in(const uint8_t *h, const uint8_t *t, uint16_t len) {   /* len:
       uint32_t off = seq - rcv_nxt;
       if (off + n < rx_free() && (!ooo || ((int32_t)(seq - ooo_end) <= 0 && (int32_t)(seq + n - ooo_seq) >= 0))) {
         uint16_t k, at = (uint16_t)((rx_head + (uint16_t)off) & (RXQ - 1));
-        for (k = 0; k < n; k++) { rxq[at] = data[k]; at = (uint16_t)((at + 1) & (RXQ - 1)); }
+        ring_in(rxq, RXQ, at, data, n);
         if (!ooo) { ooo = 1; ooo_seq = seq; ooo_end = seq + n; }
         else {
           if ((int32_t)(seq - ooo_seq) < 0) ooo_seq = seq;
@@ -303,7 +376,8 @@ static void tcp_in(const uint8_t *h, const uint8_t *t, uint16_t len) {   /* len:
         }
       }
     }
-    ack();
+    if (later) { if (!ack_due) { ack_due = 1; ack_since = pc_ms(); } }
+    else ack();                             /* a gap, old data, a FIN: at once (the sender's fast retransmit counts on it) */
   }
   output();
 }
@@ -368,9 +442,15 @@ static void dns_in(const uint8_t *d, uint16_t n) {
 /* ---- the frames received ---- */
 static uint8_t rx[FRAME];
 static void poll(void) {
+#ifdef PC_NETTEST
+  uint32_t t0 = pc_time_now(), ts = pkt_send_counts;   /* (the ACKs sent meanwhile counted as sends, not here) */
+#endif
   while (slot_len[slot_rd]) {
     uint16_t n = slot_len[slot_rd];
     uint8_t *h = rx + 14;
+#ifdef PC_NETTEST
+    pkt_rcvd++;
+#endif
     _fmemcpy(rx, slot + slot_off[slot_rd], n);
     slot_len[slot_rd] = 0;
     if (++slot_rd == NSLOT) slot_rd = 0;
@@ -409,6 +489,9 @@ static void poll(void) {
       }
     }
   }
+#ifdef PC_NETTEST
+  pkt_rx_counts += (pc_time_now() - t0) - (pkt_send_counts - ts);
+#endif
 }
 
 /* ---- the next hop's MAC, DHCP, DNS ---- */
@@ -514,7 +597,7 @@ uint8_t pkt_present(void) {               /* a packet driver: found, our two typ
   if (pkt_int) return 1;
   for (v = 0x60; v <= 0x80 && !pkt_int; v++) {
     const char __far *p = (const char __far *)_dos_getvect(v);
-    if (p && !_fmemcmp(p + 3, "PKT DRVR", 8)) pkt_int = v;
+    if (p && !_fmemcmp(p + 3, "PKT DRVR", 8)) { pkt_int = v; drv_vec = (uint32_t)FP_SEG(p) << 16 | FP_OFF(p); }
   }
   if (!pkt_int || (!slot && !(slot = (uint8_t __far *)_fmalloc((uint16_t)NSLOT * FRAME)))) { pkt_int = 0; return 0; }
   for (k = 0; k < NSLOT; k++) slot_off[k] = (uint16_t)(k * FRAME);
@@ -564,7 +647,8 @@ uint8_t pkt_open(const char *host, uint16_t port) {
   return 0;
 }
 
-static void retransmit(void) {            /* the oldest unacknowledged too old: all of it again */
+static void retransmit(void) {            /* the oldest unacknowledged too old: all of it again; an ACK held too long out */
+  if (ack_due && state == T_EST && pc_ms() - ack_since >= ACK_DELAY) ack();
   if (state == T_EST && tq_sent && pc_ms() - rtx_at > rto) {
     tq_sent = 0; retried = 1;
     if (rto < 3000) rto = (uint16_t)(rto * 2);
@@ -582,7 +666,7 @@ uint8_t pkt_send(const uint8_t *buf, uint16_t n) {
     f = (uint16_t)(TXQ - 1 - tq_len);
     if (!f) { if (pc_ms() - t > 5000) return 1; continue; }   /* the queue full: the far end is slow */
     if (f > n) f = n;
-    for (k = 0; k < f; k++) txq[(tq_start + tq_len + k) & (TXQ - 1)] = buf[k];
+    ring_in(txq, TXQ, (uint16_t)((tq_start + tq_len) & (TXQ - 1)), buf, f);
     tq_len = (uint16_t)(tq_len + f); buf += f; n = (uint16_t)(n - f);
     output();
   }
@@ -592,7 +676,9 @@ uint8_t pkt_send(const uint8_t *buf, uint16_t n) {
 int16_t pkt_recv(uint8_t *buf, uint16_t max) {
   int16_t n = 0;
   poll(); retransmit();
-  while (n < (int16_t)max && rx_tail != rx_head) { buf[n++] = rxq[rx_tail]; rx_tail = (uint16_t)((rx_tail + 1) & (RXQ - 1)); }
+  n = (int16_t)((rx_head - rx_tail) & (RXQ - 1));
+  if (n > (int16_t)max) n = (int16_t)max;
+  if (n) { ring_out(buf, rxq, RXQ, rx_tail, (uint16_t)n); rx_tail = (uint16_t)((rx_tail + n) & (RXQ - 1)); }
   if (n && state == T_EST && adv_wnd < RXQ / 4 && rx_free() >= RXQ / 2) ack();   /* the window opened again: told */
   if (!n && (reset || peer_fin || state != T_EST)) return -1;
   return n;
