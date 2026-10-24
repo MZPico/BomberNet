@@ -4,6 +4,8 @@ the browser build's tests (tools/web_play.py, tools/web_match.py,
 tools/crossplay.py's web machine): open a page, keys, JavaScript, screenshots.
 Chromium runs on the invisible X display (:97, as tools/netbench.py starts
 it; its own profile: Chromium ignores the debugging port on the default one).
+CHROMIUM: the browser (default the snap's chromium); CHROMIUM_FLAGS: more
+flags (CI: --no-sandbox, where the runner gives no user namespaces).
 serve(dir) serves a build directory over HTTP on 127.0.0.1 for the page."""
 import base64, functools, http.server, itertools, json, os, socket, subprocess, sys, threading, time, urllib.request
 from websockets.sync.client import connect
@@ -22,7 +24,8 @@ def chromium():
     subprocess.Popen([CHROMIUM, f'--remote-debugging-port={PORT}', f'--user-data-dir={profile}', '--no-first-run',
                       '--autoplay-policy=no-user-gesture-required', '--ignore-gpu-blocklist', '--enable-unsafe-swiftshader',
                       '--disable-background-timer-throttling', '--disable-renderer-backgrounding',
-                      '--disable-backgrounding-occluded-windows', 'about:blank'], env=env,
+                      '--disable-backgrounding-occluded-windows', *os.environ.get('CHROMIUM_FLAGS', '').split(),
+                      'about:blank'], env=env,
                      stdout=open(os.path.join(ROOT, 'build', 'chromium.log'), 'w'), stderr=subprocess.STDOUT)
     for _ in range(60):
         try: socket.create_connection(('127.0.0.1', PORT), timeout=1).close(); return

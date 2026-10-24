@@ -1,0 +1,107 @@
+# A tag vX.Y.Z: the version checked against the game's (GAME_VERSION in
+# c/core/game.h), every target built and every test run (the build and test
+# workflows), the files gathered under one naming scheme with their SHA-256
+# sums, and a DRAFT release made for them. Publishing it stays a person's
+# decision (the release page's "Publish").
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  pull_request:                                 # a dry run when this workflow changes: no release, the files as an artifact
+    paths: ['.github/workflows/release.yml']
+
+jobs:
+  version:
+    name: the tag matches the game's version
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        shell: bash
+        run: |
+          game=$(sed -n 's/^#define GAME_VERSION "\(.*\)".*/\1/p' c/core/game.h)
+          [ -n "$game" ] || { echo "::error::no GAME_VERSION in c/core/game.h"; exit 1; }
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            tag="${GITHUB_REF_NAME#v}"
+            echo "tag $tag, GAME_VERSION $game"
+            [ "$tag" = "$game" ] || { echo "::error::tag v$tag but c/core/game.h has GAME_VERSION \"$game\""; exit 1; }
+          else echo "dry run: GAME_VERSION $game"; fi
+          echo "version=$game" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: version
+    uses: ./.github/workflows/build.yml
+
+  test:
+    needs: version
+    uses: ./.github/workflows/test.yml
+
+  release:
+    name: draft release
+    needs: [version, build, test]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: the release files
+        shell: bash
+        run: |
+          v=${{ needs.version.outputs.version }}
+          mkdir dist
+          put() { [ -f "$1" ] || { echo "::error::missing $1"; exit 1; }; cp "$1" "dist/bombernet-$v-$2"; }
+          put artifacts/mz/bomber.mzf          mz800.mzf
+          put artifacts/zx/bomber.tap          zx-spectrum-48k.tap
+          put artifacts/zx128/bomber.tap       zx-spectrum-128k-esp01.tap
+          put artifacts/cpc/bomber.dsk         amstrad-cpc.dsk
+          put artifacts/cpc/bomber.cpc         amstrad-cpc.cpc
+          put artifacts/atari/bomber.xex       atari-xl.xex
+          put artifacts/c64/bomber.prg         c64.prg
+          put artifacts/c64/bomber.d64         c64.d64
+          put artifacts/amiga/bomber           amiga
+          put artifacts/amiga/bombernet.adf    amiga.adf
+          put artifacts/st/BOMBER.PRG          atari-st.prg
+          put artifacts/st/bombernet.st        atari-st.st
+          put artifacts/pc/BOMBER.EXE          pc-dos.exe
+          put artifacts/pc/bombernet.img       pc-dos.img
+          (cd artifacts/web && zip -q -9 "../../dist/bombernet-$v-web.zip" bombernet.html bombernet.js bombernet.wasm)
+          (cd dist && sha256sum * > SHA256SUMS)
+          ls -l dist
+      - name: the files (a dry run)
+        if: github.event_name != 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-files
+          path: dist/
+          retention-days: 7
+      - name: draft release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          v=${{ needs.version.outputs.version }}
+          cat > notes.md <<NOTES
+          BomberNet $v for every machine. Built and tested by the release workflow; the files' SHA-256 sums are in SHA256SUMS.
+
+          | Machine | File |
+          |---|---|
+          | Sharp MZ-800 (MZPico) | bombernet-$v-mz800.mzf |
+          | ZX Spectrum 48K and up (Spectranet) | bombernet-$v-zx-spectrum-48k.tap |
+          | ZX Spectrum 128K, eLeMeNt / MB03+ with an ESP-01 | bombernet-$v-zx-spectrum-128k-esp01.tap |
+          | Amstrad CPC (M4 board) | bombernet-$v-amstrad-cpc.dsk, .cpc |
+          | Atari XL/XE (FujiNet) | bombernet-$v-atari-xl.xex |
+          | Commodore 64 (WiC64, Ultimate) | bombernet-$v-c64.prg, .d64 |
+          | Amiga (any TCP/IP stack) | bombernet-$v-amiga, bombernet-$v-amiga.adf |
+          | Atari ST (WiFi modem) | bombernet-$v-atari-st.prg, .st |
+          | IBM PC, DOS (WiFi modem, Ethernet with a packet driver) | bombernet-$v-pc-dos.exe, .img |
+          | Any browser (WebAssembly) | bombernet-$v-web.zip |
+
+          NOTES
+          gh release create "$GITHUB_REF_NAME" dist/* --draft --title "BomberNet $v" --notes-file notes.md --generate-notes
