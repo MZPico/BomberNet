@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>BomberNet</title>
 <style>
   :root { color-scheme: dark; }
@@ -38,6 +38,31 @@
   #side { display: flex; flex-direction: column; gap: 8px; }
   #side button { width: 72px; height: 44px; }
   #type { position: absolute; left: -9999px; opacity: 0; }
+
+  /* fullscreen: the button; the page itself fills the screen (the browser's fullscreen, or, where a page
+     cannot have it (iPhone), the viewport: body.full either way) */
+  #fs { position: fixed; top: max(env(safe-area-inset-top), 8px); right: max(env(safe-area-inset-right), 8px); z-index: 3;
+        background: #222; color: #ddd; border: 1px solid #555; border-radius: 8px; font: 600 13px system-ui;
+        padding: 6px 10px; opacity: .8; }
+  body.full { justify-content: center; }
+  body.full canvas { width: min(100vw, 160vh); }
+  body.full #hint { display: none; }
+
+  /* a touch screen held sideways: the game as large as it goes, the controls over it, see-through */
+  body.touch.land { overflow: hidden; }
+  body.touch.land canvas { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(100vw, 160vh); }
+  body.touch.land #touch { position: fixed; inset: 0; display: block; pointer-events: none; z-index: 2; }
+  body.touch.land #touch button { pointer-events: auto; opacity: .55; }
+  body.touch.land #touch button.on { opacity: .85; }
+  body.touch.land #pad { position: absolute; left: max(env(safe-area-inset-left), 12px); bottom: max(env(safe-area-inset-bottom), 12px);
+                         grid-template-columns: repeat(3, 52px); grid-template-rows: repeat(3, 52px); gap: 3px; }
+  body.touch.land #pad span { pointer-events: none; }
+  body.touch.land #fire { position: absolute; right: max(env(safe-area-inset-right), 14px); bottom: max(env(safe-area-inset-bottom), 14px);
+                          width: 92px; height: 92px; border-radius: 46px !important; }
+  body.touch.land #brk { position: absolute; right: max(env(safe-area-inset-right), 12px); top: max(env(safe-area-inset-top), 52px); }
+  body.touch.land #side { position: absolute; left: max(env(safe-area-inset-left), 12px); top: max(env(safe-area-inset-top), 12px); }
+  body.touch.land #side button { width: 56px; height: 34px; font-size: 13px; }
+  body.touch.land #fs { opacity: .55; }
 </style>
 </head>
 <body>
@@ -55,6 +80,7 @@
   </div>
   <input id="type" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false">
 </div>
+<button id="fs" title="Fullscreen">&#x26F6; FULL</button>
 <div id="hint">Cursor keys and SPACE &middot; W A S D and E &middot; ESC leaves a match &middot; letters type a room code</div>
 <script>
 // BomberNet compiled to WebAssembly (c/platform/web, docs/port-web.md).
@@ -145,6 +171,33 @@
     type.value = '';
   });
   type.addEventListener('keydown', (e) => { if (e.key === 'Backspace') tap(8); if (e.key === 'Enter') { tap(5); type.blur(); } });
+  // sideways on a touch screen: the controls over the game (body.land)
+  const land = matchMedia('(orientation: landscape)');
+  const setLand = () => document.body.classList.toggle('land', land.matches);
+  land.addEventListener('change', setLand); setLand();
+  // fullscreen: the browser's where a page may have it (then landscape locked where the browser allows),
+  // else the viewport (an iPhone's Safari gives pages no fullscreen)
+  const fsBtn = document.getElementById('fs');
+  const inFs = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+  const sync = () => {
+    const on = inFs() || document.body.classList.contains('pseudo');
+    document.body.classList.toggle('full', on);
+    fsBtn.textContent = on ? '\u2715 EXIT' : '\u26F6 FULL';
+  };
+  document.addEventListener('fullscreenchange', sync); document.addEventListener('webkitfullscreenchange', sync);
+  fsBtn.addEventListener('click', async () => {
+    const el = document.documentElement;
+    if (inFs()) { (document.exitFullscreen || document.webkitExitFullscreen).call(document); return; }
+    if (document.body.classList.contains('pseudo')) { document.body.classList.remove('pseudo'); sync(); return; }
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (req && (document.fullscreenEnabled || document.webkitFullscreenEnabled)) {
+      try {
+        await req.call(el, { navigationUI: 'hide' });
+        if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
+      } catch (e) { document.body.classList.add('pseudo'); }
+    } else document.body.classList.add('pseudo');
+    sync(); canvas.focus();
+  });
   canvas.focus();
 })();
 </script>

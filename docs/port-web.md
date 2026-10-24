@@ -131,6 +131,16 @@ smaller (all four fit at 360). Tested in Chromium at 360, 375 and 414 px
 with touch emulation: the game started, the d-pad moving player 1 each way
 (read from `web_state`), BOMB dropping one.
 
+**Sideways and fullscreen.** On a touch screen held sideways the game is as
+large as the screen allows and the controls lie over it, see-through: the
+d-pad bottom left, BOMB bottom right, BREAK top right, ABC top left, clear
+of the notch (`env(safe-area-inset-*)`, `viewport-fit=cover`). FULL (top
+right): the browser's fullscreen where a page may have it, landscape then
+locked where the browser allows (Android); an iPhone's Safari gives pages
+none, so there the page fills the viewport instead. Tested in Chromium at
+844 x 390 with touch: the game started, the d-pad moving player 1, FULL on
+and EXIT shown.
+
 **The press that starts a game** dropped a bomb at once: the title reads
 the keys itself and the game's input only from its first frame, and here
 the switch is instant, so the key is still down (on the MZ the map takes
