@@ -9,6 +9,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+defaults:
+  run:
+    shell: bash                                 # named: then bash runs with -e -o pipefail (unnamed: -e only, and a failing
+                                                # command piped into tail would pass)
+
 concurrency:
   group: build-${{ github.ref }}
   cancel-in-progress: true
