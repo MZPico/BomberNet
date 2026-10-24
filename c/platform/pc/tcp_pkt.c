@@ -11,9 +11,11 @@
  *             /IP= /MASK= /GW= /DNS=) and DNS (one A record)
  *   TCP       one connection at a time, a client: data beyond a gap kept
  *             (one island of it, in the receive ring) till the gap is sent again;
+ *             in-order data acknowledged by our next segment (the keys, every
+ *             60 ms), else by a bare ACK after 70 ms; anything odd at once;
  *             go-back-N retransmission, on a timeout from the measured
  *             round trip (Karn; 100 ms at least) or on the second duplicate
- *             ACK; every segment acknowledged at once
+ *             ACK
  *
  * The driver gives us each frame by calling a receiver twice, in its
  * interrupt: once for a buffer (a free one of 16 far slots), once when it
@@ -96,13 +98,24 @@ static uint8_t driver(union REGS *r, struct SREGS *s) {   /* a driver call: 0, e
 }
 
 static uint8_t tx[FRAME];                 /* the frame being sent */
+#ifdef PC_NETTEST
+uint32_t pc_time_now(void);
+uint32_t pkt_send_counts, pkt_rx_counts;  /* the network test: counts in the driver's send call, in handling frames received */
+uint16_t pkt_sent, pkt_rcvd;
+#endif
 static void send_frame(uint16_t n) {
   union REGS r;
   struct SREGS s;
+#ifdef PC_NETTEST
+  uint32_t t0 = pc_time_now();
+#endif
   if (n < 60) { memset(tx + n, 0, 60 - n); n = 60; }   /* Ethernet's shortest */
   segread(&s);
   r.h.ah = 4; r.x.si = (uint16_t)tx; r.x.cx = n;
   driver(&r, &s);
+#ifdef PC_NETTEST
+  pkt_send_counts += pc_time_now() - t0; pkt_sent++;
+#endif
 }
 
 /* ---- checksums: summed in the machine's byte order, kept in it (the
@@ -185,6 +198,10 @@ static uint32_t ooo_seq, ooo_end;         /* its sequence numbers [ooo_seq, ooo_
 static uint16_t rx_free(void) { return (uint16_t)(RXQ - 1 - ((rx_head - rx_tail) & (RXQ - 1))); }
 
 /* a segment: flags, the payload from txq at off (n bytes), the MSS option on a SYN */
+static uint8_t ack_due;                   /* in-order data not yet acknowledged: the next segment out carries it */
+static uint32_t ack_since;
+#define ACK_DELAY 70                      /* ms: over a frame: the keys, sent every 60 ms, carry the ACK (40 ms sent it alone, before them) */
+
 static void segment(uint8_t flags, uint32_t seq, uint16_t off, uint16_t n) {
   uint8_t *t = tx + 34, pseudo[12];
   uint16_t hl = (uint16_t)(flags & 0x02 ? 24 : 20), k;
@@ -193,6 +210,7 @@ static void segment(uint8_t flags, uint32_t seq, uint16_t off, uint16_t n) {
   put16(t, lport); put16(t + 2, rport); put32(t + 4, seq); put32(t + 8, rcv_nxt);
   t[12] = (uint8_t)(hl << 2); t[13] = flags;
   adv_wnd = rx_free(); put16(t + 14, adv_wnd);
+  if (flags & 0x10) ack_due = 0;
   t[16] = t[17] = t[18] = t[19] = 0;
   if (hl == 24) { t[20] = 2; t[21] = 4; put16(t + 22, 1460); }
   for (k = 0; k < n; k++) t[hl + k] = txq[(off + k) & (TXQ - 1)];
@@ -275,8 +293,10 @@ static void tcp_in(const uint8_t *h, const uint8_t *t, uint16_t len) {   /* len:
   }
   if (n || (flags & 0x01)) {                /* data, FIN: in order only */
     uint32_t d = rcv_nxt - seq;
+    uint8_t later = 0;                      /* in order, nothing odd: the ACK may wait for our next segment */
     if ((int32_t)d >= 0 && d < (uint32_t)n + 1) {
       uint16_t f = rx_free(), k;
+      later = d == 0 && !(flags & 0x01) && !ooo;
       skip = (uint16_t)d;
       n = (uint16_t)(n - (skip < n ? skip : n));
       if (n > f) n = f;
@@ -303,7 +323,8 @@ static void tcp_in(const uint8_t *h, const uint8_t *t, uint16_t len) {   /* len:
         }
       }
     }
-    ack();
+    if (later) { if (!ack_due) { ack_due = 1; ack_since = pc_ms(); } }
+    else ack();                             /* a gap, old data, a FIN: at once (the sender's fast retransmit counts on it) */
   }
   output();
 }
@@ -368,9 +389,15 @@ static void dns_in(const uint8_t *d, uint16_t n) {
 /* ---- the frames received ---- */
 static uint8_t rx[FRAME];
 static void poll(void) {
+#ifdef PC_NETTEST
+  uint32_t t0 = pc_time_now(), ts = pkt_send_counts;   /* (the ACKs sent meanwhile counted as sends, not here) */
+#endif
   while (slot_len[slot_rd]) {
     uint16_t n = slot_len[slot_rd];
     uint8_t *h = rx + 14;
+#ifdef PC_NETTEST
+    pkt_rcvd++;
+#endif
     _fmemcpy(rx, slot + slot_off[slot_rd], n);
     slot_len[slot_rd] = 0;
     if (++slot_rd == NSLOT) slot_rd = 0;
@@ -409,6 +436,9 @@ static void poll(void) {
       }
     }
   }
+#ifdef PC_NETTEST
+  pkt_rx_counts += (pc_time_now() - t0) - (pkt_send_counts - ts);
+#endif
 }
 
 /* ---- the next hop's MAC, DHCP, DNS ---- */
@@ -564,7 +594,8 @@ uint8_t pkt_open(const char *host, uint16_t port) {
   return 0;
 }
 
-static void retransmit(void) {            /* the oldest unacknowledged too old: all of it again */
+static void retransmit(void) {            /* the oldest unacknowledged too old: all of it again; an ACK held too long out */
+  if (ack_due && state == T_EST && pc_ms() - ack_since >= ACK_DELAY) ack();
   if (state == T_EST && tq_sent && pc_ms() - rtx_at > rto) {
     tq_sent = 0; retried = 1;
     if (rto < 3000) rto = (uint16_t)(rto * 2);

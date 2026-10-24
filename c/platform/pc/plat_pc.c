@@ -204,10 +204,15 @@ static void log_out(void) {
   log_len = 0;
 }
 static void log_s(const char *t) { while (*t) log_buf[log_len++] = *t++; }
-static void log_dec(uint32_t v) {
+static void log_dec(uint32_t v) {         /* 16-bit arithmetic where it fits: a 32-bit division is a library call on the 8086 */
   char d[10]; uint8_t n = 0;
-  do { d[n++] = (char)('0' + v % 10); v /= 10; } while (v);
+  if (v <= 0xffffu) { uint16_t w = (uint16_t)v; do { d[n++] = (char)('0' + w % 10); w /= 10; } while (w); }
+  else do { d[n++] = (char)('0' + v % 10); v /= 10; } while (v);
   while (n) log_buf[log_len++] = d[--n];
+}
+static void log_hex(uint8_t v);
+static void log_hex32(uint32_t v) {
+  log_hex((uint8_t)(v >> 24)); log_hex((uint8_t)(v >> 16)); log_hex((uint8_t)(v >> 8)); log_hex((uint8_t)v);
 }
 static void log_hex(uint8_t v) {
   static const char digit[] = "0123456789abcdef";
@@ -215,7 +220,7 @@ static void log_hex(uint8_t v) {
 }
 #endif
 
-#ifdef PC_TEST
+#if defined(PC_TEST) || defined(PC_NETTEST)
 static uint32_t pc_time(void) {           /* in the timer's counts (1.19 MHz, 0.84 us) */
   uint32_t t;
   uint16_t c;
@@ -355,7 +360,20 @@ uint8_t plat_break(void) { return keydown[K_ESC]; }
 /* ---- time ---- */
 static uint32_t next_frame;
 
+#ifdef PC_NETTEST
+static uint32_t sync_out, frame_busy;     /* the network test: the last frame's work, in timer counts (0.84 us) */
+uint32_t pc_net_counts;                   /* tcp_pc.c: counts in the network calls since the last frame */
+uint16_t pc_net_calls;                    /* and receive calls */
+static uint32_t frame_net;
+static uint16_t frame_calls, frame_polls;
+static uint32_t frame_nd;
+uint32_t pc_time_now(void) { return pc_time(); }
+#endif
 void plat_frame_sync(void) {                    /* 60 ms */
+#ifdef PC_NETTEST
+  frame_busy = pc_time() - sync_out; frame_net = pc_net_counts; pc_net_counts = 0; frame_calls = pc_net_calls; pc_net_calls = 0;
+  { extern uint32_t pc_nd_counts; extern uint16_t pc_nd_polls; frame_nd = pc_nd_counts; pc_nd_counts = 0; frame_polls = pc_nd_polls; pc_nd_polls = 0; }
+#endif
 #ifdef PC_TEST
   if (t_start && test.n < TEST_FRAMES) {
     test.work[test.n++] = pc_time() - t_start;
@@ -364,6 +382,9 @@ void plat_frame_sync(void) {                    /* 60 ms */
   t_start = 0;
 #endif
   while ((int32_t)(now() - next_frame) < 0) ;
+#ifdef PC_NETTEST
+  sync_out = pc_time();
+#endif
   next_frame += FRAME_MS;
   if ((int32_t)(now() - next_frame) > FRAME_MS) next_frame = now();   /* far behind (a pause): no rush to catch up */
   {                                       /* ESC on the title screen ends the program: a new press (not one held from */
@@ -764,7 +785,11 @@ void flush_screen(void) {
   }
 #endif
 #ifdef PC_NETTEST
+#ifdef NETLOG_SPARSE                      /* the XT's pace measured: a line only on the hashed frames (the tools' hashes) */
+  if (netlog && (title_mode || (frame_no != logged_frame && frame_no % 16 == 1))) {
+#else
   if (netlog && (title_mode || frame_no != logged_frame)) {   /* the state the tools read from the other machines' memory: */
+#endif
     static uint8_t every;                 /* in a game once a frame (a line a loop slowed an XT to a crawl) */
     extern uint32_t pc_modem_tx, pc_modem_rx;
     logged_frame = frame_no; stall_at = now();
@@ -775,11 +800,20 @@ void flush_screen(void) {
     log_s(" delay "); log_dec(net_delay); log_s(" table ");
     { uint8_t k; for (k = 0; k < 4; k++) log_hex(net_table[k]); }
     log_s(" hash "); log_hex((uint8_t)(state_hash >> 8)); log_hex((uint8_t)state_hash); log_s(" map ");
+#ifdef NETLOG_SPARSE
+    if (0)                                /* the pace measured: no map (2000 hex digits cost an XT 5 ms a frame) */
+#else
     if (title_mode || frame_no % 16 == 1)  /* the map: on the hashed frames' lines (what the tools compare) */
+#endif
       for (i = 0; i < SCREEN_CELLS; i++) log_hex(map_layer[i]);
     else log_s("none");
-    log_s(" ms "); log_dec(now()); log_s(" tx "); log_dec(pc_modem_tx); log_s(" rx "); log_dec(pc_modem_rx);
+    /* the rest in hex (cheap on an 8088; the profile of an XT measures the game, not this) */
+    log_s(" msx "); log_hex32(now()); log_s(" txx "); log_hex32(pc_modem_tx); log_s(" rxx "); log_hex32(pc_modem_rx);
     { extern uint8_t net_adapt_seen[]; log_s(" seen "); log_hex(net_adapt_seen[0]); log_hex(net_adapt_seen[1]); }
+    log_s(" busyc "); log_hex32(frame_busy); log_s(" netc "); log_hex32(frame_net); log_s(" calls "); log_dec(frame_calls); log_s(" ndc "); log_hex32(frame_nd); log_s(" polls "); log_dec(frame_polls);
+    { extern uint32_t pkt_send_counts, pkt_rx_counts; extern uint16_t pkt_sent, pkt_rcvd;
+      log_s(" sendc "); log_hex32(pkt_send_counts); log_s(" rxc "); log_hex32(pkt_rx_counts); log_s(" sent "); log_dec(pkt_sent); log_s(" rcvd "); log_dec(pkt_rcvd);
+      pkt_send_counts = pkt_rx_counts = 0; pkt_sent = pkt_rcvd = 0; }
     log_s("\n");
     if (!(++every & 31)) log_out();
   } else if (netlog && now() - stall_at > 2000) {   /* the game stood still 2 s: the network's state, written at once */

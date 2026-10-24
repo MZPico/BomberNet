@@ -361,6 +361,49 @@ island stay (cheap, and better on a busy real network), but they did not
 fix a hang. The network test logs once a game frame (a line a loop had
 slowed an XT to a crawl).
 
+## Network play on an XT (2026-10-24)
+
+A user's XT at 4.77 MHz (DOSBox-X, 240 cycles) was slow in network play
+and fine alone. Measured with an XT host (300 cycles, EGA) and a fast
+joiner, so that the XT never waits for the other (one `net_poll` a frame);
+the network test build times each frame's work, the core's network calls
+(`nettime.c`: netdev_soft's entry points renamed and wrapped) and the TCP
+layer (`tcp_pc.c`), in the timer chip's counts:
+
+| per game frame, median | modem | Ethernet |
+|---|---|---|
+| the core's network calls | 11.1 ms | 22.3 ms |
+| of them the TCP layer and driver | 9.7 -> 7.6 ms | 19.9 -> 17.5 ms |
+| Ethernet: packets sent (driver call) | | 2 -> 1 (4.7 -> 2.6 ms) |
+| Ethernet: frames received, handled | | 2 (8.7 ms) |
+
+The game alone takes about 30 ms a frame there (step 0). What changed:
+
+- **The modem's NO CARRIER check**: every byte received shifted a 14-byte
+  window and compared it again; a matcher's state now, one compare a byte.
+- **Delayed ACKs (Ethernet)**: in-order data is acknowledged by our next
+  segment, the keys, which go every 60 ms; a bare ACK only after 70 ms (at
+  40 ms it went alone, just before the keys). A gap, old data or a FIN is
+  still acknowledged at once (the sender's fast retransmit counts on it).
+  Loss test (one segment in 7 out, 1 in 9 in): plays on, hashes equal.
+
+**The test log misled at first.** The per-frame line (300 characters, 32-bit
+decimals: a library division on the 8086) and the 2000 hex digits of the
+map every 16th frame cost an XT 10 to 20 ms a frame; the frame sync's
+"work" read 52 ms where the game and the network take about 40.
+`-dNETLOG_SPARSE` logs only the hashed frames' lines, without the map; the
+pace is then the clock across 16 frames:
+
+| XT host, EGA, fast joiner | modem | Ethernet |
+|---|---|---|
+| 300 cycles | 60.0 ms a frame (full speed) | 60.9 ms |
+| 240 cycles (the user's) | 65 ms | 75 ms |
+
+So at 300 cycles an XT keeps the pace on either; at 240 the modem is 8 %
+slow and Ethernet 25 %. What is left on Ethernet: handling two received
+frames (copy, two checksums, TCP in C) about 9 ms, building our segment
+and the calls about 7, the WebSocket and protocol layer about 4.
+
 ## AdLib and Sound Blaster
 
 The game's sound is short square-wave tones (the MZ's 8253 divider and a

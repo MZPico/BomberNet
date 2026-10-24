@@ -41,9 +41,12 @@ if '--test' in sys.argv: src += [f'{c}/common/netdev_none.c']      # a replay ne
 else: src += [f'{c}/platform/pc/tcp_pc.c', f'{c}/platform/pc/tcp_pkt.c', f'{c}/platform/pc/tcp_modem.c', f'{c}/common/netdev_soft.c', f'{c}/common/ws.c']
 inc = [f'-i={c}/core', f'-i={c}/common', f'-i={c}/platform/pc', f'-i={c}/platform/amiga', f'-i={out}']
 objs = []
+if '--net' in sys.argv: src.append(f'{c}/platform/pc/nettime.c')   # the core's network calls timed (netdev_soft's renamed)
 for s in src:
     o = os.path.join(obj, os.path.splitext(os.path.basename(s))[0] + '.obj')
-    r = subprocess.run(['wcc', *flags, *inc, f'-fo={o}', s], capture_output=True, text=True, env=env)
+    ren = ['-dnet_send=nd_net_send', '-dnet_poll=nd_net_poll', '-dnet_hash=nd_net_hash', '-dnet_status=nd_net_status'] \
+        if '--net' in sys.argv and s.endswith('netdev_soft.c') else []
+    r = subprocess.run(['wcc', *flags, *ren, *inc, f'-fo={o}', s], capture_output=True, text=True, env=env)
     if r.returncode: sys.exit(r.stdout[-3000:] + r.stderr[-1000:])
     if r.stdout.strip(): print(r.stdout.strip()[-1500:])
     objs.append(o)
