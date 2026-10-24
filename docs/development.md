@@ -182,6 +182,7 @@ changed on purpose and how fast it runs: `original.md`.
 | `port-atari-st.md` | the Atari ST port (a WiFi modem on the serial port): plan, measurements, Hatari with EmuTOS as the test bench |
 | `port-pc.md` | the IBM PC port (DOS; CGA, EGA, VGA; Ethernet or a WiFi modem; AdLib/Sound Blaster): plan, measurements, DOSBox-X as the test bench |
 | `port-web.md` | the game compiled to WebAssembly for the browser (no emulator): plan, results, the page on mzpico.com |
+| `rollback-plan.md` | run-ahead for the browser, the PC (286 up), the Amiga and the ST: the own player without the input delay, the others predicted; the lead rule that keeps an XT in lockstep |
 | `portability.md` | the rules that keep one C game for Z80, 6502 and 68000 machines |
 | `port-zx128-esp01.md` | the 128K Spectrum with an ESP-01 (Milan Stava's port, brought in step by step): plan and progress |
 | `../PLAN.md` | the multiplayer plan the C port followed |
