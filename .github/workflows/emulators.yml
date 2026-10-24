@@ -1,25 +1,27 @@
 # The real emulators, in real time, under Xvfb: what the deterministic tests
-# (test.yml) cannot show. Every night on main, by hand (Actions, "Run
-# workflow"), and on a pull request labelled full-test or one that changes
-# this workflow or tools/ci. Not a required check: an emulator in real time
-# on a shared machine can stumble, so each test gets a second chance
-# (tools/ci/retry.sh) and the run's summary lists what passed.
-name: nightly
+# (test.yml) cannot show. On every pull request and push to main, and every
+# night (a new runner image, browser or package breaks things with no commit
+# of ours). An emulator in real time on a shared machine can stumble, so each
+# test gets a second chance (tools/ci/retry.sh) and the run's summary lists
+# what passed. The deterministic ones (the MZ-800's replays and its matches
+# with the Python emulators) are required checks; the real-time ones become
+# required once they have shown they do not fail on their own.
+name: emulators
 
 on:
+  pull_request:
+  push:
+    branches: [main]
   schedule:
     - cron: '17 2 * * *'
   workflow_dispatch:
-  pull_request:
-    types: [opened, synchronize, reopened, labeled]
-    paths: ['.github/workflows/nightly.yml', 'tools/ci/**']
 
 defaults:
   run:
     shell: bash
 
 concurrency:
-  group: nightly-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -30,7 +32,6 @@ jobs:
   pc:
     name: PC in DOSBox-X
     runs-on: ubuntu-24.04
-    if: github.event_name != 'pull_request' || github.event.action != 'labeled' || github.event.label.name == 'full-test'
     steps:
       - uses: actions/checkout@v4
       - name: toolchain versions
@@ -94,7 +95,6 @@ jobs:
   web:
     name: browser in Chrome
     runs-on: ubuntu-24.04
-    if: github.event_name != 'pull_request' || github.event.action != 'labeled' || github.event.label.name == 'full-test'
     steps:
       - uses: actions/checkout@v4
       - name: toolchain versions
@@ -129,7 +129,6 @@ jobs:
   st:
     name: Atari ST in Hatari
     runs-on: ubuntu-24.04
-    if: github.event_name != 'pull_request' || github.event.action != 'labeled' || github.event.label.name == 'full-test'
     steps:
       - uses: actions/checkout@v4
       - name: toolchain versions
@@ -172,7 +171,6 @@ jobs:
   amiga:
     name: Amiga in FS-UAE
     runs-on: ubuntu-24.04
-    if: github.event_name != 'pull_request' || github.event.action != 'labeled' || github.event.label.name == 'full-test'
     env:
       AMIGA_MODEL: A1200                        # FS-UAE's own AROS ROM (no download); on an A500 it crashed in a match
     steps:
@@ -201,7 +199,6 @@ jobs:
   c64:
     name: C64 in VICE
     runs-on: ubuntu-24.04
-    if: github.event_name != 'pull_request' || github.event.action != 'labeled' || github.event.label.name == 'full-test'
     steps:
       - uses: actions/checkout@v4
       - name: toolchain versions
@@ -260,9 +257,12 @@ jobs:
           timeout 20 ~/vice-dist/bin/x64sc +logcolorize -default -sounddev dummy -limitcycles 2000000 2>&1 | tail -40 || true
 
   mz:
-    name: MZ-800 in mz800emu
+    name: MZ-800 in mz800emu, ${{ matrix.test }}
     runs-on: ubuntu-24.04
-    if: github.event_name != 'pull_request' || github.event.action != 'labeled' || github.event.label.name == 'full-test'
+    strategy:
+      fail-fast: false
+      matrix:                           # the cross-play matches side by side (one after another: 12 minutes)
+        test: [replays and a match, mz zx, zx mz, mz cpc, cpc zx]
     env:
       MZ800EMU: /home/runner/mz800emu/bin/mz800emu
       MZ800EMU_CFG: build/emucfg_net
@@ -317,20 +317,21 @@ jobs:
           tools/ci/displays.sh
           tools/ci/relay.sh
       - name: replays
+        if: matrix.test == 'replays and a match'
         run: |
           for r in tests/recordings/*.bnr; do echo "== $r"; build/venv/bin/python tools/replay.py "$r" | tail -1; done
           echo "- MZ-800 replays: passed" >> "$GITHUB_STEP_SUMMARY"
       - name: match through the relay
+        if: matrix.test == 'replays and a match'
         run: |
           tools/ci/retry.sh build/venv/bin/python tools/lockstep_test.py 300
           echo "- MZ-MZ match: passed" >> "$GITHUB_STEP_SUMMARY"
-      - name: cross-play, the MZ with the Spectrum and the CPC (Python emulators)
+      - name: cross-play, ${{ matrix.test }} (the Spectrum and the CPC in the Python emulators)
+        if: matrix.test != 'replays and a match'
         run: |
           build/venv/bin/pip install -q "zx==$ZX_EMU_VERSION" "z80==$Z80_EMU_VERSION" numpy pillow
-          for pair in "mz zx" "zx mz" "mz cpc" "cpc zx"; do
-            echo "== $pair"; tools/ci/retry.sh build/venv/bin/python tools/crossplay.py 300 $pair | tail -3
-            echo "- cross-play $pair: passed" >> "$GITHUB_STEP_SUMMARY"
-          done
+          tools/ci/retry.sh build/venv/bin/python tools/crossplay.py 300 ${{ matrix.test }} | tail -3
+          echo "- cross-play ${{ matrix.test }}: passed" >> "$GITHUB_STEP_SUMMARY"
       - if: failure()
         run: tail -n 50 build/relay.log build/mz800emu.log || true
 
