@@ -5,7 +5,7 @@ The logo is 6 rows x 40 chars of quarter-block graphics (each char = 2x2
 dots), i.e. an 80x12 dot bitmap with a checker border (code 2Eh).
 Letters are 8 dots wide x 7 dots tall in a "disconnected stroke" style.
 """
-import os
+import os, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -76,6 +76,7 @@ def compose(body, tt, layout=(('BOMBER', 2), ('NET', 54))):
 
 
 if __name__ == '__main__':
+    if not os.path.exists(os.path.join(HERE, '..', 'bomber.mzf')): sys.exit('needs the original tape: bomber.mzf in the repository root')
     mzf = open(os.path.join(HERE, '..', 'bomber.mzf'), 'rb').read()[128:]
     tt = mzf[0x314F - 0x1200:0x314F - 0x1200 + 180]
     codes, dots = compose(mzf, tt)

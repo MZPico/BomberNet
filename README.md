@@ -16,10 +16,10 @@ Version 0.2.0 (tag `v0.2.0`, shown at the bottom of the title screen).
 | Machine | File | Network play with |
 |---|---|---|
 | Browser | [mzpico.com/play/bombernet](https://mzpico.com/play/bombernet/) (an emulated MZ-800) | built in |
-| Sharp MZ-700/800 | `bombernet.mzf` ([catalog page](https://mzpico.com/titles/bombernet/)) | an MZPico with the NET extension; or a Unicard with NET firmware on a LAN (see Network) |
-| ZX Spectrum 48K or larger | `bombernet.tap` (`LOAD ""`) | a Spectranet or Spectranext |
+| Sharp MZ-700/800 | `bombernet-<version>-mz800.mzf` ([catalog page](https://mzpico.com/titles/bombernet/)) | an MZPico with the NET extension; or a Unicard with NET firmware on a LAN (see Network) |
+| ZX Spectrum 48K or larger | `bombernet-<version>-zx-spectrum-48k.tap` (`LOAD ""`) | a Spectranet or Spectranext |
 
-The release files are in the repository root and on the catalog page.
+The files for every machine are on the [releases page](https://github.com/MZPico/BomberNet/releases) and the catalog page.
 
 **Title menu.** UP/DOWN selects a row, LEFT/RIGHT changes it, SPACE starts.
 Rows: MODE (COOP or DEATHMATCH), NETWORK (OFF, HOST, JOIN; greyed out without
@@ -195,9 +195,10 @@ Building FuseX and its quirks: `docs/port-zx-spectrum.md`.
 
 ## The original
 
-`bomber.mzf` is the untouched 1983 tape; `bomber.asm` is its complete,
-commented disassembly, which `./build.sh` reassembles byte-identical with
-`pasmo`. Memory map, rendering model, data structures, quirks, what the C port
+`bomber.asm` is the complete, commented disassembly of the 1983 tape
+(`bomber.mzf`, not in the repository: Hudson Soft's game). `./build.sh`
+reassembles it with `pasmo`, and with the tape in the repository root it
+checks that the result is byte-identical. Memory map, rendering model, data structures, quirks, what the C port
 changed on purpose and how fast it runs: `docs/original.md`.
 
 ## Documents
