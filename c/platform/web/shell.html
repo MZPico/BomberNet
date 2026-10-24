@@ -44,6 +44,10 @@
   #fs { position: fixed; top: max(env(safe-area-inset-top), 8px); right: max(env(safe-area-inset-right), 8px); z-index: 3;
         background: #222; color: #ddd; border: 1px solid #555; border-radius: 8px; font: 600 13px system-ui;
         padding: 6px 10px; opacity: .8; }
+  #mute { position: fixed; top: max(env(safe-area-inset-top), 8px); right: calc(max(env(safe-area-inset-right), 8px) + 74px); z-index: 3;
+          background: #222; color: #ddd; border: 1px solid #555; border-radius: 8px; font: 600 13px system-ui;
+          padding: 6px 10px; opacity: .8; }
+  #mute.off { color: #888; text-decoration: line-through; }
   body.full { justify-content: center; }
   body.full canvas { width: min(100vw, 160vh); }
   body.full #hint { display: none; }
@@ -62,7 +66,7 @@
   body.touch.land #brk { position: absolute; right: max(env(safe-area-inset-right), 12px); top: max(env(safe-area-inset-top), 52px); }
   body.touch.land #side { position: absolute; left: max(env(safe-area-inset-left), 12px); top: max(env(safe-area-inset-top), 12px); }
   body.touch.land #side button { width: 56px; height: 34px; font-size: 13px; }
-  body.touch.land #fs { opacity: .55; }
+  body.touch.land #fs, body.touch.land #mute { opacity: .55; }
 </style>
 </head>
 <body>
@@ -81,6 +85,7 @@
   <input id="type" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false">
 </div>
 <button id="fs" title="Fullscreen">&#x26F6; FULL</button>
+<button id="mute" title="Sound on or off">&#x266A; SOUND</button>
 <div id="hint">Cursor keys and SPACE &middot; W A S D and E &middot; ESC leaves a match &middot; letters type a room code</div>
 <script>
 // BomberNet compiled to WebAssembly (c/platform/web, docs/port-web.md).
@@ -93,6 +98,8 @@
   const KEYS = { ArrowUp: 1, ArrowDown: 2, ArrowLeft: 3, ArrowRight: 4, Space: 5, Enter: 6, NumpadEnter: 6,
                  Escape: 7, Backspace: 8, Delete: 9 };
   let audio = null;
+  let muted = false;                              // the SOUND button; remembered in this browser
+  try { muted = localStorage.getItem('bombernet-mute') === '1'; } catch (err) {}
 
   function keyId(e) {
     if (KEYS[e.code]) return KEYS[e.code];
@@ -139,7 +146,7 @@
       pads();
     },
     bombernetTone(hz, ms) {
-      if (!audio) return;
+      if (!audio || muted) return;
       const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime;
       o.type = 'square'; o.frequency.value = hz;
       g.gain.value = 0.08;
@@ -149,6 +156,10 @@
     print: (s) => console.log(s),
     printErr: (s) => console.warn(s),
   };
+  const muteBtn = document.getElementById('mute');
+  const showMute = () => { muteBtn.textContent = muted ? '\u266A MUTED' : '\u266A SOUND'; muteBtn.classList.toggle('off', muted); };
+  muteBtn.addEventListener('click', () => { muted = !muted; showMute(); try { localStorage.setItem('bombernet-mute', muted ? '1' : '0'); } catch (err) {} });
+  showMute();
   // touch: each button holds its key while pressed (pointer events: fingers and the mouse alike)
   if ('ontouchstart' in window || navigator.maxTouchPoints > 0 || params.has('touch')) document.body.classList.add('touch');
   function hold(b, id, id2) {                         // FIRE holds SPACE and RETURN: key set A fires with RETURN
