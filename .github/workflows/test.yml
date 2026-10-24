@@ -11,6 +11,7 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_call:                                # the release workflow runs it too
 
 defaults:
   run:
@@ -18,7 +19,7 @@ defaults:
                                                 # command piped into tail would pass)
 
 concurrency:
-  group: test-${{ github.ref }}
+  group: ${{ github.workflow }}-test-${{ github.ref }}   # (called by release.yml: the caller's name, a group of its own)
   cancel-in-progress: true
 
 jobs:

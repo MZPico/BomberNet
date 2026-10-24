@@ -1,0 +1,421 @@
+# The real emulators, in real time, under Xvfb: what the deterministic tests
+# (test.yml) cannot show. On every pull request and push to main, and every
+# night (a new runner image, browser or package breaks things with no commit
+# of ours). An emulator in real time on a shared machine can stumble, so each
+# test gets a second chance (tools/ci/retry.sh) and the run's summary lists
+# what passed. The deterministic ones (the MZ-800's replays and its matches
+# with the Python emulators) are required checks; the real-time ones become
+# required once they have shown they do not fail on their own.
+name: emulators
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AMIGA_DISPLAY: ':97'
+  AMIGA_DISPLAY2: ':98'
+
+jobs:
+  pc:
+    name: PC in DOSBox-X
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain versions
+        run: grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        id: ow
+        with:
+          path: ~/openwatcom
+          key: openwatcom-${{ env.OPENWATCOM_RELEASE }}
+      - name: OpenWatcom
+        if: steps.ow.outputs.cache-hit != 'true'
+        run: |
+          curl -sSL -o /tmp/ow.tar.xz \
+            "https://github.com/open-watcom/open-watcom-v2/releases/download/$OPENWATCOM_RELEASE/ow-snapshot.tar.xz"
+          mkdir -p ~/openwatcom && tar -xJf /tmp/ow.tar.xz -C ~/openwatcom
+      - name: DOSBox-X, the displays, the relay
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q dosbox-x xvfb x11-utils xdotool ffmpeg
+          tools/ci/displays.sh
+          tools/ci/relay.sh
+          build/venv/bin/pip install -q numpy
+      - name: replays (VGA, EGA, CGA)
+        run: |
+          export WATCOM=~/openwatcom
+          for v in vga ega cga; do
+            echo "::group::$v"
+            python3 tools/build_pc.py --test tests/recordings/dm4.bnr --out build/pc/t
+            tools/ci/retry.sh build/venv/bin/python tools/pc_test.py build/pc/t/BOMBER.EXE --video $v
+            echo "::endgroup::"
+          done
+          echo "- PC replays VGA, EGA, CGA: passed" >> "$GITHUB_STEP_SUMMARY"
+      - name: keys and sound (speaker, FM)
+        run: |
+          export WATCOM=~/openwatcom
+          python3 tools/build_pc.py --play
+          tools/ci/retry.sh build/venv/bin/python tools/pc_play.py --sound speaker
+          tools/ci/retry.sh build/venv/bin/python tools/pc_play.py --sound fm
+          echo "- PC keys and sound: passed" >> "$GITHUB_STEP_SUMMARY"
+      - name: match over the modem
+        run: |
+          WATCOM=~/openwatcom tools/ci/retry.sh build/venv/bin/python tools/pc_match.py 45
+          echo "- PC-PC match, modem: passed" >> "$GITHUB_STEP_SUMMARY"
+      - name: match over Ethernet (NE2000, packet driver)
+        run: |
+          WATCOM=~/openwatcom PC_NET=pkt tools/ci/retry.sh build/venv/bin/python tools/pc_match.py 45
+          echo "- PC-PC match, Ethernet: passed" >> "$GITHUB_STEP_SUMMARY"
+      - if: failure()
+        run: |
+          tail -50 build/relay.log || true
+          for f in build/pc/match_*/dosbox.log; do echo "== $f"; tail -20 "$f"; done || true
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pc-failure
+          path: |
+            build/pc/*.png
+            build/pc/match_*/c/NET.LOG
+          retention-days: 7
+
+  web:
+    name: browser in Chrome
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain versions
+        run: grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        id: emsdk
+        with:
+          path: ~/emsdk
+          key: emsdk-${{ env.EMSDK_VERSION }}
+      - name: Emscripten
+        if: steps.emsdk.outputs.cache-hit != 'true'
+        run: |
+          git clone -q https://github.com/emscripten-core/emsdk.git ~/emsdk
+          ~/emsdk/emsdk install "$EMSDK_VERSION" && ~/emsdk/emsdk activate "$EMSDK_VERSION"
+      - name: the displays, the relay
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q xvfb x11-utils
+          tools/ci/displays.sh
+          tools/ci/relay.sh
+          build/venv/bin/pip install -q websockets
+      - name: two browsers in a match
+        env:
+          CHROMIUM: google-chrome
+          CHROMIUM_FLAGS: --no-sandbox
+        run: |
+          EMSDK=~/emsdk python3 tools/build_web.py
+          tools/ci/retry.sh build/venv/bin/python tools/web_match.py 30
+          echo "- browser-browser match: passed" >> "$GITHUB_STEP_SUMMARY"
+      - if: failure()
+        run: tail -50 build/relay.log || true; tail -30 build/chromium.log || true
+
+  st:
+    name: Atari ST in Hatari
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain versions
+        run: grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
+      - name: cross-mint, Hatari, the displays, the relay
+        run: |
+          sudo add-apt-repository -y ppa:vriviere/ppa
+          sudo apt-get update -q
+          sudo apt-get install -y -q cross-mint-essential hatari xvfb x11-utils xdotool ffmpeg
+          tools/ci/displays.sh
+          tools/ci/relay.sh
+      - uses: actions/cache@v4
+        id: emutos
+        with:
+          path: build/st/rom
+          key: emutos-${{ env.EMUTOS_COMMIT }}
+      - name: EmuTOS (no TOS ships with Hatari; built from source, pinned)
+        if: steps.emutos.outputs.cache-hit != 'true'
+        run: |
+          git clone -q https://github.com/emutos/emutos.git /tmp/emutos && git -C /tmp/emutos checkout -q "$EMUTOS_COMMIT"
+          mkdir -p build/st/rom
+          for t in "192 uk" "192 us" "256 uk"; do
+            set -- $t
+            make -C /tmp/emutos clean > /dev/null && make -C /tmp/emutos -j4 $1 UNIQUE=$2 > /dev/null
+            cp /tmp/emutos/etos$1$2.img build/st/rom/
+          done
+          ls -l build/st/rom
+      - name: replay
+        run: |
+          python3 tools/build_st.py --test tests/recordings/dm4.bnr
+          tools/ci/retry.sh python3 tools/st_test.py
+          echo "- ST replay: passed" >> "$GITHUB_STEP_SUMMARY"
+      - name: match over the WiFi modems
+        run: |
+          ST_DISPLAY=:98 tools/ci/retry.sh build/venv/bin/python tools/st_match.py 45
+          echo "- ST-ST match: passed" >> "$GITHUB_STEP_SUMMARY"
+      - if: failure()
+        run: tail -50 build/relay.log || true; tail -30 build/st/hatari.log || true
+
+  amiga:
+    name: Amiga in FS-UAE
+    runs-on: ubuntu-24.04
+    env:
+      AMIGA_MODEL: A1200                        # FS-UAE's own AROS ROM (no download); on an A500 it crashed in a match
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain versions
+        run: grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
+      - name: bebbo's gcc, FS-UAE, the displays, the relay
+        run: |
+          docker pull -q "$AMIGA_IMAGE" && docker tag "$AMIGA_IMAGE" amigadev/crosstools:m68k-amigaos
+          sudo apt-get update -q
+          sudo apt-get install -y -q fs-uae xvfb x11-utils xdotool ffmpeg
+          tools/ci/displays.sh
+          tools/ci/relay.sh
+      - name: replay
+        run: |
+          python3 tools/build_amiga.py --test tests/recordings/dm4.bnr
+          DISPLAY=:97 tools/ci/retry.sh python3 tools/amiga_test.py --model A1200
+          echo "- Amiga replay: passed" >> "$GITHUB_STEP_SUMMARY"
+      - name: match
+        run: |
+          tools/ci/retry.sh build/venv/bin/python tools/amiga_match.py 45
+          echo "- Amiga-Amiga match: passed" >> "$GITHUB_STEP_SUMMARY"
+      - if: failure()
+        run: tail -50 build/relay.log || true; tail -30 build/amiga/fsuae.log || true
+
+  c64:
+    name: C64 in VICE
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain versions
+        run: |
+          grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
+          echo "VICE_PATCH_HASH=$(sha256sum tools/c64/vice-3.9-bombernet.patch | cut -c1-16)" >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        id: sdk
+        with:
+          path: ~/llvm-mos
+          key: llvm-mos-${{ env.LLVM_MOS_VERSION }}
+      - name: llvm-mos SDK
+        if: steps.sdk.outputs.cache-hit != 'true'
+        run: |
+          curl -sSL -o /tmp/llvm-mos.tar.xz \
+            "https://github.com/llvm-mos/llvm-mos-sdk/releases/download/$LLVM_MOS_VERSION/llvm-mos-linux.tar.xz"
+          tar -xJf /tmp/llvm-mos.tar.xz -C ~
+      - uses: actions/cache@v4
+        id: vice
+        with:
+          path: ~/vice-dist
+          key: vice-2-${{ env.VICE_VERSION }}-${{ env.VICE_PATCH_HASH }}
+      - name: VICE, headless, with the BomberNet patch (monitor keys, WiC64 firmware timing, the Ultimate's network)
+        run: |
+          sudo apt-get update -q       # on every run: the cached VICE links against these
+          sudo apt-get install -y -q build-essential pkg-config xa65 dos2unix libcurl4-openssl-dev flex bison libpng-dev zlib1g-dev
+          [ "${{ steps.vice.outputs.cache-hit }}" = true ] && exit 0
+          curl -sSL -o /tmp/vice.tar.gz "https://sourceforge.net/projects/vice-emu/files/releases/vice-$VICE_VERSION.tar.gz/download"
+          tar -xzf /tmp/vice.tar.gz -C /tmp
+          cd /tmp/vice-$VICE_VERSION && patch -p1 < "$GITHUB_WORKSPACE/tools/c64/vice-3.9-bombernet.patch"
+          ./configure --prefix="$HOME/vice-dist" --enable-headlessui --disable-arch --disable-html-docs --disable-pdf-docs \
+            --without-alsa --without-pulse --without-oss --without-evdev --with-libcurl > /dev/null
+          make -j4 > /dev/null && make install > /dev/null
+          ls ~/vice-dist/bin
+      - name: the relay
+        run: tools/ci/relay.sh
+      - name: replay
+        run: |
+          export VICE=$HOME/vice-dist/bin/x64sc LLVM_MOS=$HOME/llvm-mos
+          python3 tools/build_c64.py --test tests/recordings/dm4.bnr
+          tools/ci/retry.sh build/venv/bin/python tools/c64_test.py
+          echo "- C64 replay: passed" >> "$GITHUB_STEP_SUMMARY"
+      - name: match, WiC64 (the firmware's timing) and the Ultimate's network
+        run: |
+          export VICE=$HOME/vice-dist/bin/x64sc LLVM_MOS=$HOME/llvm-mos
+          CFLAGS_C64=-DC64_NETTIME python3 tools/build_c64.py --out build/c64nt
+          WIC64_FW_TIMING=1 tools/ci/retry.sh build/venv/bin/python tools/c64_match.py 30
+          C64_NET=uci tools/ci/retry.sh build/venv/bin/python tools/c64_match.py 30
+          echo "- C64-C64 matches (WiC64, Ultimate): passed" >> "$GITHUB_STEP_SUMMARY"
+      - if: failure()
+        run: tail -50 build/relay.log || true
+      - if: failure()
+        name: VICE on its own (why it stopped)
+        run: |
+          ldd ~/vice-dist/bin/x64sc | grep 'not found' || true
+          timeout 20 ~/vice-dist/bin/x64sc +logcolorize -default -sounddev dummy -limitcycles 2000000 2>&1 | tail -40 || true
+
+  atari:
+    name: Atari XL/XE in atari800
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain versions
+        run: grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        id: sdk
+        with:
+          path: ~/llvm-mos
+          key: llvm-mos-${{ env.LLVM_MOS_VERSION }}
+      - name: llvm-mos SDK
+        if: steps.sdk.outputs.cache-hit != 'true'
+        run: |
+          curl -sSL -o /tmp/llvm-mos.tar.xz \
+            "https://github.com/llvm-mos/llvm-mos-sdk/releases/download/$LLVM_MOS_VERSION/llvm-mos-linux.tar.xz"
+          tar -xJf /tmp/llvm-mos.tar.xz -C ~
+      - name: atari800 (its built-in AltirraOS), the displays
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q atari800 xvfb x11-utils ffmpeg python3-pil
+          tools/ci/displays.sh
+      - name: replay
+        run: |
+          LLVM_MOS=$HOME/llvm-mos python3 tools/build_atari.py --test tests/recordings/dm4.bnr
+          tools/ci/retry.sh python3 tools/atari_test.py
+          echo "- Atari replay: passed" >> "$GITHUB_STEP_SUMMARY"
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: atari-failure
+          path: build/atari/test.png
+          retention-days: 7
+
+  cross:
+    name: cross-play, ${{ matrix.pair }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        pair: [web pc, pc web]          # the browser (Chrome) and the PC (DOSBox-X), each one hosting
+    env:
+      CHROMIUM: google-chrome
+      CHROMIUM_FLAGS: --no-sandbox
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain versions
+        run: grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        id: ow
+        with:
+          path: ~/openwatcom
+          key: openwatcom-${{ env.OPENWATCOM_RELEASE }}
+      - name: OpenWatcom
+        if: steps.ow.outputs.cache-hit != 'true'
+        run: |
+          curl -sSL -o /tmp/ow.tar.xz \
+            "https://github.com/open-watcom/open-watcom-v2/releases/download/$OPENWATCOM_RELEASE/ow-snapshot.tar.xz"
+          mkdir -p ~/openwatcom && tar -xJf /tmp/ow.tar.xz -C ~/openwatcom
+      - uses: actions/cache@v4
+        id: emsdk
+        with:
+          path: ~/emsdk
+          key: emsdk-${{ env.EMSDK_VERSION }}
+      - name: Emscripten
+        if: steps.emsdk.outputs.cache-hit != 'true'
+        run: |
+          git clone -q https://github.com/emscripten-core/emsdk.git ~/emsdk
+          ~/emsdk/emsdk install "$EMSDK_VERSION" && ~/emsdk/emsdk activate "$EMSDK_VERSION"
+      - name: DOSBox-X, the displays, the relay
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q dosbox-x xvfb x11-utils xdotool ffmpeg
+          tools/ci/displays.sh
+          tools/ci/relay.sh
+          build/venv/bin/pip install -q numpy websockets pillow "zx==$ZX_EMU_VERSION" "z80==$Z80_EMU_VERSION"   # (crossplay.py imports every machine)
+      - name: the match
+        run: |
+          WATCOM=~/openwatcom EMSDK=~/emsdk tools/ci/retry.sh build/venv/bin/python tools/crossplay.py 300 ${{ matrix.pair }} | tail -3
+          echo "- cross-play ${{ matrix.pair }}: passed" >> "$GITHUB_STEP_SUMMARY"
+      - if: failure()
+        run: tail -50 build/relay.log || true; tail -30 build/chromium.log || true
+
+  mz:
+    name: MZ-800 in mz800emu, ${{ matrix.test }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:                           # the cross-play matches side by side (one after another: 12 minutes)
+        test: [replays and a match, mz zx, zx mz, mz cpc, cpc zx]
+    env:
+      MZ800EMU: /home/runner/mz800emu/bin/mz800emu
+      MZ800EMU_CFG: build/emucfg_net
+      MZ800EMU_LOG: build/mz800emu.log
+      DISPLAY: ':97'                    # headless, but SDL still opens its video (an invisible X display)
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain versions
+        run: grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        id: emu
+        with:
+          path: ~/mz800emu
+          key: mz800emu-2-${{ env.MZ800EMU_COMMIT }}-${{ env.SDL3_TAG }}-${{ env.SDL3_IMAGE_TAG }}-${{ env.MINIZIP_NG_COMMIT }}
+      - name: mz800emu and its libraries (SDL3, SDL3_image, minizip-ng from source)
+        run: |
+          sudo apt-get update -q       # on every run: the cached mz800emu links against these
+          sudo apt-get install -y -q xvfb x11-utils libgl1-mesa-dri build-essential cmake ninja-build pkg-config libglib2.0-dev libjson-glib-dev libcurl4-openssl-dev \
+            zlib1g-dev libpng-dev libjpeg-dev libasound2-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+            libxfixes-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libgl1-mesa-dev libegl1-mesa-dev libdbus-1-dev libudev-dev
+          [ "${{ steps.emu.outputs.cache-hit }}" = true ] && exit 0
+          P=$HOME/mz800emu
+          set -E; trap 'tail -60 /tmp/build.log' ERR
+          build() {   # repository, ref, cmake options
+            git clone -q "$1" /tmp/src && git -C /tmp/src checkout -q "$2"
+            cmake -S /tmp/src -B /tmp/src/b -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$P" \
+              -DCMAKE_PREFIX_PATH="$P" "${@:3}" > /tmp/build.log 2>&1
+            cmake --build /tmp/src/b > /tmp/build.log 2>&1
+            cmake --install /tmp/src/b > /tmp/build.log 2>&1
+            rm -rf /tmp/src
+          }
+          build https://github.com/libsdl-org/SDL.git "$SDL3_TAG" -DSDL_TESTS=OFF -DSDL_WAYLAND=OFF -DSDL_PIPEWIRE=OFF -DSDL_PULSEAUDIO=OFF -DSDL_JACK=OFF -DSDL_SNDIO=OFF
+          build https://github.com/libsdl-org/SDL_image.git "$SDL3_IMAGE_TAG" -DSDLIMAGE_VENDORED=OFF -DSDLIMAGE_AVIF=OFF -DSDLIMAGE_WEBP=OFF -DSDLIMAGE_TIF=OFF -DSDLIMAGE_JXL=OFF
+          build https://github.com/zlib-ng/minizip-ng.git "$MINIZIP_NG_COMMIT" -DMZ_COMPAT=OFF -DMZ_ZSTD=OFF -DMZ_LZMA=OFF -DMZ_PPMD=OFF -DMZ_BZIP2=OFF -DMZ_OPENSSL=OFF -DMZ_LIBBSD=OFF -DMZ_ICONV=OFF -DMZ_FETCH_LIBS=OFF
+          git clone -q https://github.com/MZPico/mz800emu.git /tmp/emu && git -C /tmp/emu checkout -q "$MZ800EMU_COMMIT"
+          export LIBRARY_PATH="$P/lib"   # the minizip-ng it links names -lminizip-ng without its -L
+          PKG_CONFIG_PATH="$P/lib/pkgconfig:$P/lib/x86_64-linux-gnu/pkgconfig" cmake -S /tmp/emu -B /tmp/emu/b -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$P" -DMZ_BUILD_MZ1500=OFF -DMZ_BUILD_MZ700_PAL=OFF \
+            -DMZ_BUILD_MZ700_NTSC=OFF -DBUILD_TESTING=OFF > /tmp/build.log 2>&1
+          cmake --build /tmp/emu/b > /tmp/build.log 2>&1
+          rm -rf "$P/bin" && cp -r "$(dirname "$(find /tmp/emu/b -name mz800emu -type f -perm -u+x | head -1)")" "$P/bin"   # with its ui_resources
+          ls -l "$P/bin"
+      - name: the MZ-800 build, the relay
+        run: |
+          echo "LD_LIBRARY_PATH=$HOME/mz800emu/lib:$HOME/mz800emu/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
+          docker pull -q "$Z88DK_IMAGE"
+          export PATH="$PWD/tools/ci/z88dk:$PATH"
+          for p in mz:c zx:zx cpc:cpc; do
+            mkdir -p build/${p#*:} && (cd build/${p#*:} && cmake -DPLATFORM=${p%%:*} ../../c > /dev/null && make)
+          done
+          mkdir -p build/emucfg_net && cp tools/ci/emucfg_net/mz800emu.ini build/emucfg_net/
+          tools/ci/displays.sh
+          tools/ci/relay.sh
+      - name: replays
+        if: matrix.test == 'replays and a match'
+        run: |
+          for r in tests/recordings/*.bnr; do echo "== $r"; build/venv/bin/python tools/replay.py "$r" | tail -1; done
+          echo "- MZ-800 replays: passed" >> "$GITHUB_STEP_SUMMARY"
+      - name: match through the relay
+        if: matrix.test == 'replays and a match'
+        run: |
+          tools/ci/retry.sh build/venv/bin/python tools/lockstep_test.py 300
+          echo "- MZ-MZ match: passed" >> "$GITHUB_STEP_SUMMARY"
+      - name: cross-play, ${{ matrix.test }} (the Spectrum and the CPC in the Python emulators)
+        if: matrix.test != 'replays and a match'
+        run: |
+          build/venv/bin/pip install -q "zx==$ZX_EMU_VERSION" "z80==$Z80_EMU_VERSION" numpy pillow
+          tools/ci/retry.sh build/venv/bin/python tools/crossplay.py 300 ${{ matrix.test }} | tail -3
+          echo "- cross-play ${{ matrix.test }}: passed" >> "$GITHUB_STEP_SUMMARY"
+      - if: failure()
+        run: tail -n 50 build/relay.log build/mz800emu.log || true
+

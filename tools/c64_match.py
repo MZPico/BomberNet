@@ -77,5 +77,10 @@ try:
               f'abort {v.u8("net_abort")}', flush=True)
     print('state hashes', host.mem('state_hash', 2).hex(), join.mem('state_hash', 2).hex(),
           'at frames', host.u16('frame_no'), join.u16('frame_no'))
+    # the verdict: the relay compares the hashes every 16 frames and aborts both on a difference (an abort
+    # flag), so no abort and enough frames played (10 a second at least) is a pass
+    played = min(v.u16('frame_no') - fr for v, (fr, _) in zip(both, f0))
+    aborts = [v.u8('net_abort') for v in both]
+    sys.exit(1 if any(aborts) or played < SECS * 10 else 0)
 finally:
     for v in both: v.close()
