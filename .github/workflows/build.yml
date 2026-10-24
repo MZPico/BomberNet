@@ -8,6 +8,7 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  workflow_call:                                # the release workflow runs it too
 
 defaults:
   run:
@@ -15,7 +16,7 @@ defaults:
                                                 # command piped into tail would pass)
 
 concurrency:
-  group: build-${{ github.ref }}
+  group: build-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -88,8 +89,11 @@ jobs:
           curl -sSL -o /tmp/llvm-mos.tar.xz \
             "https://github.com/llvm-mos/llvm-mos-sdk/releases/download/$LLVM_MOS_VERSION/llvm-mos-linux.tar.xz"
           tar -xJf /tmp/llvm-mos.tar.xz -C ~
+      - name: c1541 (the C64's disk image; VICE's package, no ROMs needed)
+        if: matrix.dir == 'c64'
+        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends vice
       - name: build
-        run: LLVM_MOS=~/llvm-mos python3 tools/${{ matrix.script }}
+        run: C1541=$(command -v c1541 || true) LLVM_MOS=~/llvm-mos python3 tools/${{ matrix.script }}
       - name: memory budget
         run: LLVM_MOS=~/llvm-mos python3 tools/check_sizes.py
       - uses: actions/upload-artifact@v4

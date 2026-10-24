@@ -1,0 +1,127 @@
+# The real emulators, in real time, under Xvfb: what the deterministic tests
+# (test.yml) cannot show. Every night on main, by hand (Actions, "Run
+# workflow"), and on a pull request labelled full-test or one that changes
+# this workflow or tools/ci. Not a required check: an emulator in real time
+# on a shared machine can stumble, so each test gets a second chance
+# (tools/ci/retry.sh) and the run's summary lists what passed.
+name: nightly
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+    paths: ['.github/workflows/nightly.yml', 'tools/ci/**']
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AMIGA_DISPLAY: ':97'
+  AMIGA_DISPLAY2: ':98'
+
+jobs:
+  pc:
+    name: PC in DOSBox-X
+    runs-on: ubuntu-24.04
+    if: github.event_name != 'pull_request' || github.event.action != 'labeled' || github.event.label.name == 'full-test'
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain versions
+        run: grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        id: ow
+        with:
+          path: ~/openwatcom
+          key: openwatcom-${{ env.OPENWATCOM_RELEASE }}
+      - name: OpenWatcom
+        if: steps.ow.outputs.cache-hit != 'true'
+        run: |
+          curl -sSL -o /tmp/ow.tar.xz \
+            "https://github.com/open-watcom/open-watcom-v2/releases/download/$OPENWATCOM_RELEASE/ow-snapshot.tar.xz"
+          mkdir -p ~/openwatcom && tar -xJf /tmp/ow.tar.xz -C ~/openwatcom
+      - name: DOSBox-X, the displays, the relay
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q dosbox-x xvfb x11-utils xdotool ffmpeg
+          tools/ci/displays.sh
+          tools/ci/relay.sh
+          build/venv/bin/pip install -q numpy
+      - name: replays (VGA, EGA, CGA)
+        run: |
+          export WATCOM=~/openwatcom
+          for v in vga ega cga; do
+            echo "::group::$v"
+            python3 tools/build_pc.py --test tests/recordings/dm4.bnr --out build/pc/t
+            tools/ci/retry.sh build/venv/bin/python tools/pc_test.py build/pc/t/BOMBER.EXE --video $v
+            echo "::endgroup::"
+          done
+          echo "- PC replays VGA, EGA, CGA: passed" >> "$GITHUB_STEP_SUMMARY"
+      - name: keys and sound (speaker, FM)
+        run: |
+          export WATCOM=~/openwatcom
+          python3 tools/build_pc.py --play
+          tools/ci/retry.sh build/venv/bin/python tools/pc_play.py --sound speaker
+          tools/ci/retry.sh build/venv/bin/python tools/pc_play.py --sound fm
+          echo "- PC keys and sound: passed" >> "$GITHUB_STEP_SUMMARY"
+      - name: match over the modem
+        run: |
+          WATCOM=~/openwatcom tools/ci/retry.sh build/venv/bin/python tools/pc_match.py 45
+          echo "- PC-PC match, modem: passed" >> "$GITHUB_STEP_SUMMARY"
+      - name: match over Ethernet (NE2000, packet driver)
+        run: |
+          WATCOM=~/openwatcom PC_NET=pkt tools/ci/retry.sh build/venv/bin/python tools/pc_match.py 45
+          echo "- PC-PC match, Ethernet: passed" >> "$GITHUB_STEP_SUMMARY"
+      - if: failure()
+        run: |
+          tail -50 build/relay.log || true
+          for f in build/pc/match_*/dosbox.log; do echo "== $f"; tail -20 "$f"; done || true
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pc-failure
+          path: |
+            build/pc/*.png
+            build/pc/match_*/c/NET.LOG
+          retention-days: 7
+
+  web:
+    name: browser in Chrome
+    runs-on: ubuntu-24.04
+    if: github.event_name != 'pull_request' || github.event.action != 'labeled' || github.event.label.name == 'full-test'
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain versions
+        run: grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        id: emsdk
+        with:
+          path: ~/emsdk
+          key: emsdk-${{ env.EMSDK_VERSION }}
+      - name: Emscripten
+        if: steps.emsdk.outputs.cache-hit != 'true'
+        run: |
+          git clone -q https://github.com/emscripten-core/emsdk.git ~/emsdk
+          ~/emsdk/emsdk install "$EMSDK_VERSION" && ~/emsdk/emsdk activate "$EMSDK_VERSION"
+      - name: the displays, the relay
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q xvfb x11-utils
+          tools/ci/displays.sh
+          tools/ci/relay.sh
+          build/venv/bin/pip install -q websockets
+      - name: two browsers in a match
+        env:
+          CHROMIUM: google-chrome
+          CHROMIUM_FLAGS: --no-sandbox
+        run: |
+          EMSDK=~/emsdk python3 tools/build_web.py
+          tools/ci/retry.sh build/venv/bin/python tools/web_match.py 30
+          echo "- browser-browser match: passed" >> "$GITHUB_STEP_SUMMARY"
+      - if: failure()
+        run: tail -50 build/relay.log || true; tail -30 build/chromium.log || true
