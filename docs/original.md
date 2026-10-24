@@ -13,12 +13,13 @@ Files:
 
 | file | purpose |
 |---|---|
-| `bomber.mzf` | original tape image (untouched) |
+| `bomber.mzf` | original tape image (untouched; not in the repository, Hudson Soft's game: put a copy in the root) |
 | `bomber.asm` | complete, commented source; reassembles byte-identical |
 | `build.sh` | `pasmo` assemble + MZF header wrap + compare with the original |
 | `build/` | output of `build.sh` |
 
-`./build.sh` prints `identical to original bomber.mzf` when the round trip is exact.
+`./build.sh` prints `identical to original bomber.mzf` when the round trip is exact
+(with the tape in the root; without it, only the reassembly).
 
 ## Memory map
 

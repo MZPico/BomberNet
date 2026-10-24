@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Extract the data of the original bomber.mzf: logical data into c/core/data.c,
-the MZ translation tables into c/platform/mz/tables.c."""
+the MZ translation tables into c/platform/mz/tables.c. The tape is not in the
+repository (Hudson Soft's game): a copy in the root; the files it generated are."""
 import os, sys
 here = os.path.dirname(os.path.abspath(__file__))
+if not os.path.exists(os.path.join(here, '..', 'bomber.mzf')): sys.exit('needs the original tape: bomber.mzf in the repository root')
 mzf = open(os.path.join(here, '..', 'bomber.mzf'), 'rb').read()
 body = mzf[128:]
 ORG = 0x1200

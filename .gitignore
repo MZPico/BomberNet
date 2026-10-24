@@ -1,5 +1,6 @@
 build/
 c/build/
 *.lis
-bomber-c.mzf
+*.mzf
+*.tap
 __pycache__/
