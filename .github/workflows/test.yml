@@ -104,14 +104,7 @@ jobs:
           (cd relay && ../build/venv/bin/uvicorn relay:app --host 127.0.0.1 --port 8765 > ../build/relay.log 2>&1 &)
           for i in $(seq 50); do nc -z 127.0.0.1 8765 && break; sleep 0.2; done
       - name: replays, Spectrum
-        # coop4 is left out on the Spectrum for now: its hash differs in some of the 16-frame periods from frame 96
-        # on (the game does not diverge: other periods agree again; every other machine replays it equal) - a bug
-        # of the Spectrum's state hash, older than this workflow, to be fixed and then put back here
-        run: |
-          for r in tests/recordings/*.bnr; do
-            case "$r" in *coop4*) echo "== $r: skipped (the Spectrum's known hash difference)"; continue ;; esac
-            echo "== $r"; build/venv/bin/python tools/replay_zx.py "$r" | tail -1
-          done
+        run: for r in tests/recordings/*.bnr; do echo "== $r"; build/venv/bin/python tools/replay_zx.py "$r" | tail -1; done
       - name: replays, CPC
         run: for r in tests/recordings/*.bnr; do echo "== $r"; build/venv/bin/python tools/replay_cpc.py "$r" | tail -1; done
       - name: Spectrum match, 2 players

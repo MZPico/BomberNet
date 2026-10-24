@@ -314,14 +314,18 @@ class ZX(zx.Spectrum):
         """Run until the instruction at addr is about to execute. Breakpoints
         stay set (the package cannot clear them); hits elsewhere are passed."""
         self.set_breakpoint(addr)
-        end = self.now() + int(max_seconds * 3500000)
+        start = self.now()
+        end = start + int(max_seconds * 3500000)
         while self.now() < end:
             self.hit = False
             self._Spectrum__run_quantum(fast_forward=True)     # returns at a breakpoint or a frame end
             if self.hit and self.spectranet and self.pc == self.IXCALL:
                 self._sn_call()
                 continue
-            if self.hit and self.pc == addr: return
+            # a hit with no time gone by is the stop we started from, reported again: when the last
+            # quantum ended (a TV frame's end) just as the program reached addr, the next one begins
+            # on the breakpoint (it made tools/replay_zx.py count a flush twice: coop4 at frame 88)
+            if self.hit and self.pc == addr and self.now() > start: return
         raise TimeoutError(f'{addr:04x} not reached, pc={self.pc:04x}')
 
     def step(self):
