@@ -294,7 +294,7 @@ jobs:
           }
           build https://github.com/libsdl-org/SDL.git "$SDL3_TAG" -DSDL_TESTS=OFF -DSDL_WAYLAND=OFF -DSDL_PIPEWIRE=OFF -DSDL_PULSEAUDIO=OFF -DSDL_JACK=OFF -DSDL_SNDIO=OFF
           build https://github.com/libsdl-org/SDL_image.git "$SDL3_IMAGE_TAG" -DSDLIMAGE_VENDORED=OFF -DSDLIMAGE_AVIF=OFF -DSDLIMAGE_WEBP=OFF -DSDLIMAGE_TIF=OFF -DSDLIMAGE_JXL=OFF
-          build https://github.com/zlib-ng/minizip-ng.git "$MINIZIP_NG_COMMIT" -DMZ_COMPAT=OFF -DMZ_ZSTD=OFF -DMZ_LZMA=OFF -DMZ_BZIP2=OFF -DMZ_OPENSSL=OFF -DMZ_LIBBSD=OFF -DMZ_ICONV=OFF -DMZ_FETCH_LIBS=OFF
+          build https://github.com/zlib-ng/minizip-ng.git "$MINIZIP_NG_COMMIT" -DMZ_COMPAT=OFF -DMZ_ZSTD=OFF -DMZ_LZMA=OFF -DMZ_PPMD=OFF -DMZ_BZIP2=OFF -DMZ_OPENSSL=OFF -DMZ_LIBBSD=OFF -DMZ_ICONV=OFF -DMZ_FETCH_LIBS=OFF
           git clone -q https://github.com/MZPico/mz800emu.git /tmp/emu && git -C /tmp/emu checkout -q "$MZ800EMU_COMMIT"
           export LIBRARY_PATH="$P/lib"   # the minizip-ng it links names -lminizip-ng without its -L
           PKG_CONFIG_PATH="$P/lib/pkgconfig:$P/lib/x86_64-linux-gnu/pkgconfig" cmake -S /tmp/emu -B /tmp/emu/b -G Ninja \
