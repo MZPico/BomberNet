@@ -265,6 +265,9 @@ void plat_frame_sync(void) {                    /* 60 ms: 3 TV frames at 50 Hz, 
 #endif
   while (FRCLOCK - last_tick < need) Vsync();
   last_tick = FRCLOCK;
+#ifdef ST_TEST
+  if (!title_mode) t_start = st_time();        /* the frame's work: from here to the next sync, the next flush included */
+#endif
 #ifdef ST_NETTEST
   sync_out = st_ta_ticks; wait_t += sync_out - sync_in;
 #endif
@@ -400,7 +403,7 @@ void flush_screen(void) {
       test.bad = rec_pos;
     memcpy(replay_keys, rec + rec_pos, 4); rec_pos += 6;
   }
-  if (!title_mode) t_start = t_flush = st_time();
+  if (!title_mode) t_flush = st_time();
 #endif
   if (mode != title_mode) set_mode(title_mode);
   if (title_mode) {

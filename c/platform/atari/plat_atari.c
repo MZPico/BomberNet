@@ -85,7 +85,7 @@ static void show3(uint16_t at, uint16_t n) {
 #ifdef ATARI_TEST
 uint16_t test_bad;                        /* the first record whose hash differs (its offset) */
 uint16_t test_late;                       /* game frames that took longer than 60 ms */
-static uint16_t t_start, t_n, t_max;      /* frame work */
+static uint16_t t_start, t_fl, t_n, t_max;      /* frame work */
 static uint32_t t_flush, t_work;
 #endif
 #ifdef NETTEST_TIME
@@ -282,6 +282,9 @@ void plat_frame_sync(void) {                          /* 60 ms: 3 PAL frames, or
   while ((uint8_t)(RTCLOK - last_tick) < need) tones_due();
   tones_due();
   last_tick = RTCLOK;
+#ifdef ATARI_TEST
+  if (!title_mode) t_start = now();            /* the frame's work: from here to the next sync, the next flush included */
+#endif
 }
 
 void plat_delay(void) {
@@ -425,7 +428,7 @@ void flush_screen(void) {
     return;
   }
 #ifdef ATARI_TEST
-  t_start = now();
+  t_fl = now();
 #endif
   sprites_field();
   atari_flush_game();
@@ -446,7 +449,7 @@ void flush_screen(void) {
   }
   hud_set = 0;
 #ifdef ATARI_TEST
-  if (rec_pos + 6 <= REC_LEN) t_flush += since(t_start);
+  if (rec_pos + 6 <= REC_LEN) t_flush += since(t_fl);
   if (test_bad) REG(0x2c8) = 0x26;                    /* red: a hash differed */
   else if (rec_pos + 6 > REC_LEN)                     /* the whole recording replayed identically: */
   {

@@ -385,6 +385,9 @@ void plat_frame_sync(void) {                    /* 60 ms */
   t_start = 0;
 #endif
   while ((int32_t)(now() - next_frame) < 0) ;
+#ifdef PC_TEST
+  if (!title_mode) t_start = pc_time();        /* the frame's work: from here to the next sync, the next flush included */
+#endif
 #ifdef PC_NETTEST
   sync_out = pc_time();
 #endif
@@ -749,7 +752,7 @@ void flush_screen(void) {
       test.bad = rec_pos;
     _fmemcpy(replay_keys, rec + rec_pos, 4); rec_pos += 6;   /* rec is far: the near memcpy would read DS:offset */
   }
-  if (!title_mode) t_start = t_flush = pc_time();
+  if (!title_mode) t_flush = pc_time();
 #endif
   if (mode != title_mode) set_mode(title_mode);
   ega_ready();                                  /* the latches: zeros */
