@@ -16,7 +16,7 @@ defaults:
                                                 # command piped into tail would pass)
 
 concurrency:
-  group: build-${{ github.ref }}-${{ github.event_name }}
+  group: ${{ github.workflow }}-build-${{ github.ref }}   # (called by release.yml: the caller's name, a group of its own)
   cancel-in-progress: true
 
 jobs:
