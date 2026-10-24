@@ -102,6 +102,8 @@ jobs:
         run: grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
       - name: bebbo's gcc (Docker image)
         run: docker pull -q "$AMIGA_IMAGE" && docker tag "$AMIGA_IMAGE" amigadev/crosstools:m68k-amigaos
+      - name: amitools (xdftool, for the disk image)
+        run: python3 -m venv build/venv && build/venv/bin/pip install -q "amitools==$AMITOOLS_VERSION"
       - name: build
         run: python3 tools/build_amiga.py --adf
       - uses: actions/upload-artifact@v4
