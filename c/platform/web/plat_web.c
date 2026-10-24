@@ -56,7 +56,17 @@ static void cell(uint8_t x, uint8_t y, uint8_t g, uint8_t col) {
     for (b = 0x80; b; b >>= 1) *d++ = (s[l] & b) ? fg : bg;
 }
 
-static void set_mode(uint8_t title) { mode = title; memset(shadow_vram, 0xff, SCREEN_CELLS); }
+static uint8_t fire_held;                 /* a fire key down when a game started: ignored until released */
+static uint8_t fire_down(void) { return keydown[K_SPACE] | keydown[K_RETURN] | keydown['E'] | ((pad[0] | pad[1]) & KEY_SPACE); }
+
+static void set_mode(uint8_t title) {
+  mode = title;
+  memset(shadow_vram, 0xff, SCREEN_CELLS);
+  /* the press that started the game (the title reads the keys itself, the
+   * game's input only from its first frame) would drop a bomb at once: the
+   * switch is instant here, so the key is still down */
+  if (!title) fire_held = fire_down() != 0;
+}
 
 EM_JS(void, js_present, (const uint32_t *p), {
   if (typeof Module.bombernetPresent === 'function') Module.bombernetPresent(p);
@@ -121,9 +131,13 @@ void flush_screen(void) {
  * the other machines' test logs give it, and the hashed frames' hashes ---- */
 EMSCRIPTEN_KEEPALIVE const char *web_state(void) {
   static char s[160];
-  snprintf(s, sizeof(s), "frame %u title %u code %.4s active %u abort %u slot %u delay %u table %02x%02x%02x%02x hash %04x",
+  uint8_t i, nb = 0;
+  for (i = 0; i < BOMB_SLOTS; i++) if (bombs[i].state) nb++;
+  snprintf(s, sizeof(s), "frame %u title %u code %.4s active %u abort %u slot %u delay %u table %02x%02x%02x%02x hash %04x"
+           " p1x %u p1y %u p1s %u bombs %u alt %u keys %02x",
            frame_no, title_mode, net_code[0] ? net_code : "    ", net_active, net_abort, net_slot, net_delay,
-           net_table[0], net_table[1], net_table[2], net_table[3], state_hash);
+           net_table[0], net_table[1], net_table[2], net_table[3], state_hash,
+           players[0].x, players[0].y, players[0].state, nb, kbd_alt_fire, plat_keys_a());
   return s;
 }
 
@@ -173,6 +187,7 @@ uint8_t plat_keys_a(void) {
   if (keydown[K_LEFT]) k |= KEY_LEFT;
   if (keydown[K_RIGHT]) k |= KEY_RIGHT;
   if (kbd_alt_fire ? keydown[K_RETURN] : keydown[K_SPACE]) k |= KEY_SPACE;
+  if (fire_held) { if (fire_down()) k &= (uint8_t)~KEY_SPACE; else fire_held = 0; }
   return k;
 }
 
@@ -183,10 +198,15 @@ uint8_t plat_keys_b(void) {
   if (keydown['A']) k |= KEY_LEFT;
   if (keydown['D']) k |= KEY_RIGHT;
   if (keydown['E']) k |= KEY_SPACE;
+  if (fire_held) { if (fire_down()) k &= (uint8_t)~KEY_SPACE; else fire_held = 0; }
   return k;
 }
 
-uint8_t plat_joy(uint8_t n) { return n < 2 ? pad[n] : 0; }
+uint8_t plat_joy(uint8_t n) {
+  uint8_t k = n < 2 ? pad[n] : 0;
+  if (fire_held) { if (fire_down()) k &= (uint8_t)~KEY_SPACE; else fire_held = 0; }
+  return k;
+}
 
 uint8_t plat_key_char(void) {             /* text entry: letters, BACKSPACE or DELETE deletes, ESC cancels */
   uint8_t c;

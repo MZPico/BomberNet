@@ -21,7 +21,16 @@
   #touch button { background: #222; color: #ddd; border: 1px solid #555; border-radius: 10px; font: 600 16px system-ui;
                   touch-action: none; }
   #touch button.on { background: #555; }
-  #fire { width: 120px; height: 120px; border-radius: 60px !important; font-size: 20px !important; }
+  #fire { width: 120px; height: 120px; border-radius: 60px !important; font-size: 20px !important;
+          display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; }
+  #fire small { font-size: 11px; opacity: .7; }
+  #fire, #side, #pad { flex-shrink: 0; }
+  @media (max-width: 440px) {                   /* a phone held upright: smaller, so all four fit */
+    #pad { grid-template-columns: repeat(3, 54px); grid-template-rows: repeat(3, 54px); gap: 3px; }
+    #side button { width: 64px; height: 42px; font-size: 14px; }
+    #fire { width: 96px; height: 96px; border-radius: 48px !important; font-size: 18px !important; }
+    #touch { gap: 6px; }
+  }
   #side { display: flex; flex-direction: column; gap: 8px; }
   #side button { width: 72px; height: 44px; }
   #type { position: absolute; left: -9999px; opacity: 0; }
@@ -35,8 +44,8 @@
     <button data-k="3">&#9664;</button><span></span><button data-k="4">&#9654;</button>
     <span></span><button data-k="2">&#9660;</button><span></span>
   </div>
-  <div id="side"><button data-k="7">ESC</button><button id="abc">ABC</button></div>
-  <button id="fire" data-k="5">FIRE</button>
+  <div id="side"><button data-k="7">BREAK</button><button id="abc">ABC</button></div>
+  <button id="fire" data-k="5" data-k2="6">BOMB<small>SPACE</small></button>
   <input id="type" autocapitalize="characters" autocomplete="off" autocorrect="off" spellcheck="false">
 </div>
 <div id="hint">Cursor keys and SPACE &middot; W A S D and E &middot; ESC leaves a match &middot; letters type a room code</div>
@@ -109,16 +118,17 @@
   };
   // touch: each button holds its key while pressed (pointer events: fingers and the mouse alike)
   if ('ontouchstart' in window || navigator.maxTouchPoints > 0 || params.has('touch')) document.body.classList.add('touch');
-  function hold(b, id) {
-    const up = (e) => { e.preventDefault(); b.classList.remove('on'); if (Module._web_key) Module._web_key(id, 0); };
+  function hold(b, id, id2) {                         // FIRE holds SPACE and RETURN: key set A fires with RETURN
+    const set = (v) => { if (!Module._web_key) return; Module._web_key(id, v); if (id2) Module._web_key(id2, v); };   // when two share the keyboard
+    const up = (e) => { e.preventDefault(); b.classList.remove('on'); set(0); };
     b.addEventListener('pointerdown', (e) => {
       e.preventDefault(); b.setPointerCapture(e.pointerId); b.classList.add('on');
-      if (Module._web_key) Module._web_key(id, 1);
+      set(1);
       if (!audio) { try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (err) {} }
     });
     b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up);
   }
-  document.querySelectorAll('#touch [data-k]').forEach((b) => hold(b, Number(b.dataset.k)));
+  document.querySelectorAll('#touch [data-k]').forEach((b) => hold(b, Number(b.dataset.k), Number(b.dataset.k2 || 0)));
   const type = document.getElementById('type');      // a room code from the phone's keyboard: each letter a key tap
   const tap = (id) => { if (!Module._web_key) return; Module._web_key(id, 1); setTimeout(() => Module._web_key(id, 0), 150); };
   document.getElementById('abc').addEventListener('click', () => { type.value = ''; type.focus(); });

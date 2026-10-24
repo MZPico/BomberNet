@@ -120,11 +120,26 @@ https page the game uses the site's own relay (`wss://<host>/net`), so it
 meets everybody on that site's relay: the emulated play page there and any
 machine set to that relay.
 
-**Touch controls** (on a touch screen, or `?touch=1`): a d-pad, FIRE, ESC
-and ABC, which opens the phone's keyboard for a room code (each letter a key
-tap; RETURN fires). Pointer events: one button per finger, held while
-pressed. The canvas leaves room below it for them. Tested in Chromium with
-simulated presses: the menu, a room hosted.
+**Touch controls** (on a touch screen, or `?touch=1`): a d-pad, BOMB (SPACE,
+and RETURN too: key set A fires with RETURN when two players share the
+keyboard), BREAK (ESC: the game's prompts say BREAK, the MZ's key) and ABC,
+which opens the phone's keyboard for a room code (each letter a key tap;
+RETURN fires). Pointer events: one button per finger, held while pressed.
+The canvas leaves room below it for them; under 440 px wide they are
+smaller (all four fit at 360). Tested in Chromium at 360, 375 and 414 px
+with touch emulation: the game started, the d-pad moving player 1 each way
+(read from `web_state`), BOMB dropping one.
+
+**The press that starts a game** dropped a bomb at once: the title reads
+the keys itself and the game's input only from its first frame, and here
+the switch is instant, so the key is still down (on the MZ the map takes
+long enough). A fire key down when a game starts is ignored until it is
+released (`fire_held` in plat_web.c).
+
+The emulated play page's own touch layout for BomberNet (mz-catalog
+`titles/bombernet/meta.yaml`) had BOMB and E (key set B's fire, useless
+there) and no BREAK: now BOMB (Space) and BREAK (Escape, which mz800emu
+maps to the MZ's BREAK).
 
 **Not done**: the game does not show the delay it settles on; a hidden tab
 is throttled by the browser (its timers once a second), so a player who
