@@ -225,10 +225,10 @@ jobs:
           path: ~/vice-dist
           key: vice-${{ env.VICE_VERSION }}-${{ env.VICE_PATCH_HASH }}
       - name: VICE, headless, with the BomberNet patch (monitor keys, WiC64 firmware timing, the Ultimate's network)
-        if: steps.vice.outputs.cache-hit != 'true'
         run: |
-          sudo apt-get update -q
+          sudo apt-get update -q       # on every run: the cached VICE links against these
           sudo apt-get install -y -q build-essential pkg-config xa65 dos2unix libcurl4-openssl-dev flex bison libpng-dev zlib1g-dev
+          [ "${{ steps.vice.outputs.cache-hit }}" = true ] && exit 0
           curl -sSL -o /tmp/vice.tar.gz "https://sourceforge.net/projects/vice-emu/files/releases/vice-$VICE_VERSION.tar.gz/download"
           tar -xzf /tmp/vice.tar.gz -C /tmp
           cd /tmp/vice-$VICE_VERSION && patch -p1 < "$GITHUB_WORKSPACE/tools/c64/vice-3.9-bombernet.patch"
@@ -271,18 +271,20 @@ jobs:
           path: ~/mz800emu
           key: mz800emu-${{ env.MZ800EMU_COMMIT }}-${{ env.SDL3_TAG }}-${{ env.SDL3_IMAGE_TAG }}-${{ env.MINIZIP_NG_COMMIT }}
       - name: mz800emu and its libraries (SDL3, SDL3_image, minizip-ng from source)
-        if: steps.emu.outputs.cache-hit != 'true'
         run: |
-          sudo apt-get update -q
+          sudo apt-get update -q       # on every run: the cached mz800emu links against these
           sudo apt-get install -y -q build-essential cmake ninja-build pkg-config libglib2.0-dev libjson-glib-dev libcurl4-openssl-dev \
             zlib1g-dev libpng-dev libjpeg-dev libasound2-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
             libxfixes-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libgl1-mesa-dev libegl1-mesa-dev libdbus-1-dev libudev-dev
+          [ "${{ steps.emu.outputs.cache-hit }}" = true ] && exit 0
           P=$HOME/mz800emu
+          set -E; trap 'tail -60 /tmp/build.log' ERR
           build() {   # repository, ref, cmake options
             git clone -q "$1" /tmp/src && git -C /tmp/src checkout -q "$2"
             cmake -S /tmp/src -B /tmp/src/b -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$P" \
-              -DCMAKE_PREFIX_PATH="$P" "${@:3}" > /dev/null
-            cmake --build /tmp/src/b > /dev/null && cmake --install /tmp/src/b > /dev/null
+              -DCMAKE_PREFIX_PATH="$P" "${@:3}" > /tmp/build.log 2>&1
+            cmake --build /tmp/src/b > /tmp/build.log 2>&1
+            cmake --install /tmp/src/b > /tmp/build.log 2>&1
             rm -rf /tmp/src
           }
           build https://github.com/libsdl-org/SDL.git "$SDL3_TAG" -DSDL_TESTS=OFF -DSDL_WAYLAND=OFF -DSDL_PIPEWIRE=OFF -DSDL_PULSEAUDIO=OFF -DSDL_JACK=OFF -DSDL_SNDIO=OFF
@@ -291,8 +293,8 @@ jobs:
           git clone -q https://github.com/MZPico/mz800emu.git /tmp/emu && git -C /tmp/emu checkout -q "$MZ800EMU_COMMIT"
           PKG_CONFIG_PATH="$P/lib/pkgconfig:$P/lib/x86_64-linux-gnu/pkgconfig" cmake -S /tmp/emu -B /tmp/emu/b -G Ninja \
             -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$P" -DMZ_BUILD_MZ1500=OFF -DMZ_BUILD_MZ700_PAL=OFF \
-            -DMZ_BUILD_MZ700_NTSC=OFF -DBUILD_TESTING=OFF > /dev/null
-          cmake --build /tmp/emu/b > /dev/null
+            -DMZ_BUILD_MZ700_NTSC=OFF -DBUILD_TESTING=OFF > /tmp/build.log 2>&1
+          cmake --build /tmp/emu/b > /tmp/build.log 2>&1
           mkdir -p "$P/bin" && cp "$(find /tmp/emu/b -name mz800emu -type f -perm -u+x | head -1)" "$P/bin/"
           ls -l "$P/bin"
       - name: the MZ-800 build, the relay
