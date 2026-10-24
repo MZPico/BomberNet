@@ -228,7 +228,7 @@ jobs:
         if: steps.vice.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q build-essential pkg-config xa65 dos2unix libcurl4-openssl-dev flex bison
+          sudo apt-get install -y -q build-essential pkg-config xa65 dos2unix libcurl4-openssl-dev flex bison libpng-dev zlib1g-dev
           curl -sSL -o /tmp/vice.tar.gz "https://sourceforge.net/projects/vice-emu/files/releases/vice-$VICE_VERSION.tar.gz/download"
           tar -xzf /tmp/vice.tar.gz -C /tmp
           cd /tmp/vice-$VICE_VERSION && patch -p1 < "$GITHUB_WORKSPACE/tools/c64/vice-3.9-bombernet.patch"
@@ -251,6 +251,65 @@ jobs:
           WIC64_FW_TIMING=1 tools/ci/retry.sh build/venv/bin/python tools/c64_match.py 30
           C64_NET=uci tools/ci/retry.sh build/venv/bin/python tools/c64_match.py 30
           echo "- C64-C64 matches (WiC64, Ultimate): passed" >> "$GITHUB_STEP_SUMMARY"
+      - if: failure()
+        run: tail -50 build/relay.log || true
+
+  mz:
+    name: MZ-800 in mz800emu
+    runs-on: ubuntu-24.04
+    if: github.event_name != 'pull_request' || github.event.action != 'labeled' || github.event.label.name == 'full-test'
+    env:
+      MZ800EMU: /home/runner/mz800emu/bin/mz800emu
+      MZ800EMU_CFG: build/emucfg_net
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain versions
+        run: grep -v '^#' tools/ci/toolchains.env >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        id: emu
+        with:
+          path: ~/mz800emu
+          key: mz800emu-${{ env.MZ800EMU_COMMIT }}-${{ env.SDL3_TAG }}-${{ env.SDL3_IMAGE_TAG }}-${{ env.MINIZIP_NG_COMMIT }}
+      - name: mz800emu and its libraries (SDL3, SDL3_image, minizip-ng from source)
+        if: steps.emu.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q build-essential cmake ninja-build pkg-config libglib2.0-dev libcurl4-openssl-dev \
+            zlib1g-dev libx11-dev libxext-dev
+          P=$HOME/mz800emu
+          build() {   # repository, ref, cmake options
+            git clone -q "$1" /tmp/src && git -C /tmp/src checkout -q "$2"
+            cmake -S /tmp/src -B /tmp/src/b -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$P" \
+              -DCMAKE_PREFIX_PATH="$P" "${@:3}" > /dev/null
+            cmake --build /tmp/src/b > /dev/null && cmake --install /tmp/src/b > /dev/null
+            rm -rf /tmp/src
+          }
+          build https://github.com/libsdl-org/SDL.git "$SDL3_TAG" -DSDL_TESTS=OFF
+          build https://github.com/libsdl-org/SDL_image.git "$SDL3_IMAGE_TAG" -DSDLIMAGE_VENDORED=OFF -DSDLIMAGE_AVIF=OFF -DSDLIMAGE_WEBP=OFF -DSDLIMAGE_TIF=OFF -DSDLIMAGE_JXL=OFF
+          build https://github.com/zlib-ng/minizip-ng.git "$MINIZIP_NG_COMMIT" -DMZ_COMPAT=OFF -DMZ_ZSTD=OFF -DMZ_LZMA=OFF -DMZ_BZIP2=OFF -DMZ_OPENSSL=OFF -DMZ_LIBBSD=OFF -DMZ_ICONV=OFF -DMZ_FETCH_LIBS=OFF
+          git clone -q https://github.com/MZPico/mz800emu.git /tmp/emu && git -C /tmp/emu checkout -q "$MZ800EMU_COMMIT"
+          PKG_CONFIG_PATH="$P/lib/pkgconfig:$P/lib/x86_64-linux-gnu/pkgconfig" cmake -S /tmp/emu -B /tmp/emu/b -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$P" -DMZ_BUILD_MZ1500=OFF -DMZ_BUILD_MZ700_PAL=OFF \
+            -DMZ_BUILD_MZ700_NTSC=OFF -DBUILD_TESTING=OFF > /dev/null
+          cmake --build /tmp/emu/b > /dev/null
+          mkdir -p "$P/bin" && cp "$(find /tmp/emu/b -name mz800emu -type f -perm -u+x | head -1)" "$P/bin/"
+          ls -l "$P/bin"
+      - name: the MZ-800 build, the relay
+        run: |
+          echo "LD_LIBRARY_PATH=$HOME/mz800emu/lib:$HOME/mz800emu/lib/x86_64-linux-gnu" >> "$GITHUB_ENV"
+          docker pull -q "$Z88DK_IMAGE"
+          export PATH="$PWD/tools/ci/z88dk:$PATH"
+          mkdir -p build/c && (cd build/c && cmake ../../c > /dev/null && make)
+          mkdir -p build/emucfg_net && cp tools/ci/emucfg_net/mz800emu.ini build/emucfg_net/
+          tools/ci/relay.sh
+      - name: replays
+        run: |
+          for r in tests/recordings/*.bnr; do echo "== $r"; build/venv/bin/python tools/replay.py "$r" | tail -1; done
+          echo "- MZ-800 replays: passed" >> "$GITHUB_STEP_SUMMARY"
+      - name: match through the relay
+        run: |
+          tools/ci/retry.sh build/venv/bin/python tools/lockstep_test.py 300
+          echo "- MZ-MZ match: passed" >> "$GITHUB_STEP_SUMMARY"
       - if: failure()
         run: tail -50 build/relay.log || true
 
