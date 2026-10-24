@@ -253,6 +253,11 @@ jobs:
           echo "- C64-C64 matches (WiC64, Ultimate): passed" >> "$GITHUB_STEP_SUMMARY"
       - if: failure()
         run: tail -50 build/relay.log || true
+      - if: failure()
+        name: VICE on its own (why it stopped)
+        run: |
+          ldd ~/vice-dist/bin/x64sc | grep 'not found' || true
+          timeout 20 ~/vice-dist/bin/x64sc +logcolorize -default -sounddev dummy -limitcycles 2000000 2>&1 | tail -40 || true
 
   mz:
     name: MZ-800 in mz800emu
@@ -291,6 +296,7 @@ jobs:
           build https://github.com/libsdl-org/SDL_image.git "$SDL3_IMAGE_TAG" -DSDLIMAGE_VENDORED=OFF -DSDLIMAGE_AVIF=OFF -DSDLIMAGE_WEBP=OFF -DSDLIMAGE_TIF=OFF -DSDLIMAGE_JXL=OFF
           build https://github.com/zlib-ng/minizip-ng.git "$MINIZIP_NG_COMMIT" -DMZ_COMPAT=OFF -DMZ_ZSTD=OFF -DMZ_LZMA=OFF -DMZ_BZIP2=OFF -DMZ_OPENSSL=OFF -DMZ_LIBBSD=OFF -DMZ_ICONV=OFF -DMZ_FETCH_LIBS=OFF
           git clone -q https://github.com/MZPico/mz800emu.git /tmp/emu && git -C /tmp/emu checkout -q "$MZ800EMU_COMMIT"
+          export LIBRARY_PATH="$P/lib"   # the minizip-ng it links names -lminizip-ng without its -L
           PKG_CONFIG_PATH="$P/lib/pkgconfig:$P/lib/x86_64-linux-gnu/pkgconfig" cmake -S /tmp/emu -B /tmp/emu/b -G Ninja \
             -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$P" -DMZ_BUILD_MZ1500=OFF -DMZ_BUILD_MZ700_PAL=OFF \
             -DMZ_BUILD_MZ700_NTSC=OFF -DBUILD_TESTING=OFF > /tmp/build.log 2>&1
