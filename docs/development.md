@@ -181,6 +181,7 @@ changed on purpose and how fast it runs: `original.md`.
 | `port-amiga.md` | the Amiga port (any 68000 Amiga, `bsdsocket.library`): plan, measurements, FS-UAE with a free AROS ROM as the test bench |
 | `port-atari-st.md` | the Atari ST port (a WiFi modem on the serial port): plan, measurements, Hatari with EmuTOS as the test bench |
 | `port-pc.md` | the IBM PC port (DOS; CGA, EGA, VGA; Ethernet or a WiFi modem; AdLib/Sound Blaster): plan, measurements, DOSBox-X as the test bench |
+| `setup/` | the players' setup guides, one per platform, and network play (rooms, the delay, a relay of your own, the messages) |
 | `port-web.md` | the game compiled to WebAssembly for the browser (no emulator): plan, results, the page on mzpico.com |
 | `portability.md` | the rules that keep one C game for Z80, 6502 and 68000 machines |
 | `port-zx128-esp01.md` | the 128K Spectrum with an ESP-01 (Milan Stava's port, brought in step by step): plan and progress |

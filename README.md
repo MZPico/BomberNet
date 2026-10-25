@@ -45,7 +45,8 @@ joysticks, or on several machines over the network, in any mix.
 | Atari ST, STE (1 MB, colour) | a Wi-Fi modem on the serial port |
 | IBM PC (DOS, CGA, EGA or VGA) | Ethernet with a packet driver, or a Wi-Fi modem |
 
-Every machine plays on its own without any of these.
+Every machine plays on its own without any of these. How to load the game
+and set up its network device on each machine: the [setup guides](docs/setup/).
 
 ## How to play
 
