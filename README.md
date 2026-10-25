@@ -36,7 +36,7 @@ joysticks, or on several machines over the network, in any mix.
 | Machine | For network play you need |
 |---|---|
 | Browser (phone, tablet or computer) | nothing more |
-| Sharp MZ-800, MZ-700 | an [MZPico](https://mzpico.com/) with the NET extension; or a Unicard with the NET firmware, on a home network with a relay of your own |
+| Sharp MZ-800 (the MZ-700 plays locally) | an [MZPico](https://mzpico.com/) with the NET extension; or a Unicard with the NET firmware, on a home network with a relay of your own |
 | ZX Spectrum 48K or larger | a Spectranet or Spectranext; on a 128K, an ESP-01 Wi-Fi module |
 | Amstrad CPC | an M4 board |
 | Atari XL/XE | a FujiNet |
