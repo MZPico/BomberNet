@@ -36,7 +36,7 @@ joysticks, or on several machines over the network, in any mix.
 | Machine | For network play you need |
 |---|---|
 | Browser (phone, tablet or computer) | nothing more |
-| Sharp MZ-800 (the MZ-700 plays locally) | an [MZPico](https://mzpico.com/) with the NET extension; or a Unicard with the NET firmware, on a home network with a relay of your own |
+| Sharp MZ-800 (the MZ-700 plays locally) | an [MZPico](https://mzpico.com/) with a Pico W and Wi-Fi enabled in its configuration; or a Unicard with the NET firmware, on a home network with a relay of your own |
 | ZX Spectrum 48K or larger | a Spectranet or Spectranext; on a 128K, an ESP-01 Wi-Fi module |
 | Amstrad CPC | an M4 board |
 | Atari XL/XE | a FujiNet |
@@ -45,7 +45,8 @@ joysticks, or on several machines over the network, in any mix.
 | Atari ST, STE (1 MB, colour) | a Wi-Fi modem on the serial port |
 | IBM PC (DOS, CGA, EGA or VGA) | Ethernet with a packet driver, or a Wi-Fi modem |
 
-Every machine plays on its own without any of these.
+Every machine plays on its own without any of these. How to load the game
+and set up its network device on each machine: the [setup guides](docs/setup/).
 
 ## How to play
 
