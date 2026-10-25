@@ -1,0 +1,7 @@
+# CodeRabbit's review settings (https://docs.coderabbit.ai/reference/configuration).
+# The docstring-coverage check counts a form the C code does not use: the
+# functions are explained in the block comment above them.
+reviews:
+  pre_merge_checks:
+    docstrings:
+      mode: off
