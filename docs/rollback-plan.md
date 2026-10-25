@@ -75,7 +75,8 @@ while the step's work fits. At the match's start the lead is 0; each step
 whose work (measured by the platform's clock, as the test builds do) leaves
 room for one more logic step raises it by one, up to d; a step that ran
 late lowers it by one. A 286 reaches d within a few frames; an XT never
-leaves 0. The PC's `/ROLLBACK=OFF` can pin it for comparisons.
+leaves 0. The PC's `/NOROLLBACK` pins it at 0 for comparisons, the page's
+`?runahead=0`.
 
 Memory: one snapshot of the simulation state, about 1.5 KB (the map's 1000
 cells, the players, enemies, bombs, timers, the random seed, the stage's

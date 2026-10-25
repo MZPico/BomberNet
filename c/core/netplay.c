@@ -275,6 +275,8 @@ uint8_t net_runahead_step(void) {
       if (net_slot && i && i <= NET_DELAY_MAX) net_delay = i;
       if (((uint8_t)net_frame & (ADAPT_WINDOW - 1)) == ADAPT_WINDOW - 1) adapt_window(keys);
       net_frame++;
+      if (frame_ends()) { target = (uint16_t)(net_frame - 1); break; }   /* the round's end is this frame's: the lockstep
+                                                                            machines stop here too, no frame past it */
       continue;
     }
     if (!noted) { noted = 1; w_min2 = w_min; w_min = 0; w_waits++; }   /* late: counted as a wait, guessed or not */
