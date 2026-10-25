@@ -92,7 +92,7 @@ jobs:
 
           | Machine | File |
           |---|---|
-          | Sharp MZ-800 (MZPico) | bombernet-$v-mz800.mzf |
+          | Sharp MZ-800 and MZ-700 (an MZPico with the NET extension; a Unicard with the NET firmware on a home network) | bombernet-$v-mz800.mzf |
           | ZX Spectrum 48K and up (Spectranet) | bombernet-$v-zx-spectrum-48k.tap |
           | ZX Spectrum 128K, eLeMeNt / MB03+ with an ESP-01 | bombernet-$v-zx-spectrum-128k-esp01.tap |
           | Amstrad CPC (M4 board) | bombernet-$v-amstrad-cpc.dsk, .cpc |
