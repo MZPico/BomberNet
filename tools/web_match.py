@@ -22,7 +22,7 @@ RELAY = os.environ.get('RELAY', 'ws://127.0.0.1:8765')
 class Web:
     """one browser build in a tab; the same reading as the other machines' test logs"""
     def __init__(self, port, label):
-        q = '?trace=1' + ('' if RELAY == 'page' else f'&relay={RELAY}')
+        q = '?trace=1' + ('' if RELAY == 'page' else f'&relay={RELAY}') + (f"&runahead={os.environ['RUNAHEAD']}" if os.environ.get('RUNAHEAD') else '')
         self.label = label
         url = os.environ.get('WEB_URL') or f'http://127.0.0.1:{port}/bombernet.html'
         self.t = webpage.Tab(url + q)
@@ -90,7 +90,7 @@ if __name__ == '__main__':
         common = sorted(set(hh) & set(jh))
         mism = [f for f in common if hh[f] != jh[f]]
         fps = (int(hs['frame']) - f0) / (time.time() - t0)
-        print(f'host frame {hs["frame"]} abort {hs["abort"]} delay {hs["delay"]}, join frame {js["frame"]} abort {js["abort"]} '
+        print(f'host frame {hs["frame"]} abort {hs["abort"]} delay {hs["delay"]} lead {hs.get("lead", "-")}, join frame {js["frame"]} abort {js["abort"]} lead {js.get("lead", "-")} '
               f'delay {js["delay"]}; {len(common)} hashed frames compared, {len(mism)} mismatches'
               + (f' (first at {mism[0]})' if mism else '') + f'; {fps:.1f} frames a second', flush=True)
         host.t.screenshot(os.path.join(ROOT, 'build', 'web', 'match_host.png'))

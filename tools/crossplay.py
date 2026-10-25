@@ -408,7 +408,8 @@ class WebPage:
         r = subprocess.run([sys.executable, os.path.join(HERE, 'build_web.py')], capture_output=True, text=True)
         if r.returncode: sys.exit('web build failed: ' + r.stdout[-1500:] + r.stderr[-1500:])
         port = webpage.serve(os.path.join(HERE, '..', 'build', 'web'))
-        self.t = webpage.Tab(f'http://127.0.0.1:{port}/bombernet.html?trace=1&relay=ws://127.0.0.1:8765')
+        self.t = webpage.Tab(f'http://127.0.0.1:{port}/bombernet.html?trace=1&relay=ws://127.0.0.1:8765'
+                             + (f"&runahead={os.environ['RUNAHEAD']}" if os.environ.get('RUNAHEAD') else ''))   # RUNAHEAD=0: plain lockstep
         for _ in range(100):
             try:
                 if self.t.eval('!!(window.Module && Module._web_state)'): break

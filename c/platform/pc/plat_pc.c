@@ -153,6 +153,7 @@ static void options(void) {
     else if (opt(a, "COM2")) pc_modem_port = 2;
     else if (opt(a, "BAUD") && v) pc_modem_baud = (uint32_t)atol(v + 1);
     else if (opt(a, "NOSOUND")) no_sound = 1;
+    else if (opt(a, "NOROLLBACK")) net_runahead_cap = 0;   /* plain lockstep in a match */
     else if (opt(a, "SPEAKER")) no_fm = 1;
 #ifndef PC_TEST
     else if (opt(a, "RELAY") && v) {        /* host or host:port, the host kept where it is (argv lives on) */
@@ -177,6 +178,7 @@ static void options(void) {
              "  /COM1 /COM2          the WiFi modem's port (else both are tried)\n"
              "  /BAUD=n              the modem's speed (else 19200, then 115200)\n"
              "  /NOSOUND             no sound\n"
+             "  /NOROLLBACK          no run-ahead in a network match (the keys act after the delay)\n"
              "  /SPEAKER             the PC speaker (else an AdLib or Sound Blaster's FM)\n"
              "  /NET=PKT /NET=MODEM  Ethernet or the modem only (else Ethernet\n"
              "                       where a packet driver is loaded)\n"
@@ -374,6 +376,7 @@ static uint16_t frame_calls, frame_polls;
 static uint32_t frame_nd;
 uint32_t pc_time_now(void) { return pc_time(); }
 #endif
+uint8_t plat_frame_idle;
 void plat_frame_sync(void) {                    /* 60 ms */
 #ifdef PC_NETTEST
   frame_busy = pc_time() - sync_out; frame_net = pc_net_counts; pc_net_counts = 0; frame_calls = pc_net_calls; pc_net_calls = 0;
@@ -386,6 +389,10 @@ void plat_frame_sync(void) {                    /* 60 ms */
   }
   t_start = 0;
 #endif
+  {                                       /* the ms left before the tick (ticks are ms): the run-ahead's lead */
+    int32_t left = (int32_t)(next_frame - now());
+    plat_frame_idle = left <= 0 ? 0 : left > 255 ? 255 : (uint8_t)left;
+  }
   while ((int32_t)(now() - next_frame) < 0) ;
 #ifdef PC_TEST
   if (!title_mode) t_start = pc_time();        /* the frame's work: from here to the next sync, the next flush included */
@@ -815,6 +822,9 @@ void flush_screen(void) {
     log_s(" msx "); log_hex32(now()); log_s(" txx "); log_hex32(pc_modem_tx); log_s(" rxx "); log_hex32(pc_modem_rx);
     { extern uint8_t net_adapt_seen[]; log_s(" seen "); log_hex(net_adapt_seen[0]); log_hex(net_adapt_seen[1]); }
     log_s(" busyc "); log_hex32(frame_busy); log_s(" netc "); log_hex32(frame_net); log_s(" calls "); log_dec(frame_calls); log_s(" ndc "); log_hex32(frame_nd); log_s(" polls "); log_dec(frame_polls);
+#ifdef PLAT_RUNAHEAD
+    log_s(" lead "); log_dec(net_runahead_lead());
+#endif
     { extern uint32_t pkt_send_counts, pkt_rx_counts; extern uint16_t pkt_sent, pkt_rcvd;
       log_s(" sendc "); log_hex32(pkt_send_counts); log_s(" rxc "); log_hex32(pkt_rx_counts); log_s(" sent "); log_dec(pkt_sent); log_s(" rcvd "); log_dec(pkt_rcvd);
       pkt_send_counts = pkt_rx_counts = 0; pkt_sent = pkt_rcvd = 0; }

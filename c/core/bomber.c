@@ -113,17 +113,41 @@ static void time_tick(void) {
 }
 
 /* ---- frames ---- */
-static void frame_common(void) {
-  tick_timers();                      /* also presents the previous frame */
+void sim_frame_begin(void) {
+  tick_timers();
   draw_hud();
   draw_hud_icons();
   composite_frame();
 }
 
+#ifndef PLAT_RUNAHEAD
+static void frame_logic_(void);
+#define frame_logic(guessed) frame_logic_()     /* (no argument: a few bytes on the Z80) */
+#endif
+
+static void frame_common(void) {        /* a frame without keys: the previous picture out, then its start */
+  present_frame();
+  sim_frame_begin();
+}
+
 static void frame(void) {
   if (plat_break()) net_abort = NET_ABORT_BREAK;   /* leaves the match, local or network */
-  frame_common();
+  present_frame();
+#ifdef PLAT_RUNAHEAD
+  if (net_active && net_runahead_step()) return;  /* the agreed frames again, then the guessed ones (netplay.c) */
+#endif
+  sim_frame_begin();
   input_poll();
+  frame_logic(0);
+}
+
+/* the frame after its keys (every player's keys for it in players[].keys);
+ * guessed: a run-ahead machine's guess of it, neither counted nor hashed */
+#ifdef PLAT_RUNAHEAD
+void frame_logic(uint8_t guessed) {
+#else
+static void frame_logic_(void) {
+#endif
   update_bombs();
   draw_bombs();
   place_bombs();
@@ -138,6 +162,9 @@ static void frame(void) {
   spawn_from_hit();
   check_pickups();
   time_tick();
+#ifdef PLAT_RUNAHEAD
+  if (guessed) return;
+#endif
   frame_no++;
   if (hash_period) {
     hash_frame_step();
@@ -661,6 +688,7 @@ static uint8_t net_lobby(void) {
 
 static void title_frame(void) {
   uint8_t i;
+  present_frame();
   tick_timers();
   title_menu();
   memcpy(draw_buf, title_logo, 240);
@@ -755,6 +783,17 @@ static uint8_t lose_lives(void) {
 }
 
 /* ---- deathmatch ---- */
+
+#ifdef PLAT_RUNAHEAD
+static uint8_t round_running(void);
+/* what play_stage and run_deathmatch look at after a frame: a run-ahead
+ * machine must not act on it from a guessed frame */
+uint8_t frame_ends(void) {
+  if (net_abort) return 1;
+  if (game_mode == GAME_DM) return !round_running() || timeout_flag;
+  return players_finished() || exit_touched || stage_cleared;
+}
+#endif
 
 /* 1 while more than one player is alive or someone is still dying */
 static uint8_t round_running(void) {

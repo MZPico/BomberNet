@@ -1,5 +1,6 @@
 /* Global game state, random generator, frame timers. */
 #include <stdint.h>
+#include <string.h>
 #include "game.h"
 
 const uint8_t player_digit_codes[MAX_PLAYERS] = {0xae, 0xaf, 0xbc, 0xbd};
@@ -184,9 +185,46 @@ void tick_timers(void) {
   tick_timer(&tmr_player_anim);
   tick_timer(&tmr_enemy_move);
   tick_timer(&tmr_time);
+}
+
+void present_frame(void) {
   flush_screen();
   players_colours();
   hud_colours();
   plat_frame_sync();
 }
+
+#ifdef PLAT_RUNAHEAD
+/* ---- the snapshot: everything the state hash covers, and what else the
+ * logic reads between frames (docs/rollback-plan.md) ---- */
+uint8_t sim_quiet, sim_guessed;
+static struct {
+  player_t players[MAX_PLAYERS]; enemy_t enemies[ENEMY_SLOTS]; bomb_t bombs[BOMB_SLOTS];
+  ftimer_t tmr[4];
+  uint16_t rand_seed, map_acc, hh, hs_rem, time_left, frame_no, state_hash;
+  uint8_t hs_row, stage, enemies_left, enemy_period, stage_cleared, exit_touched, timeout_flag,
+          hit_pending, hit_spawned, hit_x, hit_y, bonus_x, bonus_y, bonus_present, bonus_revealed,
+          exit_x, exit_y, exit_present, exit_revealed, enemy_anim, bomb_anim;
+  uint8_t map[SCREEN_CELLS];
+} snap;
+#define SNAP(dir, a, b) (dir ? memcpy(&(a), &(b), sizeof(a)) : memcpy(&(b), &(a), sizeof(b)))
+static void snap_copy(uint8_t save) {       /* save: the live state into the snapshot; else back */
+  SNAP(save, snap.players, players); SNAP(save, snap.enemies, enemies); SNAP(save, snap.bombs, bombs);
+  SNAP(save, snap.tmr[0], tmr_player_anim); SNAP(save, snap.tmr[1], tmr_enemy_die);
+  SNAP(save, snap.tmr[2], tmr_enemy_move); SNAP(save, snap.tmr[3], tmr_time);
+  SNAP(save, snap.rand_seed, rand_seed); SNAP(save, snap.map_acc, map_acc); SNAP(save, snap.hh, hh);
+  SNAP(save, snap.hs_rem, hs_rem); SNAP(save, snap.hs_row, hs_row);
+  SNAP(save, snap.time_left, time_left); SNAP(save, snap.frame_no, frame_no); SNAP(save, snap.state_hash, state_hash);
+  SNAP(save, snap.stage, stage); SNAP(save, snap.enemies_left, enemies_left); SNAP(save, snap.enemy_period, enemy_period);
+  SNAP(save, snap.stage_cleared, stage_cleared); SNAP(save, snap.exit_touched, exit_touched); SNAP(save, snap.timeout_flag, timeout_flag);
+  SNAP(save, snap.hit_pending, hit_pending); SNAP(save, snap.hit_spawned, hit_spawned); SNAP(save, snap.hit_x, hit_x); SNAP(save, snap.hit_y, hit_y);
+  SNAP(save, snap.bonus_x, bonus_x); SNAP(save, snap.bonus_y, bonus_y); SNAP(save, snap.bonus_present, bonus_present); SNAP(save, snap.bonus_revealed, bonus_revealed);
+  SNAP(save, snap.exit_x, exit_x); SNAP(save, snap.exit_y, exit_y); SNAP(save, snap.exit_present, exit_present); SNAP(save, snap.exit_revealed, exit_revealed);
+  SNAP(save, snap.enemy_anim, enemy_anim); SNAP(save, snap.bomb_anim, bomb_anim);
+  SNAP(save, snap.map, map_layer);
+}
+void snap_save(void) { snap_copy(1); }
+void snap_restore(void) { snap_copy(0); }
+const uint8_t *snap_map(void) { return sim_guessed ? snap.map : map_layer; }
+#endif
 

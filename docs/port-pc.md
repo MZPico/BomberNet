@@ -461,6 +461,7 @@ harmonics, through the 9th, are within 2 dB of DOSBox-X's speaker's.
 /COM1 /COM2          the WiFi modem's port (else both are tried)
 /BAUD=n              the modem's speed (else 19200, then 115200)
 /NOSOUND             no sound
+/NOROLLBACK          no run-ahead in a network match (docs/rollback-plan.md)
 /SPEAKER             the PC speaker (else an AdLib or Sound Blaster's FM)
 /NET=PKT /NET=MODEM  Ethernet or the modem only (else Ethernet where a packet
                      driver is loaded, the modem otherwise)

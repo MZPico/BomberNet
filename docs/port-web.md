@@ -59,6 +59,12 @@ Audio, for len * 0.93 ms; the audio context starts with the first key press
 (browsers allow sound only after a user gesture). The SOUND button next
 to FULL mutes it; the choice is kept in the browser (localStorage).
 
+**Run-ahead** (docs/rollback-plan.md): in a match the page shows its own
+player ahead of the agreed frame, by a lead that grows with the frame's
+spare time up to the input delay: at the full lead the player's keys act
+at once, with a smaller lead after the delay's remainder. `?runahead=0`
+keeps it in plain lockstep.
+
 **The network.** `c/platform/web/ws_web.c` is `ws.h` over the page's
 WebSocket; `common/netdev_soft.c` runs on it unchanged, with binary input
 lines (`NET_BINARY_INPUT`). The relay: `?relay=ws://host:port` on the page,

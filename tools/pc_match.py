@@ -11,6 +11,7 @@ builds write (C:\\NET.LOG: the room's state every frame, written every 32).
   PC_VIDEO=cga|ega|vga  PC_CYCLES=3000    the adapter, DOSBox-X's speed
   PC_CPU=8088                             DOSBox-X's CPU type (default 286)
   PC_CYCLES_JOIN=3000                     the joiner's speed, if not PC_CYCLES (an XT host, a fast joiner)
+  PC_ARGS=/NOROLLBACK                     switches for both programs
   PC_NET=pkt                              Ethernet instead: an NE2000 (DOSBox-X's, slirp) and Crynwr's
                                           packet driver NE2000.COM (GPL; fetched from crynwr.com once,
                                           kept in build/pc/pktdrv); the local relay is then 10.0.2.2,
@@ -85,7 +86,7 @@ backend=slirp
 mount c "{self.cdir}"
 c:
 {'NE2000 0x60 3 0x300' if NET == 'pkt' else ''}
-BOMBER.EXE
+BOMBER.EXE {os.environ.get('PC_ARGS', '')}
 """)
         self.p = subprocess.Popen(['dosbox-x', '-conf', conf, '-fastlaunch', '-nopromptfolder', '-defaultmapper'],
                                   stdout=open(f'{out}/dosbox.log', 'w'), stderr=subprocess.STDOUT, env=self.env)
@@ -160,7 +161,7 @@ if __name__ == '__main__':
         hh, jh = host.hashes(), join.hashes()
         common = sorted(set(hh) & set(jh))
         mism = [f for f in common if hh[f] != jh[f]]
-        print(f'host frame {hs["frame"]} abort {hs["abort"]}, join frame {js["frame"]} abort {js["abort"]}; '
+        print(f'host frame {hs["frame"]} abort {hs["abort"]} lead {hs.get("lead", "-")}, join frame {js["frame"]} abort {js["abort"]}; '
               f'{len(common)} hashed frames compared, {len(mism)} mismatches'
               + (f' (first at {mism[0]})' if mism else '') + f'; {(int(hs["frame"]) - f0) / (time.time() - t0):.1f} frames a second', flush=True)
         sys.exit(1 if mism or hs['abort'] != '0' or js['abort'] != '0' or not common else 0)
