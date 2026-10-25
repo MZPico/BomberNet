@@ -41,4 +41,7 @@ address with `tools/set_relay.py` from the sources (see the
 ## In an emulator
 
 Hatari plays it locally, with EmuTOS or a TOS image. Hatari has no network
-device of its own; network play needs the real modem on a real ST.
+device of its own, but its RS-232 port can be wired to a modem emulated on
+the host: `tools/st_modem.py` from the sources does that (a pty that Hatari
+opens with `--rs232-in` and `--rs232-out`, answering the AT commands and
+dialling the relay over TCP), and the game then plays through the relay.

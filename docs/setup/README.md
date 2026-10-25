@@ -49,8 +49,8 @@ machine, so that everybody's keys reach everybody in time: the lobby shows it
 as DELAY, in milliseconds. The host measures the round trips in the lobby
 and picks the delay; during the match it lowers the delay when every machine
 has time to spare and raises it when everybody keeps waiting, never above
-the lobby's figure. On a home network the delay is one frame (60 ms); through
-the internet usually two (120 ms).
+the lobby's figure. On a home network the delay is one or two frames (60 to 120 ms);
+through the internet usually two or three.
 
 The browser, the PC (from a 286 up), the Amiga and the Atari ST show your own
 player without that delay: they run a few frames ahead with your keys, which
@@ -62,11 +62,13 @@ other platforms have no time for that and show everything after the delay.
 ## The relay
 
 The machines talk through a relay server; the game is built for
-`api.mzpico.com`, the public one. Any machine with a network device reaches
-it; nothing to configure.
+`api.mzpico.com`, the public one. Every network device but the Unicard
+reaches it; nothing to configure.
 
 For a home network without the internet, or to keep a party local, run the
-reference relay from the sources on any PC that has Python:
+reference relay from the sources on any PC that has Python (the command
+as for a Linux or macOS shell; on Windows set the variable first with
+`set RELAY_TCP_HOST=0.0.0.0`, then run the `uvicorn` line):
 
 ```
 git clone https://github.com/MZPico/BomberNet
@@ -91,7 +93,7 @@ Then point each machine at that PC (say 192.168.1.10):
 | NETWORK row greyed out, or missing | no network device was found when the game started; see the platform's guide |
 | NO CONNECTION | the relay did not answer: no network, no DHCP, a wrong relay address, or a Wi-Fi device not joined to its network |
 | ROOM NOT FOUND | no room has that code (rooms close when everybody leaves) |
-| BUILD MISMATCH | the other machine runs a BomberNet with a different game: both need the same release line (0.2.0 and 0.3.0 play together) |
+| BUILD MISMATCH | the other machine runs a BomberNet whose game logic or protocol differs: the two must carry the same build id, which changes only with those (0.2.0 and 0.3.0 share it and play together) |
 | NETWORK ERROR nn | the device refused a command; nn is its code |
 | WAITING FOR THE OTHERS | you are ready; the match starts when everybody is |
 | DESYNC | the machines disagree about the game, which they check every sixteen frames; the match ends. It should not happen: please report it with the platforms involved |

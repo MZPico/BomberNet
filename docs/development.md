@@ -115,7 +115,7 @@ Then point each machine at that PC (192.168.1.10 here):
 | MZ-800 with a Unicard | `/unicard/network.cfg`: `NETRELAYADDR`, `NETRELAYPORT` (8766, the TCP port) |
 
 The browser player stays on mzpico.com's relay. On a LAN the input delay
-is the shortest one (2 frames).
+settles at one or two frames.
 
 A match is lockstep: every frame each machine sends its keys for frame F + d
 and waits for everybody's keys of frame F. The host chooses d from the lobby's

@@ -22,7 +22,7 @@ on a plain 48K.
   configuration (its ROM's setup utility). Nothing in the game to set.
 - **Spectranext:** the same interface; set up as its manual describes.
 
-Without a Spectranet, the title screen has no NETWORK row.
+Without a Spectranet or Spectranext, the title screen has no NETWORK row.
 
 For a relay of your own, rewrite the tape's relay address with
 `tools/set_relay.py` from the sources (see the [setup page](README.md#the-relay)).
