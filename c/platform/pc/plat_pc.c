@@ -822,6 +822,9 @@ void flush_screen(void) {
     log_s(" msx "); log_hex32(now()); log_s(" txx "); log_hex32(pc_modem_tx); log_s(" rxx "); log_hex32(pc_modem_rx);
     { extern uint8_t net_adapt_seen[]; log_s(" seen "); log_hex(net_adapt_seen[0]); log_hex(net_adapt_seen[1]); }
     log_s(" busyc "); log_hex32(frame_busy); log_s(" netc "); log_hex32(frame_net); log_s(" calls "); log_dec(frame_calls); log_s(" ndc "); log_hex32(frame_nd); log_s(" polls "); log_dec(frame_polls);
+#ifdef PLAT_RUNAHEAD
+    log_s(" lead "); log_dec(net_runahead_lead());
+#endif
     { extern uint32_t pkt_send_counts, pkt_rx_counts; extern uint16_t pkt_sent, pkt_rcvd;
       log_s(" sendc "); log_hex32(pkt_send_counts); log_s(" rxc "); log_hex32(pkt_rx_counts); log_s(" sent "); log_dec(pkt_sent); log_s(" rcvd "); log_dec(pkt_rcvd);
       pkt_send_counts = pkt_rx_counts = 0; pkt_sent = pkt_rcvd = 0; }
