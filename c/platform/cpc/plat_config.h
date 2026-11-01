@@ -10,4 +10,5 @@
                                    (unused with NET_BINARY_INPUT) */
 #define NET_BINARY_INPUT 1      /* input lines as binary messages (the relay's bin=1): about 7 bytes, not 50 */
 #define PLAT_ASM_TEXT 1         /* print_string, hud_text, title_text* in cpu/z80/loops.c */
+#define NET_PLATFORM "amstrad-cpc"   /* the relay's statistics: &pf= (docs/net-protocol.md) */
 #endif
