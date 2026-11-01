@@ -7,4 +7,5 @@
 #define PLAT_HASH_PORTABLE 1    /* the state hash field by field (core/game.c) */
 #define PLAT_RUNAHEAD 1         /* a frame ahead of the agreed one in a match (docs/rollback-plan.md) */
 #define NET_BINARY_INPUT 1      /* input lines as binary messages (the relay's bin=1) */
+#define NET_PLATFORM "browser"   /* the relay's statistics: &pf= (docs/net-protocol.md) */
 #endif
