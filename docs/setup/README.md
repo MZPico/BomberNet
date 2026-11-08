@@ -11,6 +11,7 @@ runs in the browser.
 | Sharp MZ-800 (the MZ-700 plays locally) | [mz-800.md](mz-800.md) |
 | ZX Spectrum 48K and up | [zx-spectrum-48k.md](zx-spectrum-48k.md) |
 | eLeMeNt ZX in 128K mode, with an ESP-01 | [element-zx-128k-esp01.md](element-zx-128k-esp01.md) |
+| ZX Spectrum Next (untried on hardware) | [zx-spectrum-next.md](zx-spectrum-next.md) |
 | Amstrad CPC | [amstrad-cpc.md](amstrad-cpc.md) |
 | Atari XL/XE | [atari-xl.md](atari-xl.md) |
 | Commodore 64 | [c64.md](c64.md) |
@@ -90,7 +91,7 @@ Then point each machine at that PC (say 192.168.1.10):
 
 | Message | Meaning |
 |---|---|
-| NETWORK row greyed out, or missing | no network device was found when the game started; see the platform's guide |
+| NETWORK row dimmed, reading NONE | no network device was found when the game started; see the platform's guide |
 | NO CONNECTION | the relay did not answer: no network, no DHCP, a wrong relay address, or a Wi-Fi device not joined to its network |
 | ROOM NOT FOUND | no room has that code (rooms close when everybody leaves) |
 | BUILD MISMATCH | the other machine runs a BomberNet whose game logic or protocol differs: the two must carry the same build id, which changes only with those (0.2.0 and 0.3.0 share it and play together) |

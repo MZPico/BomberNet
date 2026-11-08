@@ -38,6 +38,7 @@ joysticks, or on several machines over the network, in any mix.
 | Browser (phone, tablet or computer) | nothing more |
 | Sharp MZ-800 (the MZ-700 plays locally) | an [MZPico](https://mzpico.com/) with a Pico W and Wi-Fi enabled in its configuration; or a Unicard with the NET firmware, on a home network with a relay of your own |
 | ZX Spectrum 48K or larger | a Spectranet or Spectranext; on a 128K, an ESP-01 Wi-Fi module |
+| ZX Spectrum Next (untried on hardware) | its own Wi-Fi |
 | Amstrad CPC | an M4 board |
 | Atari XL/XE | a FujiNet |
 | Commodore 64 | a WiC64, or an Ultimate 64 / Ultimate-II+ |

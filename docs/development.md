@@ -54,7 +54,7 @@ c/platform/   one directory per machine: mz, zx, host (the PC simulator)
 | `c/cpu/z80/` | faster Z80 versions of shared C (playfield copy, hash loop, text and digits, the network's input lines), used where `plat_config.h` asks; the C stays the reference (`portability.md`) |
 | `c/platform/mz/` | Sharp MZ-700/800: keyboard matrix, joysticks, tones through the monitor, 8253 frame limiter, screen flush through the display-code tables; `uc_mz.c` is the card transport on ports 50h/51h |
 | `c/platform/zx/` | ZX Spectrum 48K: keys and joysticks, frame sync on the ROM's frame counter, beeper, the 6 x 8 pixel screen routine in assembly; `tcp_spectranet.c` is `tcp.h` over the Spectranet socket calls |
-| `c/platform/zx/bank6.c`, `tcp_bank6.c`, `tcp_esp01*.c` | the 128K build (`PLATFORM=zx128`, `port-zx128-esp01.md`): the network driver in RAM bank 6 (the ESP-01's, by Milan Stava, or the Spectranet's), the game's `tcp.h` pages it in |
+| `c/platform/zx/bank6.c`, `tcp_bank6.c`, `tcp_esp01*.c` | the 128K build (`PLATFORM=zx128`, `port-zx128-esp01.md`): the network driver in RAM bank 6 (the ESP-01's, by Milan Stava, or the Spectranet's), the game's `tcp.h` pages it in; the same build on a ZX Spectrum Next (`port-zx-next.md`) |
 | `c/platform/cpc/` | Amstrad CPC (port in progress, `port-amstrad-cpc.md`): Mode 1 in four inks, cells rendered in advance from the MZ characters (`tools/make_cpc_tables.py`), keyboard and joysticks through the PPI, AY tones |
 | `c/platform/host/` | the PC: `sim.c` (the whole game with a key bot, recording, replay and a stub network card), `tcp_posix.c` and `softnet_test.c` (the software network device on a PC) |
 | `c/platform/*/tables.c/.h` | generated: logical cell codes to the machine's characters and colours (`tools/make_zx_tables.py` for the Spectrum) |
@@ -185,4 +185,5 @@ changed on purpose and how fast it runs: `original.md`.
 | `port-web.md` | the game compiled to WebAssembly for the browser (no emulator): plan, results, the page on mzpico.com |
 | `portability.md` | the rules that keep one C game for Z80, 6502 and 68000 machines |
 | `port-zx128-esp01.md` | the 128K Spectrum with an ESP-01 (Milan Stava's port, brought in step by step): plan and progress |
+| `port-zx-next.md` | the ZX Spectrum Next: the 128K build and its ESP driver on the Next's UART; plan and progress |
 | `../PLAN.md` | the multiplayer plan the C port followed |

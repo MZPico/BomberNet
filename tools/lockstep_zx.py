@@ -9,6 +9,8 @@ both are compared frame by frame.
   B_BUILD=build/v020/build/zx ...        B runs another build (its bomber and bomber.map)
   A_BUILD=build/zx128 ...                A too; a build with a bank6 file is a 128K Spectrum,
                                          an eLeMeNt with an ESP-01 when that is its driver
+  A_NEXT=1, B_NEXT=1 ...                 that machine is a ZX Spectrum Next with its ESP instead
+                                         (NEXT_TIMING=7: its video timing, HDMI; default 0)
   KEYS=build/ref/dm4.bnr ...             the players' keys from a recording (A's local players
                                          are its players 1 and 2, B's 3 and 4): a busy match
   QUIET=1 ...                            tones off
@@ -44,9 +46,11 @@ def g8(z, addr): return gr(z, addr, 1)[0]
 def g16(z, addr): return int.from_bytes(gr(z, addr, 2), 'little')
 def gp(z, addr, data, page=0): z.poke(addr, data, page=page)
 
-def inst(build):
+def inst(build, next_=False):
     b6 = os.path.join(build, 'bank6')
     esp = os.path.exists(b6) and 'stream_rx' in open(b6 + '.map').read()      # the ESP-01 driver in bank 6
+    if next_ and not esp: sys.exit(f'{build}: a Next needs the ESP driver in bank 6 (A_NEXT/B_NEXT)')
+    if esp and next_: esp = 'next'
     z = ZX(spectranet=not esp, esp01=esp, relay=relay, bank6=b6 if os.path.exists(b6) else None)
     z.load(os.path.join(build, 'bomber'))
     return z
@@ -62,7 +66,7 @@ def tap(z, key, n=3, *others):
 
 t0 = time.time()
 stack_short = False                                # STACK_MIN=n: fail when the stack left fewer bytes unused
-a, b = inst(A_BUILD), inst(B_BUILD)
+a, b = inst(A_BUILD, os.environ.get('A_NEXT') == '1'), inst(B_BUILD, os.environ.get('B_NEXT') == '1')
 FB, TMB, SHB, FNB, NSB, NAB_B, NDLY_B = (SB(n) for n in ('_flush_screen', '_title_mode', '_state_hash', '_frame_no',
     '_net_slot', '_net_abort', '_net_delay'))
 BSS = {a: S('__BSS_END_tail'), b: SB('__BSS_END_tail')}
@@ -168,7 +172,8 @@ print(f'done: {N} steps, {len(common)} hashed frames compared, {len(mism)} misma
       f'{a.sn_calls + b.sn_calls} Spectranet calls; {time.time() - t0:.0f} s')
 a.screenshot('build/zx_net_A.png'); b.screenshot('build/zx_net_B.png')
 for name, z in (('A', a), ('B', b)):
-    if z.esp: print(f'{name}: ESP-01 receive FIFO, bytes lost: {z.esp.lost}')
+    if z.esp: z.esp._deliver()
+    if z.esp: print(f'{name}: ESP receive FIFO, bytes lost: {z.esp.lost}' + (f', sent with the UART set wrong: {z.esp.garbled}' if hasattr(z.esp, 'garbled') else ''))
     m = z.read(BSS[z], TOP[z] - BSS[z], page=0)
     used_from = next((BSS[z] + i for i, v in enumerate(m) if v != 0xa5), TOP[z])
     print(f'{name}: stack reached {used_from:04x} (marked up to {TOP[z]:04x}), {used_from - BSS[z]} bytes above the program left unused')
@@ -195,8 +200,11 @@ if BREAK_AT:
     again = gr(a, NC, 4) != before
     print('A hosts again: room', gr(a, NC, 4).decode() if again else 'none')
     sys.exit(0 if aborts[0] == 7 and aborts[1] and not mism and again else 1)
+for z in (a, b):
+    if z.esp: z.esp._deliver()                                    # bytes due since the last read: into the FIFO, or lost
+lost = any(z.esp and z.esp.lost for z in (a, b))                 # an ESP receive buffer overflowed
 if CUT_AT:
     print(f'link cut at frame {CUT_AT}: A abort {aborts[0]} after {cut_after if cut_after is None else round(cut_after, 1)} s, '
           f'B abort {aborts[1]} (9 = CONNECTION LOST)')
-    sys.exit(0 if aborts == (9, 9) and cut_after and 9 <= cut_after <= 12 and not mism else 1)
-sys.exit(1 if mism or any(aborts) or not common or stack_short else 0)
+    sys.exit(0 if aborts == (9, 9) and cut_after and 9 <= cut_after <= 12 and not mism and not lost else 1)
+sys.exit(1 if mism or any(aborts) or not common or stack_short or lost else 0)

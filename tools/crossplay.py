@@ -10,8 +10,9 @@ by side, one TV frame each in turn, and compares their state hashes. The
 C64 runs in VICE with a WiC64 (tools/vice.py), in real time on its own: its
 TV frame is 20 ms of waiting, and it stands still while it is read.
 
-  tools/crossplay.py [steps] [host] [joiner]   machines: mz, zx, cpc, esp, c64, amiga, st, pc, web; default mz zx
-                                               (esp: build/zx128, an eLeMeNt with its ESP-01)
+  tools/crossplay.py [steps] [host] [joiner]   machines: mz, zx, cpc, esp, next, c64, amiga, st, pc, web; default mz zx
+                                               (esp: build/zx128, an eLeMeNt with its ESP-01;
+                                                next: the same build on a ZX Spectrum Next)
                                                (the second argument alone: mz or zx hosts the other)
   PLAYERS=3 LOCAL_HOST=2 LOCAL_JOIN=1   seats: players in total, local players per machine
   MODE=0                                co-op (default 1, deathmatch)
@@ -69,8 +70,8 @@ class Spectrum:
 
     def __init__(self):
         self.S = {n: sym_from_map(self.build + '/bomber.map', n) for n in NAMES}
-        if self.kind == 'ESP':
-            self.z = ZX(esp01=True, bank6=self.build + '/bank6', relay=('127.0.0.1', 8765))
+        if self.kind in ('ESP', 'NEXT'):
+            self.z = ZX(esp01='next' if self.kind == 'NEXT' else True, bank6=self.build + '/bank6', relay=('127.0.0.1', 8765))
         else:
             self.z = ZX(spectranet=True, relay=('127.0.0.1', 8765))
         self.z.load(self.build + '/bomber')
@@ -95,7 +96,12 @@ class Spectrum:
 class Element(Spectrum):
     """The 128K build with its ESP-01 driver, on an emulated eLeMeNt ZX."""
     kind = 'ESP'
-    build = 'build/zx128'
+    build = os.environ.get('ZX128_BUILD', 'build/zx128')
+
+
+class Next(Element):
+    """The same build on an emulated ZX Spectrum Next with its ESP."""
+    kind = 'NEXT'
 
 
 class Amstrad:
@@ -468,7 +474,7 @@ def until(cond, limit, *ms):
 
 
 t0 = time.time()
-MACHINES = {'mz': MZ, 'zx': Spectrum, 'cpc': Amstrad, 'esp': Element, 'c64': Commodore, 'amiga': Amiga, 'st': AtariST, 'pc': IBMPC, 'web': WebPage}
+MACHINES = {'mz': MZ, 'zx': Spectrum, 'cpc': Amstrad, 'esp': Element, 'next': Next, 'c64': Commodore, 'amiga': Amiga, 'st': AtariST, 'pc': IBMPC, 'web': WebPage}
 host, join = MACHINES[HOST](), MACHINES[JOIN]()
 both = (host, join)
 run(90, *both)                                                    # both titles up and settled
@@ -501,8 +507,10 @@ print(f'in game: net_active {host.kind} {host.r8("_net_active")} {join.kind} {jo
 for m in both:
     if m.kind == 'C64': m.reset_net()
 if not os.environ.get('NOWALK'): host.press('walk'); join.press('walk')   # inputs cross between the machines
-seen = {m.kind: {} for m in both}
-maps = {m.kind: {} for m in both}          # frame -> the map: compared at a frame both have (the logs give them every 16th)
+H, J = (host.kind, join.kind) if host.kind != join.kind else (host.kind + ' host', join.kind + ' join')
+KEY = {id(host): H, id(join): J}                # the two machines' results apart, also when both are of one kind
+seen = {H: {}, J: {}}
+maps = {H: {}, J: {}}          # frame -> the map: compared at a frame both have (the logs give them every 16th)
 start = [m.r16('_frame_no') for m in both]
 
 
@@ -511,17 +519,17 @@ def collect(m):
     or (the MZ, read between TV frames) from its current frame."""
     if hasattr(m, 'flushes'):
         for f, h in m.flushes:
-            if f % HP: seen[m.kind][(f // HP) * HP] = h
+            if f % HP: seen[KEY[id(m)]][(f // HP) * HP] = h
         m.flushes.clear()
     else:
         f = m.r16('_frame_no')
-        if f % HP: seen[m.kind][(f // HP) * HP] = m.r16('_state_hash')
-    if hasattr(m, 'maps'): maps[m.kind].update(m.maps); m.maps.clear()
+        if f % HP: seen[KEY[id(m)]][(f // HP) * HP] = m.r16('_state_hash')
+    if hasattr(m, 'maps'): maps[KEY[id(m)]].update(m.maps); m.maps.clear()
     else:                                  # read from memory: the map at the frames the logs keep (f % 16 == 1)
         f = m.r16('_frame_no')
-        if f % HP == 1 and f not in maps[m.kind]:
+        if f % HP == 1 and f not in maps[KEY[id(m)]]:
             mp = m.rd('_map_layer', 1000)
-            if mp: maps[m.kind][f] = bytes(mp)
+            if mp: maps[KEY[id(m)]][f] = bytes(mp)
 
 
 GAP = int(os.environ.get('GAP', 0))       # GAP=n: at game frame n the C64 stops polling for 5 s
@@ -543,7 +551,6 @@ while min(m.r16('_frame_no') - s0 for m, s0 in zip(both, start)) < N:
             m.gap(5, *[o for o in both if o is not m]); GAP = 0
     for m in both: collect(m)
     if host.r8('_net_abort') or join.r8('_net_abort'): break
-H, J = host.kind, join.kind
 common = sorted(set(seen[H]) & set(seen[J]) - {0})
 mism = [f for f in common if seen[H][f] != seen[J][f]]
 for f in common: print(f'frame {f}: {H} {seen[H][f]:04x} {J} {seen[J][f]:04x} {"MISMATCH" if f in mism else "ok"}')

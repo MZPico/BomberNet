@@ -29,12 +29,17 @@ uint8_t net_device;
 #else
 #define BIN_ARG ""
 #endif
-#ifdef NET_PLATFORM              /* plat_config.h: which machine this is, for the relay's statistics */
+#if defined(NET_PLATFORM_AT)     /* the "&pf=<id>" a driver wrote at this address (the 128K tape: bank6.c) */
+#define PF_ARG ""
+#define PF_PUT(p) put_s(p, (const char *)NET_PLATFORM_AT)
+#elif defined(NET_PLATFORM)      /* plat_config.h: which machine this is, for the relay's statistics */
 #define PF_ARG "&pf=" NET_PLATFORM
+#define PF_PUT(p) (p)
 #else
 #define PF_ARG ""
+#define PF_PUT(p) (p)
 #endif
-/* The longest: /net?game=16974&code=ABCD&bin=1&pf=element-zx-128k */
+/* The longest: /net?game=16974&code=ABCD&bin=1&pf=zx-spectrum-next */
 static char path[52];
 #define MSGQ 4
 #define E_BUILD 6
@@ -341,7 +346,7 @@ uint8_t net_create(uint16_t build, uint8_t slots, const uint8_t *settings, uint8
   uint8_t r;
   if (slots < 1 || slots > NET_SLOTS) return E_PARAM;
   if (len > 16) len = 16;
-  p = put_u(put_s(path, "/net?game="), NET_GAME_ID); put_s(p, "&create=1" BIN_ARG PF_ARG)[0] = 0;
+  p = put_u(put_s(path, "/net?game="), NET_GAME_ID); PF_PUT(put_s(p, "&create=1" BIN_ARG PF_ARG))[0] = 0;
   p = put_u(put_s(out, "{\"op\":\"create\",\"game\":"), NET_GAME_ID);
   p = put_u(put_s(p, ",\"build\":"), build);
   p = put_u(put_s(p, ",\"slots\":"), slots);
@@ -357,7 +362,7 @@ uint8_t net_create(uint16_t build, uint8_t slots, const uint8_t *settings, uint8
 uint8_t net_join(uint16_t build, const char *code, uint8_t *slot, uint8_t *slots, uint8_t *settings, uint8_t *len) {
   char *p;
   uint8_t r;
-  p = put_u(put_s(path, "/net?game="), NET_GAME_ID); put_s(put_s(put_s(p, "&code="), code), BIN_ARG PF_ARG)[0] = 0;
+  p = put_u(put_s(path, "/net?game="), NET_GAME_ID); PF_PUT(put_s(put_s(put_s(p, "&code="), code), BIN_ARG PF_ARG))[0] = 0;
   p = put_u(put_s(out, "{\"op\":\"join\",\"game\":"), NET_GAME_ID);
   p = put_u(put_s(p, ",\"build\":"), build);
   put_s(put_s(put_s(p, ",\"code\":\""), code), "\"}")[0] = 0;

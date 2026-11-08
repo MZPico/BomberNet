@@ -113,9 +113,14 @@ One socket per device. JSON frames:
 **Which machine** (`&pf=<id>` in the URL, optional): the machine's name for
 the production relay's statistics, the id of its port in the catalog (`c64`,
 `amiga`, `atari-xl`, `atari-st`, `amstrad-cpc`, `pc-dos`, `zx-spectrum-48k`,
-`element-zx-128k`, `browser`). It changes nothing in a game; the production
+`element-zx-128k`, `zx-spectrum-next`, `browser`). It changes nothing in a game; the production
 relay counts an unknown id as if there were none, and `relay/relay.py` ignores
-it. `NET_PLATFORM` in a platform's `plat_config.h` sets it; the MZ-800 needs
+it. `NET_PLATFORM` in a platform's `plat_config.h` sets it. The 128K build
+sets `NET_PLATFORM_AT` instead, which takes precedence: the game reads the
+`&pf=<id>` that its bank 6 driver wrote at that address
+(`platform/zx/bank6.c`, `bank6_present`): `element-zx-128k` or
+`zx-spectrum-next`, as the driver finds, none in the Spectranet test
+variant; the names are changed there. The MZ-800 needs
 none, because the MZPico firmware makes the connection and names itself.
 
 Rooms die 10 minutes after their last message (a host may wait a while). Codes are 4 letters from a
