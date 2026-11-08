@@ -7,8 +7,14 @@ platform layer and a new network transport.
 - Machines: any ST, STE, Mega ST, Mega STE with a colour monitor (low
   resolution, 320 x 200 in 16 colours); the TT and the Falcon run ST low
   resolution too. A mono monitor (SM124, 640 x 400) cannot show it.
-- Requirements: TOS or EmuTOS (tested: EmuTOS only, so far); tested with
-  1 MB of memory, 512 KB (a 520 ST) not yet.
+- Requirements: TOS or EmuTOS (tested: EmuTOS only, so far); 512 KB of
+  memory (a 520 ST) or more. The program takes 170 KB loaded (text 151 KB,
+  data and BSS 18 KB) and its 64 KB stack; a 520 ST with EmuTOS keeps
+  about 187 KB free beside it (`Malloc(-1)` measured in Hatari). The
+  replays, the floppy boot and a 4-player match over the modems pass the
+  same on 512 KB as on 1 MB, and CI runs them on 512 KB. A 520 ST that
+  loads TOS from disk into RAM (the first ones, 1985) has about 200 KB
+  less and probably cannot run it: untested.
 
 ## Steps
 

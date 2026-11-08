@@ -159,11 +159,11 @@ jobs:
       - name: replay
         run: |
           python3 tools/build_st.py --test tests/recordings/dm4.bnr
-          tools/ci/retry.sh python3 tools/st_test.py
+          ST_MEMSIZE=0 tools/ci/retry.sh python3 tools/st_test.py   # a 520 ST: the smallest machine it runs on
           echo "- ST replay: passed" >> "$GITHUB_STEP_SUMMARY"
       - name: match over the WiFi modems
         run: |
-          ST_DISPLAY=:98 tools/ci/retry.sh build/venv/bin/python tools/st_match.py 45
+          ST_MEMSIZE=0 ST_DISPLAY=:98 tools/ci/retry.sh build/venv/bin/python tools/st_match.py 45
           echo "- ST-ST match: passed" >> "$GITHUB_STEP_SUMMARY"
       - if: failure()
         run: tail -50 build/relay.log || true; tail -30 build/st/hatari.log || true

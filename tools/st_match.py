@@ -9,6 +9,7 @@ state every frame).
   PLAYERS=4 LOCAL_HOST=2 LOCAL_JOIN=2 ... seats, as in tools/crossplay.py
   RELAY=api.mzpico.com:80                 the relay (default the local one, 127.0.0.1:8765)
   ST_MACHINE=ste                          the machine (default st)
+  ST_MEMSIZE=0                            512 KB (Hatari's --memsize: 0, or MB; default 1)
   ST_DISPLAY=:98                          the X display (default AMIGA_DISPLAY, :97)
 """
 import os, shutil, subprocess, sys, time
@@ -45,7 +46,7 @@ class ST:
         while not os.path.exists(link) and time.time() - t < 5: time.sleep(0.1)
         cfg = f'{out}/hatari.cfg'
         open(cfg, 'w').write('')
-        self.p = subprocess.Popen(['hatari', '--configfile', cfg, '--tos', TOS, '--machine', MACHINE, '--memsize', '1',
+        self.p = subprocess.Popen(['hatari', '--configfile', cfg, '--tos', TOS, '--machine', MACHINE, '--memsize', os.environ.get('ST_MEMSIZE', '1'),
                                    '--harddrive', self.hd, '--fast-forward', 'no', '--sound', 'off', '--confirm-quit', 'no',
                                    '--statusbar', 'no', '--drive-led', 'no', '--window', '--cmd-fifo', self.fifo,
                                    '--rs232-in', link, '--rs232-out', link],

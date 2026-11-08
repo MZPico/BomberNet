@@ -1,7 +1,8 @@
 # BomberNet on the Atari ST
 
-**Runs on:** an ST, STE, Mega ST or Mega STE with 1 MB and a colour monitor
-or TV (low resolution), with TOS or EmuTOS. 512 KB is not enough yet.
+**Runs on:** an ST, STE, Mega ST or Mega STE with 512 KB or more and a
+colour monitor or TV (low resolution), with TOS in ROM or EmuTOS. A 520 ST
+keeps about 180 KB free beside the game.
 
 **Files:** `bombernet-0.3.0-atari-st.st`, a bootable floppy image (a
 single-sided 360 KB disk, which every ST drive reads), and
