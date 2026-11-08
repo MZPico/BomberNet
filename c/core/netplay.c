@@ -103,6 +103,42 @@ static void adapt_window(const uint8_t *k) {
 }
 #endif
 
+/* Every 16th poll that found the frame not there yet: the device asked why
+ * (desync, dropped, no link), BREAK, and the silence measured. A link that
+ * dies without a word (Wi-Fi gone under a modem in passthrough, a cable
+ * pulled) leaves the device and the relay waiting for good, every machine of
+ * the match with them: no frame for 10 s is the link lost. Nothing in a
+ * match waits that long otherwise (the messages between rounds run in
+ * lockstep too). The platform's clock (plat_config.h): PLAT_CLOCK16, 16 bits
+ * that do not wrap in 10 s, PLAT_CLOCK16_10S ticks in them; or PLAT_CLOCK,
+ * 8 bits, PLAT_CLOCK_QUARTER ticks a quarter second (under 128, so 16 polls
+ * never span a wrap), counted to NET_SILENT. Neither: no limit. */
+#if defined(PLAT_CLOCK16)
+static uint16_t w_tick;
+#define WAIT_START() (w_tick = (uint16_t)(PLAT_CLOCK16))
+#elif defined(PLAT_CLOCK)
+#define NET_SILENT 40
+static uint8_t w_tick, w_quarters;
+#define WAIT_START() (w_tick = (uint8_t)(PLAT_CLOCK), w_quarters = 0)
+#else
+#define WAIT_START() ((void)0)
+#endif
+static void wait_check(void) {
+  static net_status_t st;
+  if (net_status(&st) == 0 &&
+      (st.state == NETST_DESYNC || st.state == NETST_DROPPED || st.state == NETST_NOLINK))
+    net_abort = st.state ? st.state : 9;
+  else if (plat_key_char() == 0x1b) net_abort = NET_ABORT_BREAK;   /* BREAK: give up waiting */
+#if defined(PLAT_CLOCK16)
+  else if ((uint16_t)((uint16_t)(PLAT_CLOCK16) - w_tick) >= PLAT_CLOCK16_10S) net_abort = 9;   /* CONNECTION LOST */
+#elif defined(PLAT_CLOCK)
+  else if ((uint8_t)((uint8_t)(PLAT_CLOCK) - w_tick) >= PLAT_CLOCK_QUARTER) {
+    w_tick += PLAT_CLOCK_QUARTER;
+    if (++w_quarters == NET_SILENT) net_abort = 9;               /* CONNECTION LOST */
+  }
+#endif
+}
+
 /* a failed NET command: ask the device why (desync / dropped) */
 static void net_fail(void) {
   net_status_t st;
@@ -135,8 +171,8 @@ void net_match_start(void) {
 void net_lockstep_poll(void) {
   static uint16_t avail;                          /* statics: smaller code and stack on the Z80 (never re-entered) */
   static uint8_t keys[NET_SLOTS * NET_BYTES], local[NET_BYTES], i, tries;
-  static net_status_t st;
   tries = 0;
+  WAIT_START();
   if (net_abort) { for (i = 0; i < MAX_PLAYERS; i++) players[i].keys = 0; return; }
   for (i = 0; i < ADAPT_BYTE; i++) local[i] = i < menu_local ? input_read(menu_inputs[i]) : 0;
   local[ADAPT_BYTE] = report;
@@ -161,12 +197,7 @@ void net_lockstep_poll(void) {
 #endif
     if (++tries > 4) {
       net_waiting = 1;
-      if ((tries & 15) == 0) {
-        if (net_status(&st) == 0 &&
-            (st.state == NETST_DESYNC || st.state == NETST_DROPPED || st.state == NETST_NOLINK))
-          net_abort = st.state ? st.state : 9;
-        else if (plat_key_char() == 0x1b) net_abort = NET_ABORT_BREAK;   /* BREAK: give up waiting */
-      }
+      if ((tries & 15) == 0) wait_check();
     }
   }
   {                                               /* deal the vector out by the seat table */
@@ -234,7 +265,6 @@ uint8_t net_runahead_lead(void) { return (uint8_t)(shown + 1 - net_frame); }
 
 uint8_t net_runahead_step(void) {
   static uint8_t keys[NET_SLOTS * NET_BYTES], local[NET_BYTES];
-  static net_status_t st;
   uint16_t avail, target, f;
   uint8_t i, s, tries, noted, cap;
   if (net_abort) {                                /* the match is over: the agreed state on the screen */
@@ -255,6 +285,7 @@ uint8_t net_runahead_step(void) {
   target = (uint16_t)(shown + 1);
   if (sim_guessed) { snap_restore(); sim_guessed = 0; }
   tries = 0; noted = 0;
+  WAIT_START();
   cap = lead_max < net_runahead_cap ? lead_max : net_runahead_cap;
   if (cap > net_delay) cap = net_delay;
   while (!net_abort && net_frame <= target) {           /* the agreed frames */
@@ -283,12 +314,7 @@ uint8_t net_runahead_step(void) {
     if ((uint16_t)(target - net_frame + 1) <= cap) break;            /* the rest guessed */
     if (++tries > 4) {                            /* waits, as the lockstep */
       net_waiting = 1;
-      if ((tries & 15) == 0) {
-        if (net_status(&st) == 0 &&
-            (st.state == NETST_DESYNC || st.state == NETST_DROPPED || st.state == NETST_NOLINK))
-          net_abort = st.state ? st.state : 9;
-        else if (plat_key_char() == 0x1b) net_abort = NET_ABORT_BREAK;
-      }
+      if ((tries & 15) == 0) wait_check();
     }
   }
   sim_quiet = 0;

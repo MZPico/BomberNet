@@ -224,6 +224,8 @@ uint8_t plat_break(void) { return keydown[K_ESC]; }
 static double next_frame;
 uint8_t plat_frame_idle;
 
+uint16_t web_clock(void) { return (uint16_t)(uint32_t)emscripten_get_now(); }   /* PLAT_CLOCK16 (plat_config.h) */
+
 void plat_frame_sync(void) {              /* FRAME_MS of the browser's clock; the page is drawn meanwhile */
   double now;
 #ifdef WEB_TEST

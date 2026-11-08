@@ -17,6 +17,9 @@ both are compared frame by frame.
                                          return (calls they make included)
   BREAK_AT=40 ...                        A leaves with BREAK after 40 frames: A ends with
                                          MATCH LEFT, B with the other player gone
+  CUT_AT=200 ...                         A's link goes silent after 200 frames, its connection
+                                         kept open: both must end with CONNECTION LOST (9), about
+                                         10 s (of A's emulated time) later
 """
 import re, os, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -137,10 +140,15 @@ def step_a():                                      # A's own quanta, to time its
     return 0
 done_a = done_b = 0
 BREAK_AT = int(os.environ.get('BREAK_AT', 0))
+CUT_AT = int(os.environ.get('CUT_AT', 0))
+cut_t = cut_after = None
 end = a.now() + 120 * 3500000
 while (done_a < N or done_b < N) and a.now() < end:
     done_a += step_a()
     if BREAK_AT and done_a == BREAK_AT: a.press('CAPS SHIFT', 'SPACE')
+    if CUT_AT and done_a == CUT_AT and cut_t is None: a.cut = True; cut_t = a.now()
+    if cut_t is not None and cut_after is None and g8(a, NAB):   # when A gave up (before it hangs up)
+        cut_after = (a.now() - cut_t) / 3500000
     if b.step() == FB: on_flush(1, b); done_b += 1
 print(f'frames: A {g16(a, FN)} B {g16(b, FNB)} abort {g8(a, NAB)}/{g8(b, NAB_B)}', flush=True)
 common = sorted(set(seen['A']) & set(seen['B']))
@@ -187,4 +195,8 @@ if BREAK_AT:
     again = gr(a, NC, 4) != before
     print('A hosts again: room', gr(a, NC, 4).decode() if again else 'none')
     sys.exit(0 if aborts[0] == 7 and aborts[1] and not mism and again else 1)
+if CUT_AT:
+    print(f'link cut at frame {CUT_AT}: A abort {aborts[0]} after {cut_after if cut_after is None else round(cut_after, 1)} s, '
+          f'B abort {aborts[1]} (9 = CONNECTION LOST)')
+    sys.exit(0 if aborts == (9, 9) and cut_after and 9 <= cut_after <= 12 and not mism else 1)
 sys.exit(1 if mism or any(aborts) or not common or stack_short else 0)

@@ -7,4 +7,6 @@
 #define PLAT_RUNAHEAD 1         /* a frame ahead of the agreed one in a match (docs/rollback-plan.md) */
 #define NET_BINARY_INPUT 1      /* input lines as binary messages (the relay's bin=1) */
 #define NET_PLATFORM "atari-st"   /* the relay's statistics: &pf= (docs/net-protocol.md) */
+#define PLAT_CLOCK16 (*(volatile uint32_t *)0x466)   /* frclock, TV frames: the match's silence (core/netplay.c) */
+#define PLAT_CLOCK16_10S 500    /* 50 Hz; 8.3 s at 60 */
 #endif
