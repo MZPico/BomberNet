@@ -9,7 +9,8 @@ docs/net-timing.md.)
 
 A named folder is told by its files (bomber.mzf: the MZ-800, bomber.cpc: the
 CPC, bank6.map: the 128K Spectrum, bomber.tap: the 48K, bomber.prg.elf: the
-C64, BOMBER.EXE: the PC); one with none of them fails.
+C64, BOMBER.EXE: the PC); one with none of them, with files of two machines,
+or without its map fails.
 
 The Spectrum limits: the stack starts at FFFFh. Since the lobby's buffers
 are static it does not reach below FF00h in a 4-player match on either model
