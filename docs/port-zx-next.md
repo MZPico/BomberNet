@@ -13,16 +13,14 @@ What differs is around the UART, and it is a few branches in that driver.
 2. **The Next in the test emulator**: `tools/zxemu.py` with
    `esp01='next'`; the lockstep and cross-play tests with Next machines,
    in CI. Done, see below.
-3. **A real emulator**: the tape loaded and a match played in an emulator
-   of the whole machine (ZEsarUX: its Next UART can be bridged to a host
-   character device, a pseudo-terminal with an emulated module behind it;
-   or CSpect, whose own ESP emulation makes real TCP connections). Open:
-   how NextZXOS loads a 128K tape, whether bank 6 is free there, which ROM
-   is paged in. A `.nex` file may be the better release format.
+3. **A real emulator**: the tape loaded under NextZXOS and matches played
+   on a whole emulated Next (ZEsarUX). Done, see below.
 4. **Hardware test** on a Next, then the release (the 128K tape under a
    Next name as well, a catalog card, a setup guide).
 5. Optional: the Next's 28 MHz (nextreg 07h) gives it the time for the
    run-ahead of docs/rollback-plan.md, the only Z80 machine that has it.
+   The 128K tape has no memory left for it (below), so it would be a Next
+   build of its own (z88dk's `+zxn`, a `.nex` file).
 
 ## Step 1: the driver
 
@@ -54,8 +52,9 @@ ZX_Spectrum_Next_FPGA, `cores/zxnext/ports.txt` and `nextreg.txt`):
 - **The FIFO reset.** 163Bh bit 7 empties both FIFOs (the eLeMeNt's ZXi
   register 30h).
 
-The game's program is the same; bank 6 grows by 190 bytes (11162, about
-4.7 KB free below its stack). The eLeMeNt's paths are unchanged.
+The game's program is the same (but for the name, below); bank 6 grows by
+259 bytes (11231, about 4.6 KB free below its stack). The eLeMeNt's paths
+are unchanged.
 
 ## Step 2: the test emulator
 
@@ -91,3 +90,39 @@ receive buffer; the local relay unless noted:
 The emulation is written from the documents, not from a real Next: the
 loading, the module's real timing and replies, and the 512-byte receive
 buffer at the relay's real pace are the hardware test's to check (step 4).
+
+## Step 3: a whole emulated Next
+
+ZEsarUX (built from source in `~/src/zesarux`, git 4d86ac8) emulates the
+Next with its SD card and NextZXOS, and can bridge its UART to a host
+character device; `tools/ci/zesarux-uartbridge.patch` adds the option
+`--uartbridge <device>` (otherwise a menu setting). `tools/next_esp.py`
+puts an ESP's AT firmware on a pseudo-terminal, connected to the local
+relay. `tools/next_zesarux.py host|join` boots the Next from ZEsarUX's SD
+image (NextZXOS 2.06H, 2020) with the tape added, through the video mode
+test and the welcome into the Browser, opens the tape with the TAP
+loader's "128K mode" as a player would, and plays against the 48K of
+`tools/zxemu.py`: the Next hosts, or types the 48K's room code.
+
+- The tape loads in 128K mode from the Browser; the title shows the
+  NETWORK row: the game found the Next, set its UART and the module
+  answered.
+- Next hosting, 48K joining: 600 frames, no abort (the game compares the
+  hashes every 16 frames; a difference would end it with DESYNC).
+- 48K hosting, Next joining by its keyboard: 600 frames, no abort.
+- The relay sees `pf=zx-spectrum-next`.
+
+ZEsarUX's UART status has only bit 0 (a byte waiting), its transmit never
+busy, and the nextreg 02h reset does not reach the module: those parts are
+covered by `tools/zxemu.py` above, not here.
+
+## The machine's name for the relay
+
+The relay's statistics take `&pf=<id>` (docs/net-protocol.md). The 128K
+tape is the same file on an eLeMeNt and a Next, so the name is chosen at
+run time: bank 6's `bank6_present` writes `&pf=element-zx-128k` or
+`&pf=zx-spectrum-next` into 5DAAh-5DBFh, above the staging buffer (which
+is now 170 bytes, 5D00h-5DA9h), and the game copies it from there into the
+room's URL (`NET_PLATFORM_AT` in plat_config.h). The game program grows by
+1 byte (FE76h, 42 bytes under its limit); doing the same in the game
+itself cost 57 to 60 bytes, more than it had.

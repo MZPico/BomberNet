@@ -5,17 +5,17 @@ its ESP Wi-Fi module, in its ZX Spectrum 128K mode. It is the same game and
 the same tape as for the eLeMeNt ZX: the game tells the two machines apart
 and drives the Next's own Wi-Fi.
 
-**Not tried on a Next yet.** The network has been tested on an emulated
-Next only, built from the Next's hardware documents, in matches against
-every other machine. How NextZXOS loads the tape is still to be checked;
-reports from real Nexts are welcome.
+**Not tried on a real Next yet.** The game has been tested on emulated
+Nexts only: loaded under NextZXOS and played over the network in a whole
+emulated Next, and matched against every other machine on a model built
+from the Next's hardware documents. Reports from real Nexts are welcome.
 
 **File:** the 128K tape, `bombernet-<version>-zx-spectrum-128k-esp01.tap`.
 
 ## Loading
 
-Copy the tape to the SD card and load it with the Next in 128K mode, as
-any 128K tape: `LOAD ""` in 128 BASIC. The game uses the 128K's extra
+Copy the tape to the SD card, open it in NextZXOS's Browser and choose
+**1, 128K mode** in the TAP loader's menu. The game uses the 128K's extra
 memory (the network driver lives in a RAM bank) and the AY for its tones.
 
 ## Network play
@@ -39,6 +39,8 @@ Sinclair keys, Kempston, Fuller or Cursor joysticks; BREAK leaves a match.
 
 ## In an emulator
 
-Not yet. ZEsarUX can connect its emulated Next's serial port to a device on
-the host, and CSpect emulates the ESP's AT commands itself; neither has
-been tried with the game.
+ZEsarUX runs it under NextZXOS and plays through the relay when its Next's
+serial port is connected to a Wi-Fi module emulated on the host
+(`tools/next_esp.py` from the sources, with ZEsarUX patched as
+`docs/port-zx-next.md` describes). CSpect emulates the ESP's AT commands
+itself; it has not been tried.

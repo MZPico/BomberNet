@@ -3,19 +3,21 @@
  *
  * This file is linked first, so all of it is below C000h: the code and the
  * page and stack state stay visible while bank 6 replaces bank 0 at C000h.
- * Data in and out goes through the staging buffer at 5D00h-5DBFh, as the
+ * Data in and out goes through the staging buffer at 5D00h-5DA9h, as the
  * game's own buffers and its stack may be above C000h: the BASIC loader's
  * area below the game, free once the game runs (it never returns). A
  * call runs on bank 6's own stack (from its top down) and returns to the
  * caller's page and stack; BANKM (5B5Ch) is kept with the port, as the
  * ROM expects. The entry addresses come from bank 6's map (bank6_entries.h,
- * written by tools/zx128_entries.py). */
+ * written by tools/zx128_entries.py). Above the buffer, 5DAAh-5DBFh, bank 6
+ * leaves the machine's name for the relay, "&pf=<id>" (NET_PLATFORM_AT in
+ * plat_config.h): an eLeMeNt's or a Next's, as it finds. */
 #include <stdint.h>
 #include <string.h>
 #include "tcp.h"
 #include "bank6_entries.h"
 
-#define STAGE_SIZE 192
+#define STAGE_SIZE 170                         /* 5DAAh-5DBFh: the machine's name (bank6.c) */
 #define b6_stage ((uint8_t *)0x5d00)
 static uint8_t b6_state;                       /* 0 not checked, 1 ready, 2 no bank 6 driver */
 

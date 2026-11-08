@@ -7,6 +7,7 @@
  * top, so it must not touch the game's memory above C000h; the game passes
  * data through its staging buffer below C000h. */
 #include <stdint.h>
+#include <string.h>
 #include "tcp.h"
 
 const char bank6_signature[4] = {'B', 'N', 'B', '6'};   /* checked by the game before the first call */
@@ -77,11 +78,15 @@ nm_no:
 extern uint8_t esp_next;                        /* tcp_esp01_at.c: the Next's UART and reset, not the ZXi's */
 #endif
 
-/* the game's tcp_present, through bank6_entries.h */
+/* the game's tcp_present, through bank6_entries.h; the machine's name for
+ * the relay goes above the game's staging buffer (NET_PLATFORM_AT, 5DAAh:
+ * the game reads it there when it opens a room) */
+#define PF_AT ((char *)0x5daa)
 uint8_t bank6_present(void) {
+  strcpy(PF_AT, "&pf=element-zx-128k");
 #ifdef BANK6_ESP01
   if (esp01_machine()) esp_next = 0;
-  else if (next_machine()) esp_next = 1;
+  else if (next_machine()) { esp_next = 1; strcpy(PF_AT, "&pf=zx-spectrum-next"); }
   else return 0;
 #endif
   return tcp_present();
