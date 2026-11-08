@@ -19,7 +19,7 @@
 M4 must be joined to your Wi-Fi first, as its manual describes (its
 configuration on the SD card, or its web page). Nothing in the game to set.
 
-Without an M4, the title screen has no NETWORK row.
+Without an M4, the title screen shows the NETWORK row dimmed, as NONE.
 
 For a relay of your own, rewrite the `.dsk` or the `.cpc` file's relay
 address with `tools/set_relay.py` from the sources (see the

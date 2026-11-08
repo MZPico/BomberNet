@@ -39,7 +39,10 @@ def zrcp(*lines, wait=0.6):
     def reply():
         got = b''
         try:
-            while not got.endswith(b'command> '): got += s.recv(65536)
+            while not got.endswith(b'command> '):
+                d = s.recv(65536)
+                if not d: raise ConnectionError('ZEsarUX closed its remote protocol connection')
+                got += d
         except socket.timeout: pass
         return got[:-len(b'command> ')] if got.endswith(b'command> ') else got
     reply()                                       # the welcome
@@ -137,8 +140,12 @@ try:
         frames(1)
         if g8('_net_abort'): break
         if i == N // 2: shot('game')
-    ok = g8('_net_abort') == 0 and g8('_title_mode') == 0
-    print(f'end: 48K frame {g16("_frame_no")}, abort {g8("_net_abort")}: {"passed" if ok else "FAILED"}', flush=True)
+    frames_for(1)                                     # the Next's own verdict too: an abort it saw last may not have reached the 48K
+    na = sym_from_map(os.path.join(ROOT, 'build', 'zx128', 'bomber.map'), '_net_abort')
+    reads = [bytes.fromhex(zrcp(f'read-memory {na} 1').split()[0][:2])[0] for _ in range(5)]   # bank 6 may stand in at C000h:
+    next_abort = max(set(reads), key=reads.count)                                                # the value most reads give
+    ok = g8('_net_abort') == 0 and g8('_title_mode') == 0 and next_abort == 0
+    print(f'end: 48K frame {g16("_frame_no")}, abort {g8("_net_abort")}, Next abort {next_abort}: {"passed" if ok else "FAILED"}', flush=True)
     zrcp('send-keys-event 111 0')
 finally:
     emu.terminate(); esp.terminate()

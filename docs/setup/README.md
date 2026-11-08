@@ -91,7 +91,7 @@ Then point each machine at that PC (say 192.168.1.10):
 
 | Message | Meaning |
 |---|---|
-| NETWORK row greyed out, or missing | no network device was found when the game started; see the platform's guide |
+| NETWORK row dimmed, reading NONE | no network device was found when the game started; see the platform's guide |
 | NO CONNECTION | the relay did not answer: no network, no DHCP, a wrong relay address, or a Wi-Fi device not joined to its network |
 | ROOM NOT FOUND | no room has that code (rooms close when everybody leaves) |
 | BUILD MISMATCH | the other machine runs a BomberNet whose game logic or protocol differs: the two must carry the same build id, which changes only with those (0.2.0 and 0.3.0 share it and play together) |

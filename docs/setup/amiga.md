@@ -22,7 +22,7 @@ stack provides. Start your stack before the game: Roadshow, AmiTCP, Miami,
 Genesis, over any Ethernet or Wi-Fi hardware they support. The game needs
 no settings of its own.
 
-Without a stack running, the title screen has no NETWORK row.
+Without a stack running, the title screen shows the NETWORK row dimmed, as NONE.
 
 For a relay of your own, rewrite the `.adf` or the program's relay address
 with `tools/set_relay.py` from the sources (see the

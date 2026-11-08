@@ -22,7 +22,7 @@ board's own tools, as the eLeMeNt's documentation describes; the game does
 not store Wi-Fi credentials. At start the game probes the module and
 recovers it if it is in a bad state.
 
-Without a module answering, the title screen has no NETWORK row.
+Without a module answering, the title screen shows the NETWORK row dimmed, as NONE.
 
 For a relay of your own, rewrite the tape's relay address with
 `tools/set_relay.py` from the sources (see the [setup page](README.md#the-relay)).

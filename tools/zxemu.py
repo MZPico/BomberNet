@@ -101,8 +101,12 @@ class Esp01:
             else: self.lost += 1; self.overflow = True
             del self.out[0]
             self.out_t += self.BYTE_T
-        if self.plus == 3 and now - self.last_tx >= self.GUARD_T:
-            self.plus = 0; self.transparent = False    # +++ alone: back to commands, the connection stays
+        if self.plus and now - self.last_tx >= self.GUARD_T:
+            if self.plus == 3: self.transparent = False    # +++ alone: back to commands, the connection stays
+            elif self.sock:                                # a + or ++ that ended a payload: data after all
+                try: self.sock.sendall(b'+' * self.plus)
+                except OSError: self.sock = None
+            self.plus = 0
         if not self.fifo and not self.out and self.transparent and now - self.sleep_t > 3500:
             self.sleep_t = now
             if self.sock: select.select([self.sock], [], [], 0.002)
@@ -194,7 +198,9 @@ class NextEsp(Esp01):
       6:0 (bit 7 = 0) or 13:7 (bit 7 = 1); 153Bh: bit 6 the Pi's UART
       instead of the ESP's, bit 4 with bits 2:0 the prescaler's bits 16:14;
       163Bh: bits 4:3 the frame (11 = 8 bits), bit 7 empties the FIFOs.
-      The receive buffer holds 512 bytes.
+      The receive buffer holds 512 bytes; a byte written to a full
+      transmit buffer is lost (counted with garbled). With the Pi's UART
+      selected the ESP's bytes are neither seen nor sent.
     The module hears the Spectrum only with the ESP's UART selected, its
     ports on, 8 bits a frame and a prescaler within 2 % of 115200 Bd at the
     clock of the video timing; else what is sent is lost (the module
@@ -218,15 +224,24 @@ class NextEsp(Esp01):
                 and self.baud_ok())
 
     def status(self):
+        if self.uart_sel & 0x40: return 0x10                        # the Pi's UART: nothing there, transmit empty
         self._deliver()
         n, now = len(self.fifo), self.z.now()
         ov, self.overflow = self.overflow, False
         return ((1 if n else 0) | (2 if self.tx_free - now > 63 * self.BYTE_T else 0) | (4 if ov else 0) |
                 (8 if n >= self.FIFO * 3 // 4 else 0) | (16 if now >= self.tx_free else 0))
 
+    def read(self):
+        if self.uart_sel & 0x40: return 0x00                        # the Pi's UART: empty
+        return super().read()
+
     def write(self, b):
+        now = self.z.now()
+        if self.tx_free - now > 63 * self.BYTE_T:                   # the 64-byte transmit buffer full: the byte is lost
+            self.garbled += 1; return
+        if self.uart_sel & 0x40: self.tx_free = max(now, self.tx_free) + self.BYTE_T; return   # to the Pi's UART
         if self.heard(): return super().write(b)
-        self.tx_free = max(self.z.now(), self.tx_free) + self.BYTE_T
+        self.tx_free = max(now, self.tx_free) + self.BYTE_T
         self.garbled += 1
 
     def port_in(self, addr):
@@ -249,7 +264,8 @@ class NextEsp(Esp01):
             if v & 0x10: self.prescaler = (self.prescaler & 0x3fff) | (v & 7) << 14
         elif hi == 0x16:
             self.frame = v & 0x7f
-            if v & 0x80: self.fifo = bytearray(); self.overflow = False
+            if v & 0x80:                               # both FIFOs emptied: what had arrived by now goes with them
+                self._deliver(); self.fifo = bytearray(); self.overflow = False; self.tx_free = self.z.now()
         elif hi == 0x24: self.nr_sel = v
         elif hi == 0x25:
             r = self.nr_sel

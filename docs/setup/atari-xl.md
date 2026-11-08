@@ -18,7 +18,7 @@ keyboard and the serial bus itself; a reset brings the OS back.
 serial bus, at the FujiNet's high speed. The FujiNet must be joined to your
 Wi-Fi, which its CONFIG program does once; nothing in the game to set.
 
-Without a FujiNet answering, the title screen has no NETWORK row.
+Without a FujiNet answering, the title screen shows the NETWORK row dimmed, as NONE.
 
 **Not tried on real hardware yet.** The network has been tested only in an
 emulated chain (Altirra, FujiNet-PC and the NetSIO hub), which runs far

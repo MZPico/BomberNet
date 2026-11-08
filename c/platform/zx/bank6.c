@@ -49,7 +49,9 @@ em_yes:
  * ESP Wi-Fi module sits behind a UART at the same ports, 133Bh/143Bh, which
  * the eLeMeNt's follows. Told by nextreg 7Fh, a user register: written
  * through 243Bh/253Bh, it reads back on a Next only (a 128K, +2 or +3
- * decodes neither port: A1 = 1, A0 = 1). Its value is kept. -> L = 1 */
+ * decodes neither port: A1 = 1, A0 = 1). Its value is kept. A ZX Printer
+ * decodes them (A2 = 0) and starts its motor on 5Ah: on a machine that is
+ * not a Next, 04h stops it again. -> L = 1 */
 static uint8_t next_machine(void) __naked {
   __asm
     ld   bc,0x243b          ; nextreg select: 7Fh, user register 0
@@ -71,6 +73,8 @@ static uint8_t next_machine(void) __naked {
     ld   hl,1
     ret
 nm_no:
+    ld   a,4                ; not a Next: a ZX Printer on these ports, motor off
+    out  (c),a
     ld   hl,0
     ret
   __endasm;
@@ -83,11 +87,13 @@ extern uint8_t esp_next;                        /* tcp_esp01_at.c: the Next's UA
  * the game reads it there when it opens a room) */
 #define PF_AT ((char *)0x5daa)
 uint8_t bank6_present(void) {
-  strcpy(PF_AT, "&pf=element-zx-128k");
 #ifdef BANK6_ESP01
+  strcpy(PF_AT, "&pf=element-zx-128k");
   if (esp01_machine()) esp_next = 0;
   else if (next_machine()) { esp_next = 1; strcpy(PF_AT, "&pf=zx-spectrum-next"); }
   else return 0;
+#else
+  PF_AT[0] = 0;                                  /* the Spectranet test build: no name (the machine is unknown) */
 #endif
   return tcp_present();
 }

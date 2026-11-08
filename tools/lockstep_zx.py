@@ -46,6 +46,7 @@ def gp(z, addr, data, page=0): z.poke(addr, data, page=page)
 def inst(build, next_=False):
     b6 = os.path.join(build, 'bank6')
     esp = os.path.exists(b6) and 'stream_rx' in open(b6 + '.map').read()      # the ESP-01 driver in bank 6
+    if next_ and not esp: sys.exit(f'{build}: a Next needs the ESP driver in bank 6 (A_NEXT/B_NEXT)')
     if esp and next_: esp = 'next'
     z = ZX(spectranet=not esp, esp01=esp, relay=relay, bank6=b6 if os.path.exists(b6) else None)
     z.load(os.path.join(build, 'bomber'))
@@ -163,6 +164,7 @@ print(f'done: {N} steps, {len(common)} hashed frames compared, {len(mism)} misma
       f'{a.sn_calls + b.sn_calls} Spectranet calls; {time.time() - t0:.0f} s')
 a.screenshot('build/zx_net_A.png'); b.screenshot('build/zx_net_B.png')
 for name, z in (('A', a), ('B', b)):
+    if z.esp: z.esp._deliver()
     if z.esp: print(f'{name}: ESP receive FIFO, bytes lost: {z.esp.lost}' + (f', sent with the UART set wrong: {z.esp.garbled}' if hasattr(z.esp, 'garbled') else ''))
     m = z.read(BSS[z], TOP[z] - BSS[z], page=0)
     used_from = next((BSS[z] + i for i, v in enumerate(m) if v != 0xa5), TOP[z])
@@ -190,5 +192,7 @@ if BREAK_AT:
     again = gr(a, NC, 4) != before
     print('A hosts again: room', gr(a, NC, 4).decode() if again else 'none')
     sys.exit(0 if aborts[0] == 7 and aborts[1] and not mism and again else 1)
+for z in (a, b):
+    if z.esp: z.esp._deliver()                                    # bytes due since the last read: into the FIFO, or lost
 lost = any(z.esp and z.esp.lost for z in (a, b))                 # an ESP receive buffer overflowed
 sys.exit(1 if mism or any(aborts) or not common or stack_short or lost else 0)

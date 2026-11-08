@@ -23,7 +23,7 @@ to your Wi-Fi as its manual describes. The game talks to it at 19,200 bps,
 translation), then `ATDT relay:port` to connect. Set the modem to 19,200 bps
 if it is not there already; nothing else in the game to set.
 
-Without a modem answering, the title screen has no NETWORK row.
+Without a modem answering, the title screen shows the NETWORK row dimmed, as NONE.
 
 For a relay of your own, rewrite the `.st` or the `.prg` file's relay
 address with `tools/set_relay.py` from the sources (see the

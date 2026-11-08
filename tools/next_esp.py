@@ -70,12 +70,13 @@ def command(c):
         else: say('\r\nERROR\r\n')
     elif c.startswith('AT+CIPSTART="TCP","'):
         m = re.match(r'AT\+CIPSTART="TCP","([^"]+)",(\d+)$', c)
+        if not m: say('\r\nERROR\r\n'); return       # malformed: refused, as the firmware does, relay or not
         try:
             s = socket.create_connection(relay if relay else (m.group(1), int(m.group(2))), timeout=10)
             s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            s.setblocking(False)
+            s.settimeout(5)                    # sends wait for room; reads only after select says there is data
             close(); sock = s; say('CONNECT\r\n' + ok); log(f'connected to {s.getpeername()}')
-        except (OSError, AttributeError) as e:
+        except OSError as e:
             log(f'connect: {e}'); say('\r\nERROR\r\nCLOSED\r\n')
     elif c == 'AT+CIPSEND' and cipmode == 1 and sock:
         say(ok + '\r\n>'); transparent = True; plus = 0
@@ -110,8 +111,12 @@ while True:
     if to_next and budget >= 1:
         n = min(int(budget), len(to_next))
         os.write(master, bytes(to_next[:n])); del to_next[:n]; budget -= n
-    if plus == 3 and time.time() - last_rx >= GUARD:
-        plus = 0; transparent = False; log('+++: back to commands')
+    if plus and time.time() - last_rx >= GUARD:
+        if plus == 3: transparent = False; log('+++: back to commands')
+        elif sock:                             # a + or ++ that ended a payload: data after all
+            try: sock.sendall(b'+' * plus)
+            except OSError: close()
+        plus = 0
     rl = [master] + ([sock] if sock and transparent and len(to_next) < 512 else [])
     r, _, _ = select.select(rl, [], [], 0.002)
     if master in r:

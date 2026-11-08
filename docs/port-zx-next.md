@@ -30,7 +30,9 @@ ZX_Spectrum_Next_FPGA, `cores/zxnext/ports.txt` and `nextreg.txt`):
 - **Which machine.** `bank6.c` asks for the eLeMeNt or the MB03+ first, as
   before, then for a Next: nextreg 7Fh (a user register, through 243Bh and
   253Bh) written 5Ah and A5h must read back each. A 128K, +2 or +3 decodes
-  neither port (A1 = 1, A0 = 1); the register's value is put back. The
+  neither port (A1 = 1, A0 = 1); on a Next the register's value is put
+  back. A ZX Printer decodes both (A2 = 0) and its motor starts on 5Ah: on
+  a machine that is not a Next the check ends by writing 04h, motor off. The
   machine ID (nextreg 00h) is not used: 0Ah on a Next, other values on the
   Next cores of other FPGA boards and in emulators.
 - **The UART.** 153Bh bit 6 = 0 selects the ESP's UART (the other is the

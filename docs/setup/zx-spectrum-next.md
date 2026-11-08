@@ -21,13 +21,16 @@ memory (the network driver lives in a RAM bank) and the AY for its tones.
 ## Network play
 
 The Next's ESP module must be on your Wi-Fi first: join it with the Next's
-own Wi-Fi setup, as its manual describes. The module keeps the network,
-and the game never asks for it. At start the game selects the ESP's
+own Wi-Fi setup, as its manual describes, so that the module keeps the
+network and joins it again by itself after a reset (the AT firmware's
+saved network and automatic connection, the usual setting). The game never
+asks for the network, and when it resets an unresponsive module it relies
+on that. At start the game selects the ESP's
 serial port, sets it to 115200 Bd (the module's AT firmware speed after a
 reset) for whichever video mode the Next runs, probes the module, and
 resets it if it does not answer.
 
-Without a module answering, the title screen has no NETWORK row.
+Without a module answering, the title screen shows the NETWORK row dimmed, as NONE.
 
 For a relay of your own, rewrite the tape's relay address with
 `tools/set_relay.py` from the sources (see the [setup page](README.md#the-relay)).

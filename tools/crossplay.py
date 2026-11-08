@@ -507,8 +507,10 @@ print(f'in game: net_active {host.kind} {host.r8("_net_active")} {join.kind} {jo
 for m in both:
     if m.kind == 'C64': m.reset_net()
 if not os.environ.get('NOWALK'): host.press('walk'); join.press('walk')   # inputs cross between the machines
-seen = {m.kind: {} for m in both}
-maps = {m.kind: {} for m in both}          # frame -> the map: compared at a frame both have (the logs give them every 16th)
+H, J = (host.kind, join.kind) if host.kind != join.kind else (host.kind + ' host', join.kind + ' join')
+KEY = {id(host): H, id(join): J}                # the two machines' results apart, also when both are of one kind
+seen = {H: {}, J: {}}
+maps = {H: {}, J: {}}          # frame -> the map: compared at a frame both have (the logs give them every 16th)
 start = [m.r16('_frame_no') for m in both]
 
 
@@ -517,17 +519,17 @@ def collect(m):
     or (the MZ, read between TV frames) from its current frame."""
     if hasattr(m, 'flushes'):
         for f, h in m.flushes:
-            if f % HP: seen[m.kind][(f // HP) * HP] = h
+            if f % HP: seen[KEY[id(m)]][(f // HP) * HP] = h
         m.flushes.clear()
     else:
         f = m.r16('_frame_no')
-        if f % HP: seen[m.kind][(f // HP) * HP] = m.r16('_state_hash')
-    if hasattr(m, 'maps'): maps[m.kind].update(m.maps); m.maps.clear()
+        if f % HP: seen[KEY[id(m)]][(f // HP) * HP] = m.r16('_state_hash')
+    if hasattr(m, 'maps'): maps[KEY[id(m)]].update(m.maps); m.maps.clear()
     else:                                  # read from memory: the map at the frames the logs keep (f % 16 == 1)
         f = m.r16('_frame_no')
-        if f % HP == 1 and f not in maps[m.kind]:
+        if f % HP == 1 and f not in maps[KEY[id(m)]]:
             mp = m.rd('_map_layer', 1000)
-            if mp: maps[m.kind][f] = bytes(mp)
+            if mp: maps[KEY[id(m)]][f] = bytes(mp)
 
 
 GAP = int(os.environ.get('GAP', 0))       # GAP=n: at game frame n the C64 stops polling for 5 s
@@ -549,7 +551,6 @@ while min(m.r16('_frame_no') - s0 for m, s0 in zip(both, start)) < N:
             m.gap(5, *[o for o in both if o is not m]); GAP = 0
     for m in both: collect(m)
     if host.r8('_net_abort') or join.r8('_net_abort'): break
-H, J = host.kind, join.kind
 common = sorted(set(seen[H]) & set(seen[J]) - {0})
 mism = [f for f in common if seen[H][f] != seen[J][f]]
 for f in common: print(f'frame {f}: {H} {seen[H][f]:04x} {J} {seen[J][f]:04x} {"MISMATCH" if f in mism else "ok"}')
