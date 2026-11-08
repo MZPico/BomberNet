@@ -5,7 +5,11 @@ on a player's machine. (A z88dk build over 64 KB fails by itself; one that
 grows into the stack does not: the 128K Spectrum once kept 32 bytes, see
 docs/net-timing.md.)
 
-  tools/check_sizes.py [build dir ...]     default: whichever of the builds below exist
+  tools/check_sizes.py [build dir ...]     default: whichever of build/c, zx, zx128, cpc, c64, pc exist
+
+A named folder is told by its files (bomber.mzf: the MZ-800, bomber.cpc: the
+CPC, bank6.map: the 128K Spectrum, bomber.tap: the 48K, bomber.prg.elf: the
+C64, BOMBER.EXE: the PC); one with none of them fails.
 
 The Spectrum limits: the stack starts at FFFFh. Since the lobby's buffers
 are static it does not reach below FF00h in a 4-player match on either model
@@ -58,17 +62,30 @@ def check_pc(d):
     return ('PC', False, 'no DGROUP in the map')
 
 
-CHECKS = [
-    lambda: check_z80('MZ-800', os.path.join(ROOT, 'build', 'c'), 0xC000, 'the stack (from D000h) wants it under'),
-    lambda: check_z80('ZX 48K', os.path.join(ROOT, 'build', 'zx'), 0xFEA0, 'the stack (down from FFFFh) wants it under'),
-    lambda: check_z80('ZX 128K', os.path.join(ROOT, 'build', 'zx128'), 0xFEA0, 'the stack (down from FFFFh) wants it under'),
-    lambda: check_z80('CPC', os.path.join(ROOT, 'build', 'cpc'), 0xBC00, 'the firmware stubs (BCCBh) and the stack (BE00h) want it under'),
-    lambda: check_c64(os.path.join(ROOT, 'build', 'c64')),
-    lambda: check_pc(os.path.join(ROOT, 'build', 'pc')),
+Z80 = 'the stack (down from FFFFh) wants it under'
+KINDS = [                                  # a build told by its files (the first that matches): its check
+    ('bomber.mzf', lambda d: check_z80('MZ-800', d, 0xC000, 'the stack (from D000h) wants it under')),
+    ('bomber.cpc', lambda d: check_z80('CPC', d, 0xBC00, 'the firmware stubs (BCCBh) and the stack (BE00h) want it under')),
+    ('bank6.map', lambda d: check_z80('ZX 128K', d, 0xFEA0, Z80)),
+    ('bomber.tap', lambda d: check_z80('ZX 48K', d, 0xFEA0, Z80)),
+    ('bomber.prg.elf', check_c64),
+    ('BOMBER.EXE', check_pc),
 ]
+DEFAULT = [os.path.join(ROOT, 'build', d) for d in ('c', 'zx', 'zx128', 'cpc', 'c64', 'pc')]
+
+
+def check(d):
+    for f, fn in KINDS:
+        if os.path.exists(os.path.join(d, f)): return fn(d)
+    return None
 
 if __name__ == '__main__':
-    results = [r for r in (c() for c in CHECKS) if r]
+    dirs = sys.argv[1:] or DEFAULT
+    results = []
+    for d in dirs:
+        r = check(d)
+        if r: results.append((r[0] + ('' if dirs is DEFAULT else f' ({os.path.relpath(d)})'),) + r[1:])
+        elif dirs is not DEFAULT: results.append((os.path.relpath(d), False, 'not a build this knows (no map with a budget)'))
     if not results:                       # (the Atari's linker checks its own memory map; Amiga, ST, web: no tight limit)
         print('no build with a budget here'); sys.exit(0)
     fails = 0
