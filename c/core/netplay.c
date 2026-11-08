@@ -111,8 +111,11 @@ static void adapt_window(const uint8_t *k) {
  * match waits that long otherwise (the messages between rounds run in
  * lockstep too). The platform's clock (plat_config.h): PLAT_CLOCK16, 16 bits
  * that do not wrap in 10 s, PLAT_CLOCK16_10S ticks in them; or PLAT_CLOCK,
- * 8 bits, PLAT_CLOCK_QUARTER ticks a quarter second (under 128, so 16 polls
- * never span a wrap), counted to NET_SILENT. Neither: no limit. */
+ * 8 bits, PLAT_CLOCK_QUARTER ticks a quarter second, counted to NET_SILENT:
+ * all the quarters passed since the last check (a slow device's 16 polls
+ * may take seconds; they must stay under the clock's wrap, 256 ticks).
+ * Neither: no limit. The timer starts with each wait, and again with each
+ * agreed frame the run-ahead takes. */
 #if defined(PLAT_CLOCK16)
 static uint16_t w_tick;
 #define WAIT_START() (w_tick = (uint16_t)(PLAT_CLOCK16))
@@ -132,9 +135,9 @@ static void wait_check(void) {
 #if defined(PLAT_CLOCK16)
   else if ((uint16_t)((uint16_t)(PLAT_CLOCK16) - w_tick) >= PLAT_CLOCK16_10S) net_abort = 9;   /* CONNECTION LOST */
 #elif defined(PLAT_CLOCK)
-  else if ((uint8_t)((uint8_t)(PLAT_CLOCK) - w_tick) >= PLAT_CLOCK_QUARTER) {
-    w_tick += PLAT_CLOCK_QUARTER;
-    if (++w_quarters == NET_SILENT) net_abort = 9;               /* CONNECTION LOST */
+  else {
+    while ((uint8_t)((uint8_t)(PLAT_CLOCK) - w_tick) >= PLAT_CLOCK_QUARTER) { w_tick += PLAT_CLOCK_QUARTER; w_quarters++; }
+    if (w_quarters >= NET_SILENT) net_abort = 9;                 /* CONNECTION LOST */
   }
 #endif
 }
@@ -306,6 +309,7 @@ uint8_t net_runahead_step(void) {
       if (net_slot && i && i <= NET_DELAY_MAX) net_delay = i;
       if (((uint8_t)net_frame & (ADAPT_WINDOW - 1)) == ADAPT_WINDOW - 1) adapt_window(keys);
       net_frame++;
+      WAIT_START();                               /* an agreed frame: the silence starts again */
       if (frame_ends()) { target = (uint16_t)(net_frame - 1); break; }   /* the round's end is this frame's: the lockstep
                                                                             machines stop here too, no frame past it */
       continue;

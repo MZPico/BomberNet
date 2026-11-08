@@ -245,7 +245,8 @@ uint8_t plat_break(void) { return keydown[K_ESC]; }
 
 /* ---- time ---- */
 static uint32_t last_tick;
-static uint8_t hz60, hz60_step;
+uint8_t hz60;                             /* PLAT_CLOCK16_10S (plat_config.h) reads it too */
+static uint8_t hz60_step;
 
 #ifdef ST_NETTEST
 static uint32_t sync_in, sync_out, work_t, wait_t;   /* timer A's ticks: the frame's work, its wait at the sync */

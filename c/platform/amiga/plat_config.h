@@ -9,5 +9,6 @@
 #define NET_PLATFORM "amiga"   /* the relay's statistics: &pf= (docs/net-protocol.md) */
 extern volatile uint32_t amiga_ticks;
 #define PLAT_CLOCK16 amiga_ticks   /* +1 every TV frame (plat_amiga.c): the match's silence (core/netplay.c) */
-#define PLAT_CLOCK16_10S 500    /* 50 Hz; 8.3 s at 60 */
+extern uint8_t ntsc;            /* 60 Hz (plat_amiga.c) */
+#define PLAT_CLOCK16_10S (ntsc ? 600 : 500)
 #endif
