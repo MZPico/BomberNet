@@ -43,12 +43,46 @@ em_yes:
     ret
   __endasm;
 }
+
+/* Is this a ZX Spectrum Next (or a Next core on another FPGA board)? Its
+ * ESP Wi-Fi module sits behind a UART at the same ports, 133Bh/143Bh, which
+ * the eLeMeNt's follows. Told by nextreg 7Fh, a user register: written
+ * through 243Bh/253Bh, it reads back on a Next only (a 128K, +2 or +3
+ * decodes neither port: A1 = 1, A0 = 1). Its value is kept. -> L = 1 */
+static uint8_t next_machine(void) __naked {
+  __asm
+    ld   bc,0x243b          ; nextreg select: 7Fh, user register 0
+    ld   a,0x7f
+    out  (c),a
+    inc  b                  ; 253Bh: its value
+    in   e,(c)
+    ld   a,0x5a
+    out  (c),a
+    in   a,(c)
+    cp   0x5a
+    jr   nz,nm_no
+    ld   a,0xa5
+    out  (c),a
+    in   a,(c)
+    out  (c),e              ; the user value back
+    cp   0xa5
+    jr   nz,nm_no
+    ld   hl,1
+    ret
+nm_no:
+    ld   hl,0
+    ret
+  __endasm;
+}
+extern uint8_t esp_next;                        /* tcp_esp01_at.c: the Next's UART and reset, not the ZXi's */
 #endif
 
 /* the game's tcp_present, through bank6_entries.h */
 uint8_t bank6_present(void) {
 #ifdef BANK6_ESP01
-  if (!esp01_machine()) return 0;
+  if (esp01_machine()) esp_next = 0;
+  else if (next_machine()) esp_next = 1;
+  else return 0;
 #endif
   return tcp_present();
 }

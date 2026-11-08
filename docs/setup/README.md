@@ -11,6 +11,7 @@ runs in the browser.
 | Sharp MZ-800 (the MZ-700 plays locally) | [mz-800.md](mz-800.md) |
 | ZX Spectrum 48K and up | [zx-spectrum-48k.md](zx-spectrum-48k.md) |
 | eLeMeNt ZX in 128K mode, with an ESP-01 | [element-zx-128k-esp01.md](element-zx-128k-esp01.md) |
+| ZX Spectrum Next (untried on hardware) | [zx-spectrum-next.md](zx-spectrum-next.md) |
 | Amstrad CPC | [amstrad-cpc.md](amstrad-cpc.md) |
 | Atari XL/XE | [atari-xl.md](atari-xl.md) |
 | Commodore 64 | [c64.md](c64.md) |

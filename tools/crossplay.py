@@ -10,8 +10,9 @@ by side, one TV frame each in turn, and compares their state hashes. The
 C64 runs in VICE with a WiC64 (tools/vice.py), in real time on its own: its
 TV frame is 20 ms of waiting, and it stands still while it is read.
 
-  tools/crossplay.py [steps] [host] [joiner]   machines: mz, zx, cpc, esp, c64, amiga, st, pc, web; default mz zx
-                                               (esp: build/zx128, an eLeMeNt with its ESP-01)
+  tools/crossplay.py [steps] [host] [joiner]   machines: mz, zx, cpc, esp, next, c64, amiga, st, pc, web; default mz zx
+                                               (esp: build/zx128, an eLeMeNt with its ESP-01;
+                                                next: the same build on a ZX Spectrum Next)
                                                (the second argument alone: mz or zx hosts the other)
   PLAYERS=3 LOCAL_HOST=2 LOCAL_JOIN=1   seats: players in total, local players per machine
   MODE=0                                co-op (default 1, deathmatch)
@@ -69,8 +70,8 @@ class Spectrum:
 
     def __init__(self):
         self.S = {n: sym_from_map(self.build + '/bomber.map', n) for n in NAMES}
-        if self.kind == 'ESP':
-            self.z = ZX(esp01=True, bank6=self.build + '/bank6', relay=('127.0.0.1', 8765))
+        if self.kind in ('ESP', 'NEXT'):
+            self.z = ZX(esp01='next' if self.kind == 'NEXT' else True, bank6=self.build + '/bank6', relay=('127.0.0.1', 8765))
         else:
             self.z = ZX(spectranet=True, relay=('127.0.0.1', 8765))
         self.z.load(self.build + '/bomber')
@@ -95,7 +96,12 @@ class Spectrum:
 class Element(Spectrum):
     """The 128K build with its ESP-01 driver, on an emulated eLeMeNt ZX."""
     kind = 'ESP'
-    build = 'build/zx128'
+    build = os.environ.get('ZX128_BUILD', 'build/zx128')
+
+
+class Next(Element):
+    """The same build on an emulated ZX Spectrum Next with its ESP."""
+    kind = 'NEXT'
 
 
 class Amstrad:
@@ -468,7 +474,7 @@ def until(cond, limit, *ms):
 
 
 t0 = time.time()
-MACHINES = {'mz': MZ, 'zx': Spectrum, 'cpc': Amstrad, 'esp': Element, 'c64': Commodore, 'amiga': Amiga, 'st': AtariST, 'pc': IBMPC, 'web': WebPage}
+MACHINES = {'mz': MZ, 'zx': Spectrum, 'cpc': Amstrad, 'esp': Element, 'next': Next, 'c64': Commodore, 'amiga': Amiga, 'st': AtariST, 'pc': IBMPC, 'web': WebPage}
 host, join = MACHINES[HOST](), MACHINES[JOIN]()
 both = (host, join)
 run(90, *both)                                                    # both titles up and settled

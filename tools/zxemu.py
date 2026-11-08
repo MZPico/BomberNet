@@ -19,7 +19,9 @@ now (BANKM, 5B5Ch, which the program keeps with the port).
 
 With esp01=True the machine is an eLeMeNt ZX with its ESP-01 (class Esp01):
 the ZXi ID register, the UART and an ESP8266 AT firmware behind it, enough
-for the build/zx128 driver (platform/zx/tcp_esp01*.c), which runs unchanged."""
+for the build/zx128 driver (platform/zx/tcp_esp01*.c), which runs unchanged.
+With esp01='next' it is a ZX Spectrum Next in 128K mode with its ESP (class
+NextEsp): the Next's registers, its UART and the same firmware."""
 import os, re, select, socket, struct, time, zlib
 import zx
 from zx._device import KeyStroke
@@ -56,6 +58,7 @@ class Esp01:
     emulated millisecond, so that the relay's timeouts mean something."""
     BYTE_T = 3500000 * 10 // 115200
     GUARD_T = 70000                                # 20 ms
+    FIFO = 2048                                    # the receive FIFO
 
     def __init__(self, z, relay):
         self.z, self.relay = z, relay
@@ -67,6 +70,7 @@ class Esp01:
         self.tx_free = 0
         self.sleep_t = 0
         self.lost = 0
+        self.overflow = False
         self.reset()
 
     def reset(self):
@@ -93,8 +97,8 @@ class Esp01:
             except OSError:
                 self.sock = None
         while self.out and self.out_t <= now:
-            if len(self.fifo) < 2048: self.fifo.append(self.out[0])
-            else: self.lost += 1
+            if len(self.fifo) < self.FIFO: self.fifo.append(self.out[0])
+            else: self.lost += 1; self.overflow = True
             del self.out[0]
             self.out_t += self.BYTE_T
         if self.plus == 3 and now - self.last_tx >= self.GUARD_T:
@@ -176,6 +180,89 @@ class Esp01:
             self.fifo = bytearray()
 
 
+class NextEsp(Esp01):
+    """The ZX Spectrum Next's ESP UART and the registers around it, from the
+    core's ports.txt and nextreg.txt (gitlab.com/SpectrumNext/
+    ZX_Spectrum_Next_FPGA, cores/zxnext):
+    - nextregs through 243Bh (select) and 253Bh (value): 00h the machine ID
+      (0Ah), 02h bit 7 holds the ESP in reset (released: a fresh module after
+      its start-up text), 11h the video timing (which 28 MHz clock; timing=
+      chooses it), 7Fh a user register, 83h bit 4 the UART's ports.
+    - 133Bh read: bit 0 a byte waiting, 1 the 64-byte transmit buffer full,
+      2 the receive buffer overflowed (cleared by the read), 3 it is 3/4
+      full, 4 the transmit buffer empty; 143Bh write: the prescaler's bits
+      6:0 (bit 7 = 0) or 13:7 (bit 7 = 1); 153Bh: bit 6 the Pi's UART
+      instead of the ESP's, bit 4 with bits 2:0 the prescaler's bits 16:14;
+      163Bh: bits 4:3 the frame (11 = 8 bits), bit 7 empties the FIFOs.
+      The receive buffer holds 512 bytes.
+    The module hears the Spectrum only with the ESP's UART selected, its
+    ports on, 8 bits a frame and a prescaler within 2 % of 115200 Bd at the
+    clock of the video timing; else what is sent is lost (the module
+    answers nothing). The eLeMeNt's ZXi ports read FFh."""
+    FIFO = 512
+    CLK = (28000000, 28571429, 29464286, 30000000, 31000000, 32000000, 33000000, 27000000)
+
+    def __init__(self, z, relay, timing=0):
+        self.nr_sel = 0
+        self.nregs = {0x00: 0x0a, 0x02: 0x00, 0x07: 0x00, 0x11: timing, 0x7f: 0xff, 0x83: 0xff}
+        self.uart_sel, self.frame, self.prescaler = 0x00, 0x18, 0
+        self.garbled = 0                           # bytes sent while the UART was set wrong
+        super().__init__(z, relay)
+
+    def baud_ok(self):
+        if not self.prescaler: return False
+        return abs(self.CLK[self.nregs[0x11] & 7] / self.prescaler - 115200) < 115200 * 0.02
+
+    def heard(self):
+        return (not self.uart_sel & 0x40 and self.nregs[0x83] & 0x10 and (self.frame & 0x18) == 0x18
+                and self.baud_ok())
+
+    def status(self):
+        self._deliver()
+        n, now = len(self.fifo), self.z.now()
+        ov, self.overflow = self.overflow, False
+        return ((1 if n else 0) | (2 if self.tx_free - now > 63 * self.BYTE_T else 0) | (4 if ov else 0) |
+                (8 if n >= self.FIFO * 3 // 4 else 0) | (16 if now >= self.tx_free else 0))
+
+    def write(self, b):
+        if self.heard(): return super().write(b)
+        self.tx_free = max(self.z.now(), self.tx_free) + self.BYTE_T
+        self.garbled += 1
+
+    def port_in(self, addr):
+        hi = addr >> 8
+        if hi == 0x13: return self.status()
+        if hi == 0x14: return self.read()
+        if hi == 0x15: return self.uart_sel & 0x47
+        if hi == 0x16: return self.frame
+        if hi == 0x25: return self.nregs.get(self.nr_sel, 0x00)
+        return 0xff
+
+    def port_out(self, addr, v):
+        hi = addr >> 8
+        if hi == 0x13: self.write(v)
+        elif hi == 0x14:
+            if v & 0x80: self.prescaler = (self.prescaler & ~0x3f80) | (v & 0x7f) << 7
+            else: self.prescaler = (self.prescaler & ~0x7f) | (v & 0x7f)
+        elif hi == 0x15:
+            self.uart_sel = v
+            if v & 0x10: self.prescaler = (self.prescaler & 0x3fff) | (v & 7) << 14
+        elif hi == 0x16:
+            self.frame = v & 0x7f
+            if v & 0x80: self.fifo = bytearray(); self.overflow = False
+        elif hi == 0x24: self.nr_sel = v
+        elif hi == 0x25:
+            r = self.nr_sel
+            if r in (0x00, 0x01, 0x0e, 0x0f, 0x11): return         # read only (11h: in config mode only)
+            if r == 0x02:
+                if v & 0x80: self.reg5 = 0                          # held in reset
+                elif self.nregs[0x02] & 0x80:                       # released: a fresh module after its start-up text
+                    self.reset(); self.reg5 = 1
+                    self.out_t = self.z.now() + 3500000 // 2; self.out = bytearray(b'\r\nready\r\n')
+                self.nregs[0x02] = v & 0x80
+            else: self.nregs[r] = v
+
+
 class ZX(zx.Spectrum):
     IXCALL = 0x3ffd
 
@@ -192,7 +279,8 @@ class ZX(zx.Spectrum):
         self.relay = relay
         self.socks = {}
         self.sn_calls = 0
-        self.esp = Esp01(self, relay) if esp01 else None
+        self.esp = (NextEsp(self, relay, int(os.environ.get('NEXT_TIMING', 0))) if esp01 == 'next'
+                    else Esp01(self, relay) if esp01 else None)
         self.set_on_input_callback(self._input)
         if esp01: self.set_on_output_callback(self._output)
         self.reset_and_wait()                      # ROM start-up: system variables, IM 1, IY

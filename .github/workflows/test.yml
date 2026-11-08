@@ -114,6 +114,12 @@ jobs:
         run: PLAYERS=4 LOCAL_A=2 LOCAL_B=2 KEYS=tests/recordings/dm4.bnr QUIET=1 STACK_MIN=150 build/venv/bin/python tools/lockstep_zx.py 600
       - name: Spectrum 128K match, 4 players, stack watermark
         run: A_BUILD=build/zx128 B_BUILD=build/zx128 PLAYERS=4 LOCAL_A=2 LOCAL_B=2 KEYS=tests/recordings/dm4.bnr QUIET=1 STACK_MIN=100 build/venv/bin/python tools/lockstep_zx.py 600
+      - name: ZX Spectrum Next matches (the 128K build on a Next with its ESP)
+        run: |
+          A_BUILD=build/zx128 B_BUILD=build/zx128 A_NEXT=1 B_NEXT=1 PLAYERS=4 LOCAL_A=2 LOCAL_B=2 KEYS=tests/recordings/dm4.bnr QUIET=1 STACK_MIN=100 build/venv/bin/python tools/lockstep_zx.py 600
+          A_BUILD=build/zx128 B_BUILD=build/zx128 A_NEXT=1 B_NEXT=1 NEXT_TIMING=7 QUIET=1 build/venv/bin/python tools/lockstep_zx.py 200
+          A_BUILD=build/zx128 B_BUILD=build/zx QUIET=1 A_NEXT=1 build/venv/bin/python tools/lockstep_zx.py 200
+          A_BUILD=build/zx128 B_BUILD=build/zx128 B_NEXT=1 QUIET=1 build/venv/bin/python tools/lockstep_zx.py 200
       - name: CPC match
         run: build/venv/bin/python tools/lockstep_cpc.py 300
       - name: against BomberNet 0.2.0, both ways

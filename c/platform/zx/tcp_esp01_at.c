@@ -9,12 +9,23 @@
  * receive, 703Bh/713Bh register 5 bit 0 the module's power, 7C3Bh/7D3Bh the
  * FIFO reset. Timeouts count the ROM's frame counter (5C78h).
  *
+ * On a ZX Spectrum Next (esp_next, set by bank6.c) the same UART ports
+ * serve its ESP; the eLeMeNt's ZXi registers become the Next's: es_init
+ * selects the ESP's UART (153Bh), 8N1 without flow control (163Bh), 115200
+ * Bd from the video timing's clock (nextreg 11h; 143Bh takes the
+ * prescaler), the UART's ports on (nextreg 83h bit 4), and releases the
+ * module's reset; the power cycle holds nextreg 02h bit 7 (the ESP's and
+ * the expansion bus's reset) instead; the FIFO reset is 163Bh bit 7. Its
+ * status bits 0-2 mean what the driver reads them as: a byte waiting, the
+ * transmit buffer full, the receive buffer overflowed.
+ *
  * His notes:
  * Fast banked sccz80 TCP backend. Same passive protocol as the C reference.
  * Receive chunks are 192 bytes. No next read while the local chunk is held.
  * All UART polling is bounded; synchronous operations have 10s deadlines.
  */
 #include "tcp.h"
+uint8_t esp_next;                               /* 1 on a ZX Spectrum Next */
 uint8_t tcp_present(void) __naked {
  __asm
     call es_init
@@ -39,6 +50,17 @@ es_present_probe:
 es_present_power:
     ; A fixed-length payload state may still require module power recovery.
     ; Cycle only module power, keeping baud and persistent Wi-Fi credentials.
+    ld a,(_esp_next)
+    or a
+    jr z,es_power_zxi
+    ld bc,0x243b                ; the Next: hold the ESP in reset, es_init releases it
+    ld a,2
+    out (c),a
+    inc b
+    ld a,0x80
+    out (c),a
+    jr es_power_off
+es_power_zxi:
     ld bc,0x703b
     ld a,5
     out (c),a
@@ -46,6 +68,7 @@ es_present_power:
     in a,(c)
     res 0,a
     out (c),a
+es_power_off:
     ld de,50
     call es_pause
     call es_init
@@ -401,6 +424,9 @@ static void esp_engine(void) __naked {
  __asm
 ; BIOS 2.0 turn_sub/turnon_wifi1 and byte UART semantics, only required services.
 es_init:
+    ld a,(_esp_next)
+    or a
+    jr nz,es_init_next
     ld bc,0x703b
     ld a,5
     out (c),a
@@ -409,6 +435,55 @@ es_init:
     set 0,a
     out (c),a
     ret
+; The Next: its ESPs UART at 115200 8N1, the UARTs ports on, the module
+; out of reset.
+es_init_next:
+    ld bc,0x153b
+    ld a,0x10                   ; the ESP UART; prescaler bits 16:14 = 0
+    out (c),a
+    ld b,0x16                   ; 163Bh: 8 bits, no parity, one stop bit, no flow control
+    ld a,0x18
+    out (c),a
+    ld bc,0x243b
+    ld a,0x02                   ; release the ESP reset
+    out (c),a
+    inc b
+    xor a
+    out (c),a
+    dec b
+    ld a,0x83                   ; internal port decoding: the UART on
+    out (c),a
+    inc b
+    in a,(c)
+    or 0x10
+    out (c),a
+    dec b
+    ld a,0x11                   ; video timing: which 28 MHz clock
+    out (c),a
+    inc b
+    in a,(c)
+    and 7
+    add a,a
+    ld e,a
+    ld d,0
+    ld hl,es_next_baud
+    add hl,de
+    ld a,(hl)
+    inc hl
+    ld h,(hl)
+    ld l,a                      ; the prescaler: the clock / 115200
+    ld bc,0x143b
+    ld a,l
+    and 0x7f
+    out (c),a                   ; bits 6:0
+    add hl,hl
+    ld a,h
+    and 0x7f
+    or 0x80
+    out (c),a                   ; bits 13:7
+    ret
+es_next_baud:                   ; nextreg 11h 0-6 (VGA 28.0 .. 33.0 MHz), 7 (HDMI, 27 MHz)
+    defw 243,248,256,260,269,278,286,234
  ; Reset parser/transaction state, preserving host and port arguments.
 es_clear:
     ld hl,es_busy
@@ -422,6 +497,16 @@ es_clear:
     ret
 ; Discard old replies only when no transaction is active. Bounded 2048 bytes.
 es_drain:
+    ld a,(_esp_next)
+    or a
+    jr z,es_drain_zxi
+    ld bc,0x163b                ; the Next: reset the UART, empty its FIFOs, 8N1 again
+    ld a,0x98
+    out (c),a
+    ld a,0x18
+    out (c),a
+    jr es_drain_fifo
+es_drain_zxi:
     ; BIOS 2.0 hardware FIFO reset. Also clears an old overflow condition.
     ld bc,0x7c3b
     ld a,0x30
@@ -429,6 +514,7 @@ es_drain:
     inc b
     ld a,1
     out (c),a
+es_drain_fifo:
     ld de,2048
     ld l,4
 es_drain_loop:
