@@ -202,7 +202,10 @@ accesses, well under 0.1 ms.
 
 Input delay D (2-3 frames). Before running frame F: NETSEND(F+D, local
 input); NETPOLL(F) until avail >= F (stall with a "waiting" indicator
-after a few polls); copy the S*N bytes into the game's per-frame input
+after a few polls; give up on DESYNC, DROPPED or no link in NETSTATUS, on
+BREAK, or after 10 s with nothing: a link that dies silently, Wi-Fi lost
+under a modem in passthrough, leaves the device and the relay waiting
+for good); copy the S*N bytes into the game's per-frame input
 vector; run the frame; every `hash_period` frames NETHASH(F, state_hash).
 Local players on one machine occupy consecutive slots and send N bytes
 each (one NETSEND per local slot; the relay keys inputs by socket + slot).

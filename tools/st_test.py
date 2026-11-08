@@ -5,6 +5,7 @@ work (flush .. next frame sync) timed by the ST's own MFP timer, so the
 times are the emulated machine's even with Hatari fast-forwarding.
 
   tools/st_test.py [build/st/BOMBER.PRG] [--60hz] [--png out.png] [--machine st|ste] [--st]
+  ST_MEMSIZE=0                            512 KB (Hatari's --memsize: 0, or MB; default 1)
 
 --st: the program (built with --result-drive A) in the AUTO folder of a
 floppy image (tools/make_st_disk.py), booted from drive A: with no drive C:
@@ -43,7 +44,7 @@ cfg = os.path.join(ROOT, 'build', 'st', 'hatari.cfg')            # a configurati
 open(cfg, 'w').write('')
 fifo = os.path.join(ROOT, 'build', 'st', 'test.fifo')
 if os.path.exists(fifo): os.remove(fifo)
-cmd = ['hatari', '--configfile', cfg, '--tos', tos, '--machine', machine, '--memsize', '1', '--harddrive', hd, '--cmd-fifo', fifo,
+cmd = ['hatari', '--configfile', cfg, '--tos', tos, '--machine', machine, '--memsize', os.environ.get('ST_MEMSIZE', '1'), '--harddrive', hd, '--cmd-fifo', fifo,
        '--fast-forward', 'yes', '--sound', 'off', '--confirm-quit', 'no', '--statusbar', 'no', '--drive-led', 'no', '--window', '--monitor', 'rgb']
 if floppy:
     i = cmd.index('--harddrive'); del cmd[i:i + 2]

@@ -169,7 +169,8 @@ uint8_t plat_break(void) {                      /* RUN/STOP, quickly: row 7 alon
 }
 
 /* ---- time ---- */
-static uint8_t last_tick, ntsc, ntsc_step;
+uint8_t ntsc;                             /* PLAT_CLOCK_QUARTER (plat_config.h) reads it too */
+static uint8_t last_tick, ntsc_step;
 
 #ifdef C64_NETTIME
 /* frames in a match (tools/crossplay.py reads them): the work from one

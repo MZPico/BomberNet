@@ -18,4 +18,6 @@
 #else
 #define NET_PLATFORM "zx-spectrum-48k"
 #endif
+#define PLAT_CLOCK16 (*(volatile uint16_t *)0x5c78)   /* FRAMES, the ROM's, 50 a second: the match's silence (core/netplay.c) */
+#define PLAT_CLOCK16_10S 500
 #endif

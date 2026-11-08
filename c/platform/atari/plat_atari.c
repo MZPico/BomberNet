@@ -264,7 +264,8 @@ uint8_t plat_key_char(void) {
 uint8_t plat_break(void) { return irq_taken(0x80); }
 
 /* ---- time ---- */
-static uint8_t last_tick, ntsc, ntsc_step;
+uint8_t ntsc;                                         /* PLAT_CLOCK_QUARTER (plat_config.h) reads it too */
+static uint8_t last_tick, ntsc_step;
 static void tones_due(void);
 
 void plat_frame_sync(void) {                          /* 60 ms: 3 PAL frames, or 4,3,4,3,4 NTSC ones (3.6) */

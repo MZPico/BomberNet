@@ -563,6 +563,18 @@ void plat_init(void) __naked {
   __endasm;
 }
 
+/* PLAT_CLOCK (plat_config.h): counter 1 latched and read whole, both bytes
+ * (a byte left unread would leave the next reader's order swapped) */
+uint8_t mz_clock(void) __naked {
+  __asm
+    call tone_now           ; DE = counter 1
+    ld   a,d
+    cpl
+    ld   l,a
+    ret
+  __endasm;
+}
+
 /* mz_frame_sync(ticks): elapsed = (prev - now) & 0xffff (down counter); spin until >= ticks */
 void mz_frame_sync(uint16_t ticks) __naked {
   __asm

@@ -98,5 +98,5 @@ Then point each machine at that PC (say 192.168.1.10):
 | NETWORK ERROR nn | the device refused a command; nn is its code |
 | WAITING FOR THE OTHERS | you are ready; the match starts when everybody is |
 | DESYNC | the machines disagree about the game, which they check every sixteen frames; the match ends. It should not happen: please report it with the platforms involved |
-| CONNECTION LOST | a machine stopped answering; the match ends |
+| CONNECTION LOST | a machine stopped answering, or nothing came from the others for 10 seconds (a network link lost); the match ends |
 | MATCH LEFT | someone pressed BREAK |

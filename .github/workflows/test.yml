@@ -120,6 +120,11 @@ jobs:
           A_BUILD=build/zx128 B_BUILD=build/zx128 A_NEXT=1 B_NEXT=1 NEXT_TIMING=7 QUIET=1 build/venv/bin/python tools/lockstep_zx.py 200
           A_BUILD=build/zx128 B_BUILD=build/zx QUIET=1 A_NEXT=1 build/venv/bin/python tools/lockstep_zx.py 200
           A_BUILD=build/zx128 B_BUILD=build/zx128 B_NEXT=1 QUIET=1 build/venv/bin/python tools/lockstep_zx.py 200
+      - name: Spectrum link gone silent mid-match, 48K, 128K and Next (both end with CONNECTION LOST in about 10 s)
+        run: |
+          CUT_AT=200 QUIET=1 build/venv/bin/python tools/lockstep_zx.py 600
+          CUT_AT=200 A_BUILD=build/zx128 B_BUILD=build/zx128 QUIET=1 build/venv/bin/python tools/lockstep_zx.py 600
+          CUT_AT=200 A_BUILD=build/zx128 B_BUILD=build/zx128 A_NEXT=1 B_NEXT=1 QUIET=1 build/venv/bin/python tools/lockstep_zx.py 600
       - name: CPC match
         run: build/venv/bin/python tools/lockstep_cpc.py 300
       - name: against BomberNet 0.2.0, both ways
