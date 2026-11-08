@@ -42,7 +42,7 @@ joysticks, or on several machines over the network, in any mix.
 | Atari XL/XE | a FujiNet |
 | Commodore 64 | a WiC64, or an Ultimate 64 / Ultimate-II+ |
 | Amiga (Kickstart 2.04 or later) | a network connection with a TCP/IP stack |
-| Atari ST, STE (1 MB, colour) | a Wi-Fi modem on the serial port |
+| Atari ST, STE (512 KB, colour) | a Wi-Fi modem on the serial port |
 | IBM PC (DOS, CGA, EGA or VGA) | Ethernet with a packet driver, or a Wi-Fi modem |
 
 Every machine plays on its own without any of these. How to load the game

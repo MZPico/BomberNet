@@ -42,7 +42,7 @@ cfg = os.path.join(out, 'hatari.cfg')
 if not os.path.exists(cfg): open(cfg, 'w').write('')            # Hatari keeps what is changed with F12 here
 print(f'Hatari on {display}, relay {relay}; close its window to end', flush=True)
 try:
-    subprocess.run(['hatari', '--configfile', cfg, '--tos', tos, '--machine', machine, '--memsize', '1', '--harddrive', hd,
+    subprocess.run(['hatari', '--configfile', cfg, '--tos', tos, '--machine', machine, '--memsize', os.environ.get('ST_MEMSIZE', '1'), '--harddrive', hd,
                     '--rs232-in', link, '--rs232-out', link, '--joy0', 'none', '--joy1', 'none', '--confirm-quit', 'no',
                     '--window', '--zoom', '2'], env=dict(os.environ, DISPLAY=display))
 finally:

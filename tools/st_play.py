@@ -40,7 +40,7 @@ class Hatari:
         if os.path.exists(fifo): os.remove(fifo)
         cfg = os.path.join(ROOT, 'build', 'st', 'hatari.cfg')
         open(cfg, 'w').write(f'[Sound]\nbEnableSound = TRUE\nnPlaybackFreq = 44100\nszYMCaptureFileName = {wav}\n' if wav else '')
-        cmd = ['hatari', '--configfile', cfg, '--tos', tos, '--machine', 'st', '--memsize', '1', '--harddrive', hd,
+        cmd = ['hatari', '--configfile', cfg, '--tos', tos, '--machine', 'st', '--memsize', os.environ.get('ST_MEMSIZE', '1'), '--harddrive', hd,
                '--fast-forward', 'no', '--confirm-quit', 'no', '--statusbar', 'no', '--drive-led', 'no',
                '--window', '--monitor', 'rgb', '--cmd-fifo', fifo, '--joy0', 'none', '--joy1', 'none']
         if joy_port is not None: cmd[cmd.index(f'--joy{joy_port}') + 1] = 'keys'
