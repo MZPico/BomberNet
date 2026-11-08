@@ -42,6 +42,7 @@ os.symlink(os.ttyname(slave), link)       # the slave kept open here: the emulat
 log(f'pty {os.ttyname(slave)} as {link}')
 
 sock, echo, cipmode, transparent = None, True, 0, False
+
 line = bytearray()
 to_next = bytearray()
 budget, last_pace = 0.0, time.time()

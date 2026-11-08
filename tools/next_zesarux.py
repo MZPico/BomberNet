@@ -61,6 +61,17 @@ def key(code, n=1):
 def shot(name): zrcp(f'save-screen {OUT}/{name}.bmp')
 
 
+def next_var(name, n=1):
+    """n bytes of the Next's game: BANKM (5B5Ch) and the bytes in one read, one instant, and counted only with
+    bank 0 at C000h (bank 6 may stand in there); 255 (or None for n > 1) when no read had bank 0 in"""
+    a = sym_from_map(os.path.join(ROOT, 'build', 'zx128', 'bomber.map'), name)
+    for _ in range(50):
+        d = bytes.fromhex(zrcp(f'read-memory 23388 {a - 23388 + n}').split()[0])
+        if len(d) == a - 23388 + n and (a < 0xc000 or d[0] & 7 == 0): return d[-1] if n == 1 else d[-n:]
+        time.sleep(0.05)
+    return 255 if n == 1 else None
+
+
 os.makedirs(OUT, exist_ok=True)
 mmc = os.path.join(OUT, 'tbblue.mmc')
 subprocess.run(['cp', os.path.join(ZDIR, 'tbblue.mmc'), mmc], check=True)
@@ -83,6 +94,7 @@ try:
     key(K_ENTER); time.sleep(3)                   # the TAP loader's menu
     zrcp('send-keys-ascii 150 49'); time.sleep(25)  # 1: 128K mode
     shot('title')
+    if next_var('_title_mode') != 1: sys.exit('the Next is not at the title (or its memory reads wrong)')
 
     M = os.path.join(ZX48, 'bomber.map'); S = lambda n: sym_from_map(M, n)
     z = ZX(spectranet=True, relay=('127.0.0.1', 8765)); z.load(os.path.join(ZX48, 'bomber'))
@@ -124,26 +136,34 @@ try:
         ntap(97); ntap(112); ntap(112)                # the Next: A, P, P (JOIN)
         ntap(32, 2)                                   # the code screen
         for ch in code: ntap(ord(ch.lower()))
+        typed = next_var('_net_code', 4)
+        if typed != code.encode():                    # a key press lost in the emulator's queue: the code put right
+            print(f'the Next typed {typed!r}, not {code}: corrected in its memory', flush=True)
+            a = sym_from_map(os.path.join(ROOT, 'build', 'zx128', 'bomber.map'), '_net_code')
+            zrcp(f'write-memory {a} ' + ' '.join(str(c) for c in code.encode()))
         ntap(32, 4)                                   # join
         for _ in range(600):
             if g8('_s_members') >= 2: break
             frames(1)
+        if g8('_s_members') < 2:
+            shot('join'); sys.exit(f'the Next did not join room {code} (build/next/join.bmp)')
         frames_for(3)
         ntap(32, 1); tap('SPACE')                     # the Next ready, then the 48K (the host last)
     print('room', code, flush=True)
-    for _ in range(1500):
-        if g8('_title_mode') == 0: break
+    for k in range(1500):                             # ready taps repeated until both are in the game (a tap that
+        if g8('_title_mode') == 0 and (k % 25 or next_var('_title_mode') == 0): break   # lands in the lobby's redraw is lost)
         frames(1)
-    print('in game: title_mode', g8('_title_mode'), 'delay', g8('_net_delay'), flush=True)
+        if k % 150 == 149:
+            if g8('_title_mode'): tap('SPACE')
+            if next_var('_title_mode'): ntap(32, 0.5)
+    print('in game: title_mode', g8('_title_mode'), 'Next', next_var('_title_mode'), 'delay', g8('_net_delay'), flush=True)
     z.press('P' if ROLE == 'join' else 'O'); zrcp('send-keys-event 111 1')   # both walk
     for i in range(N):
         frames(1)
         if g8('_net_abort'): break
         if i == N // 2: shot('game')
     frames_for(1)                                     # the Next's own verdict too: an abort it saw last may not have reached the 48K
-    na = sym_from_map(os.path.join(ROOT, 'build', 'zx128', 'bomber.map'), '_net_abort')
-    reads = [bytes.fromhex(zrcp(f'read-memory {na} 1').split()[0][:2])[0] for _ in range(5)]   # bank 6 may stand in at C000h:
-    next_abort = max(set(reads), key=reads.count)                                                # the value most reads give
+    next_abort = next_var('_net_abort')
     ok = g8('_net_abort') == 0 and g8('_title_mode') == 0 and next_abort == 0
     print(f'end: 48K frame {g16("_frame_no")}, abort {g8("_net_abort")}, Next abort {next_abort}: {"passed" if ok else "FAILED"}', flush=True)
     zrcp('send-keys-event 111 0')

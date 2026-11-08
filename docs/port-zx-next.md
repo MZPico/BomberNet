@@ -106,9 +106,9 @@ test and the welcome into the Browser, opens the tape with the TAP
 loader's "128K mode" as a player would, and plays against the 48K of
 `tools/zxemu.py`: the Next hosts, or types the 48K's room code.
 
-- The tape loads in 128K mode from the Browser; the title shows the
-  NETWORK row: the game found the Next, set its UART and the module
-  answered.
+- The tape loads in 128K mode from the Browser; the title's NETWORK row
+  reads OFF and can be changed (not dimmed as NONE): the game found the
+  Next, set its UART and the module answered.
 - Next hosting, 48K joining: 600 frames, no abort (the game compares the
   hashes every 16 frames; a difference would end it with DESYNC).
 - 48K hosting, Next joining by its keyboard: 600 frames, no abort.
