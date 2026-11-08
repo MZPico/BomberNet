@@ -63,29 +63,33 @@ def check_pc(d):
 
 
 Z80 = 'the stack (down from FFFFh) wants it under'
-KINDS = [                                  # a build told by its files (the first that matches): its check
-    ('bomber.mzf', lambda d: check_z80('MZ-800', d, 0xC000, 'the stack (from D000h) wants it under')),
-    ('bomber.cpc', lambda d: check_z80('CPC', d, 0xBC00, 'the firmware stubs (BCCBh) and the stack (BE00h) want it under')),
-    ('bank6.map', lambda d: check_z80('ZX 128K', d, 0xFEA0, Z80)),
-    ('bomber.tap', lambda d: check_z80('ZX 48K', d, 0xFEA0, Z80)),
-    ('bomber.prg.elf', check_c64),
-    ('BOMBER.EXE', check_pc),
+MZ = lambda d: check_z80('MZ-800', d, 0xC000, 'the stack (from D000h) wants it under')
+CPC = lambda d: check_z80('CPC', d, 0xBC00, 'the firmware stubs (BCCBh) and the stack (BE00h) want it under')
+ZX128 = lambda d: check_z80('ZX 128K', d, 0xFEA0, Z80)
+ZX48 = lambda d: check_z80('ZX 48K', d, 0xFEA0, Z80)
+DEFAULT = [(os.path.join(ROOT, 'build', d), fn) for d, fn in
+           (('c', MZ), ('zx', ZX48), ('zx128', ZX128), ('cpc', CPC), ('c64', check_c64), ('pc', check_pc))]
+KINDS = [                                  # a named build told by its files: the machine, its check
+    ('bomber.mzf', 'MZ-800', MZ), ('bomber.cpc', 'CPC', CPC), ('bank6.map', 'ZX 128K', ZX128),
+    ('bomber.tap', 'ZX 48K', ZX48), ('bomber.prg.elf', 'C64', check_c64), ('BOMBER.EXE', 'PC', check_pc),
 ]
-DEFAULT = [os.path.join(ROOT, 'build', d) for d in ('c', 'zx', 'zx128', 'cpc', 'c64', 'pc')]
 
 
-def check(d):
-    for f, fn in KINDS:
-        if os.path.exists(os.path.join(d, f)): return fn(d)
-    return None
+def check_named(d):
+    """a build folder from the command line: its machine from its files, never two"""
+    found = [(m, fn) for f, m, fn in KINDS if os.path.exists(os.path.join(d, f))]
+    if len(found) == 2 and found[0][0] == 'ZX 128K' and found[1][0] == 'ZX 48K': found = found[:1]   # the 128K's tape too
+    name = os.path.relpath(d)
+    if not found: return (name, False, 'not a build this knows (no bomber.mzf, .cpc, .tap, bank6.map, .prg.elf, BOMBER.EXE)')
+    if len(found) > 1: return (name, False, 'files of more than one machine: ' + ', '.join(m for m, _ in found))
+    r = found[0][1](d)
+    if r is None: return (f'{found[0][0]} ({name})', False, 'its map is missing (bomber.map, or bomber.prg.elf)')
+    return (f'{r[0]} ({name})',) + r[1:]
+
 
 if __name__ == '__main__':
-    dirs = sys.argv[1:] or DEFAULT
-    results = []
-    for d in dirs:
-        r = check(d)
-        if r: results.append((r[0] + ('' if dirs is DEFAULT else f' ({os.path.relpath(d)})'),) + r[1:])
-        elif dirs is not DEFAULT: results.append((os.path.relpath(d), False, 'not a build this knows (no map with a budget)'))
+    if sys.argv[1:]: results = [check_named(d) for d in sys.argv[1:]]
+    else: results = [r for r in (fn(d) for d, fn in DEFAULT) if r]   # the defaults: whichever exist
     if not results:                       # (the Atari's linker checks its own memory map; Amiga, ST, web: no tight limit)
         print('no build with a budget here'); sys.exit(0)
     fails = 0
