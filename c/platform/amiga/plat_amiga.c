@@ -255,7 +255,8 @@ uint8_t plat_break(void) { poll_keys(); return keydown[K_ESC]; }
 
 /* ---- time ---- */
 static uint32_t last_tick;
-static uint8_t ntsc, ntsc_step;
+uint8_t ntsc;                             /* PLAT_CLOCK16_10S (plat_config.h) reads it too */
+static uint8_t ntsc_step;
 
 void plat_frame_sync(void) {                    /* 60 ms: 3 PAL frames, or 4,3,4,3,4 NTSC ones (3.6) */
   uint8_t need = 3;

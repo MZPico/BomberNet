@@ -83,7 +83,7 @@ class Esp01:
 
     def _deliver(self):
         now = self.z.now()
-        if self.transparent and self.sock and len(self.out) < 512:
+        if self.transparent and self.sock and len(self.out) < 512 and not self.z.cut:   # cut: the link silent
             try:
                 r, _, _ = select.select([self.sock], [], [], 0)
                 if r:
@@ -122,7 +122,7 @@ class Esp01:
                 self.plus += 1                     # perhaps the escape: held back
             else:
                 data = b'+' * self.plus + bytes([b]); self.plus = 0
-                if self.sock:
+                if self.sock and not self.z.cut:
                     try: self.sock.sendall(data)
                     except OSError: self.sock = None
             self.last_tx = now
@@ -190,6 +190,8 @@ class ZX(zx.Spectrum):
         self.ports = {}                            # low port byte -> value: joystick interfaces
         self.spectranet = spectranet
         self.relay = relay
+        self.cut = False                           # True: the network link goes silent, the connection kept open
+                                                   # (a Wi-Fi lost under the modem): nothing in, nothing out
         self.socks = {}
         self.sn_calls = 0
         self.esp = Esp01(self, relay) if esp01 else None
@@ -252,14 +254,15 @@ class ZX(zx.Spectrum):
                 self.socks[a].setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
                 self._sn_return(a=0)
             elif fn == 0x3e12:                     # SEND A = fd, DE = data, BC = length
-                self.socks[a].sendall(self.read(de, bc)); self._sn_return(bc=bc)
+                if not self.cut: self.socks[a].sendall(self.read(de, bc))   # cut: lost on the way
+                self._sn_return(bc=bc)
             elif fn == 0x3e24:                     # POLLFD A = fd -> Z = not ready, C = reason
                 s = self.socks[a]
                 # an emulated Spectrum runs far faster than real time; waiting
                 # a moment when nothing is there keeps its timeouts (counted in
                 # TV frames) meaningful against a real server
                 r, _, _ = select.select([s], [], [], 0.003)
-                if not r: self._sn_return(zero=True, bc=bc & 0xff00)
+                if not r or self.cut: self._sn_return(zero=True, bc=bc & 0xff00)
                 elif not s.recv(1, socket.MSG_PEEK): self._sn_return(bc=(bc & 0xff00) | 0x02)
                 else: self._sn_return(bc=(bc & 0xff00) | 0x04)
             elif fn == 0x3e15:                     # RECV A = fd, DE = buffer, BC = size -> BC = got

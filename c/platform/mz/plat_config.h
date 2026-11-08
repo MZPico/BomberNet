@@ -8,4 +8,8 @@
 #define PLAT_ASM_COMPOSITE 1    /* composite_map and hash_run are assembly (plat_mz.c) */
 #define PLAT_ASM_HASH 1
 #define PLAT_ASM_TEXT 1         /* print_string, hud_text, title_text* in cpu/z80/loops.c */
+uint8_t mz_clock(void);         /* the 8253's counter 1 (down, 15611 Hz): its high byte, upwards, about 60
+                                   a second (plat_mz.c): the match's silence (core/netplay.c) */
+#define PLAT_CLOCK mz_clock()
+#define PLAT_CLOCK_QUARTER 15
 #endif

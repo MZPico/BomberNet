@@ -114,6 +114,10 @@ jobs:
         run: PLAYERS=4 LOCAL_A=2 LOCAL_B=2 KEYS=tests/recordings/dm4.bnr QUIET=1 STACK_MIN=150 build/venv/bin/python tools/lockstep_zx.py 600
       - name: Spectrum 128K match, 4 players, stack watermark
         run: A_BUILD=build/zx128 B_BUILD=build/zx128 PLAYERS=4 LOCAL_A=2 LOCAL_B=2 KEYS=tests/recordings/dm4.bnr QUIET=1 STACK_MIN=100 build/venv/bin/python tools/lockstep_zx.py 600
+      - name: Spectrum link gone silent mid-match, 48K and 128K (both end with CONNECTION LOST in about 10 s)
+        run: |
+          CUT_AT=200 QUIET=1 build/venv/bin/python tools/lockstep_zx.py 600
+          CUT_AT=200 A_BUILD=build/zx128 B_BUILD=build/zx128 QUIET=1 build/venv/bin/python tools/lockstep_zx.py 600
       - name: CPC match
         run: build/venv/bin/python tools/lockstep_cpc.py 300
       - name: against BomberNet 0.2.0, both ways
