@@ -5,7 +5,12 @@ on a player's machine. (A z88dk build over 64 KB fails by itself; one that
 grows into the stack does not: the 128K Spectrum once kept 32 bytes, see
 docs/net-timing.md.)
 
-  tools/check_sizes.py [build dir ...]     default: whichever of the builds below exist
+  tools/check_sizes.py [build dir ...]     default: whichever of build/c, zx, zx128, cpc, c64, pc exist
+
+A named folder is told by its files (bomber.mzf: the MZ-800, bomber.cpc: the
+CPC, bank6.map: the 128K Spectrum, bomber.tap: the 48K, bomber.prg.elf: the
+C64, BOMBER.EXE: the PC); one with none of them, with files of two machines,
+or without its map fails.
 
 The Spectrum limits: the stack starts at FFFFh. Since the lobby's buffers
 are static it does not reach below FF00h in a 4-player match on either model
@@ -58,17 +63,34 @@ def check_pc(d):
     return ('PC', False, 'no DGROUP in the map')
 
 
-CHECKS = [
-    lambda: check_z80('MZ-800', os.path.join(ROOT, 'build', 'c'), 0xC000, 'the stack (from D000h) wants it under'),
-    lambda: check_z80('ZX 48K', os.path.join(ROOT, 'build', 'zx'), 0xFEA0, 'the stack (down from FFFFh) wants it under'),
-    lambda: check_z80('ZX 128K', os.path.join(ROOT, 'build', 'zx128'), 0xFEA0, 'the stack (down from FFFFh) wants it under'),
-    lambda: check_z80('CPC', os.path.join(ROOT, 'build', 'cpc'), 0xBC00, 'the firmware stubs (BCCBh) and the stack (BE00h) want it under'),
-    lambda: check_c64(os.path.join(ROOT, 'build', 'c64')),
-    lambda: check_pc(os.path.join(ROOT, 'build', 'pc')),
+Z80 = 'the stack (down from FFFFh) wants it under'
+MZ = lambda d: check_z80('MZ-800', d, 0xC000, 'the stack (from D000h) wants it under')
+CPC = lambda d: check_z80('CPC', d, 0xBC00, 'the firmware stubs (BCCBh) and the stack (BE00h) want it under')
+ZX128 = lambda d: check_z80('ZX 128K', d, 0xFEA0, Z80)
+ZX48 = lambda d: check_z80('ZX 48K', d, 0xFEA0, Z80)
+DEFAULT = [(os.path.join(ROOT, 'build', d), fn) for d, fn in
+           (('c', MZ), ('zx', ZX48), ('zx128', ZX128), ('cpc', CPC), ('c64', check_c64), ('pc', check_pc))]
+KINDS = [                                  # a named build told by its files: the machine, its check
+    ('bomber.mzf', 'MZ-800', MZ), ('bomber.cpc', 'CPC', CPC), ('bank6.map', 'ZX 128K', ZX128),
+    ('bomber.tap', 'ZX 48K', ZX48), ('bomber.prg.elf', 'C64', check_c64), ('BOMBER.EXE', 'PC', check_pc),
 ]
 
+
+def check_named(d):
+    """a build folder from the command line: its machine from its files, never two"""
+    found = [(m, fn) for f, m, fn in KINDS if os.path.exists(os.path.join(d, f))]
+    if len(found) == 2 and found[0][0] == 'ZX 128K' and found[1][0] == 'ZX 48K': found = found[:1]   # the 128K's tape too
+    name = os.path.relpath(d)
+    if not found: return (name, False, 'not a build this knows (no bomber.mzf, .cpc, .tap, bank6.map, .prg.elf, BOMBER.EXE)')
+    if len(found) > 1: return (name, False, 'files of more than one machine: ' + ', '.join(m for m, _ in found))
+    r = found[0][1](d)
+    if r is None: return (f'{found[0][0]} ({name})', False, 'its map is missing (bomber.map, or bomber.prg.elf)')
+    return (f'{r[0]} ({name})',) + r[1:]
+
+
 if __name__ == '__main__':
-    results = [r for r in (c() for c in CHECKS) if r]
+    if sys.argv[1:]: results = [check_named(d) for d in sys.argv[1:]]
+    else: results = [r for r in (fn(d) for d, fn in DEFAULT) if r]   # the defaults: whichever exist
     if not results:                       # (the Atari's linker checks its own memory map; Amiga, ST, web: no tight limit)
         print('no build with a budget here'); sys.exit(0)
     fails = 0
