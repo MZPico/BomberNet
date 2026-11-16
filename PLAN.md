@@ -109,7 +109,7 @@ clear): kill credited, P2 dies, message shown, wins=1, next round from corners.
 
 Result: joystick type on the title (W/S cycle NONE / MZ 800 / MZ 1X03).
 MZ-800/MZ-1500 digital sticks are read on ports F0h/F1h with 8255 port A bit
-5/6 lowered for the read (`mz_joy800`). The MZ-700's MZ-1X03 analogue sticks
+4/5 lowered for the read (`mz_joy800`). The MZ-700's MZ-1X03 analogue sticks
 (E008h bits 1..4) are measured once per frame right after the VBLK falling
 edge: 64 samples ~105 T apart, low count < 22 = left/up, > 46 = right/down,
 switches sampled during display; with that type the frame limiter targets 880
