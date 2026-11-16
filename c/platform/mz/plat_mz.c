@@ -270,8 +270,9 @@ void mz_set_attr(uint8_t x, uint8_t y, uint8_t attr) {
 /* ---- joysticks ----
  * MZ-800 / MZ-1500: ports F0h (joy 1) and F1h (joy 2), active low:
  * bit0 up, bit1 down, bit2 left, bit3 right, bit4 fire. The lines are only
- * driven while 8255 port A bit 5 (joy 1) / bit 6 (joy 2) is low; keyboard
- * strobes leave them high, so lower the bit around the read. */
+ * driven while 8255 port A bit 4 (joy 1) / bit 5 (joy 2) is low (MZ-800
+ * Service Manual, 8255 table and 4-7 Joystick; the ROM's @JOYIN writes CFh);
+ * keyboard strobes leave them high, so lower the bit around the read. */
 uint8_t mz_joy800(uint8_t n) __naked {
   __asm
     push iy
@@ -280,14 +281,14 @@ uint8_t mz_joy800(uint8_t n) __naked {
     ld   a,(iy+0)
     or   a
     jr   nz,j8_two
-    ld   a,0xdf             ; PA bit5 low: joy 1
+    ld   a,0xef             ; PA bit4 low: joy 1
     ld   (0xe000),a
     nop
     nop
     in   a,(0xf0)
     jr   j8_got
 j8_two:
-    ld   a,0xbf             ; PA bit6 low: joy 2
+    ld   a,0xdf             ; PA bit5 low: joy 2
     ld   (0xe000),a
     nop
     nop
