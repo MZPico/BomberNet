@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: QEMU and Zig
         run: |
-          sudo apt-get update -q && sudo apt-get install -y -q qemu-user-static
+          sudo apt-get -o Acquire::Retries=10 update -q && sudo apt-get -o Acquire::Retries=10 install -y -q qemu-user-static
           python3 -m venv build/venv && build/venv/bin/pip install -q ziglang
       - run: tools/test_portable.sh
 

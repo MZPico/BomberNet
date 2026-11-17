@@ -91,7 +91,7 @@ jobs:
           tar -xJf /tmp/llvm-mos.tar.xz -C ~
       - name: c1541 (the C64's disk image; VICE's package, no ROMs needed)
         if: matrix.dir == 'c64'
-        run: sudo apt-get update -q && sudo apt-get install -y -q --no-install-recommends vice
+        run: sudo apt-get -o Acquire::Retries=10 update -q && sudo apt-get -o Acquire::Retries=10 install -y -q --no-install-recommends vice
       - name: build
         run: C1541=$(command -v c1541 || true) LLVM_MOS=~/llvm-mos python3 tools/${{ matrix.script }}
       - name: memory budget
@@ -131,8 +131,8 @@ jobs:
       - name: cross-mint (ppa:vriviere/ppa)
         run: |
           sudo add-apt-repository -y ppa:vriviere/ppa
-          sudo apt-get update -q
-          sudo apt-get install -y -q cross-mint-essential
+          sudo apt-get -o Acquire::Retries=10 update -q
+          sudo apt-get -o Acquire::Retries=10 install -y -q cross-mint-essential
       - name: build
         run: python3 tools/build_st.py --st
       - uses: actions/upload-artifact@v4
